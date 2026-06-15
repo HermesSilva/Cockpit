@@ -197,7 +197,7 @@ type HostMsg =
   | { kind: 'history'; items: HistoryItem[] }
   | { kind: 'resolvedPath'; requestId: string; text: string }
   | { kind: 'openSessions' }
-  | { kind: 'taskTimings'; timings: Record<string, number> } // médias de duração por tipo (gauge)
+  | { kind: 'taskTimings'; timings: Record<string, number> } // médias por tipo, já no escopo (modelo,effort) atual (gauge)
   | { kind: 'usageData'; data: UsageData } // resposta ao botão "Usage"
   | { kind: 'locale'; locale: string };
 

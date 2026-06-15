@@ -27,7 +27,6 @@ export interface SessionHooks {
   cwd: () => string;
   // Defaults vindos das settings (o que 'default' resolve quando não há override).
   settings: () => { model: string; effort: string; permission: string };
-  contextLimit: () => number;
 }
 
 export class Session {
@@ -52,7 +51,7 @@ export class Session {
   private pendingPerm = new Map<string, { tool: string; input: unknown; suggestions?: unknown[] }>();
 
   constructor(private hooks: SessionHooks) {
-    this.stats = new StatsAggregator(hooks.contextLimit());
+    this.stats = new StatsAggregator(0);
   }
 
   // ---- ciclo de vida ----
@@ -129,7 +128,7 @@ export class Session {
   clearConversation(): void {
     this.stop();
     this.sessionId = undefined;
-    this.stats = new StatsAggregator(this.hooks.contextLimit());
+    this.stats = new StatsAggregator(0);
   }
 
   resume(sessionId: string): void {

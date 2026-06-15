@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.56",
+  "version": "1.0.58",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -209,11 +209,6 @@
           "default": "default",
           "description": "%cfg.effort%"
         },
-        "tootega.contextLimit": {
-          "type": "number",
-          "default": 0,
-          "description": "%cfg.contextLimit%"
-        },
         "tootega.apiKey": {
           "type": "string",
           "default": "",
@@ -256,16 +251,6 @@
           "type": "string",
           "default": "",
           "description": "%cfg.userName%"
-        },
-        "tootega.fiveHourTokenBudget": {
-          "type": "number",
-          "default": 640000000,
-          "description": "%cfg.fiveHourTokenBudget%"
-        },
-        "tootega.weeklyTokenBudget": {
-          "type": "number",
-          "default": 19400000000,
-          "description": "%cfg.weeklyTokenBudget%"
         }
       }
     }

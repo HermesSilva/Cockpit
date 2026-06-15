@@ -714,6 +714,14 @@ body {
   margin-top: 4px;
   opacity: 0.85;
 }
+/* Tempo decorrido (min:seg) ao lado da data/hora de término do turno. */
+.turn-elapsed {
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.turn-elapsed::before {
+  content: '⏱ ';
+}
 .bubble .role.role-assistant {
   color: #d97757;
   opacity: 1;
@@ -788,6 +796,23 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-foreground, #e0e0e0);
+  text-shadow: 0 0 2px var(--vscode-editor-background, #1e1e1e),
+    0 0 2px var(--vscode-editor-background, #1e1e1e);
+  pointer-events: none;
+}
+/* Tempo decorrido do turno (min:seg), encostado à direita da barra, logo após o
+   percentual centrado. Mesma sombra p/ legibilidade sobre fill/trilho. */
+.activity-gauge-time {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

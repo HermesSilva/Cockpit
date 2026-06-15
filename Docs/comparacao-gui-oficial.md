@@ -75,7 +75,7 @@ Cockpit é um cliente webview limpo que dirige o Claude Code CLI. Faz bem o **n�
 | Settings (autosave/gitignore/python/providers/trust/schema) | ✓ | ◑ | min | só algumas; sem env/providers |
 | Notificações + bell | ✓ | ✗ | min | só o dot no painel |
 | Instalação (forks/Open VSX/JetBrains) | ✓ | ◑ | core | só 1 ext VS Code, versão 0 |
-| Override manual do limite de contexto | ✗ | ✓ | min | setting `contextLimit` = extra |
+| Limite de contexto auto pelo modelo (1M/200K) | ✓ | ✓ | — | derivado do modelo ativo |
 | Diálogo de uso + atribuição | ✓ | ✗ | sec | ausente |
 
 ---

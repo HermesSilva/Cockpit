@@ -303,7 +303,7 @@ automatically resumes the most recent session for that directory.
 
 | Feature | Status | How to use | Limitations |
 |---|---|---|---|
-| **Context window** meter (used / remaining / limit) | ✅ | Bar at the top, with color bands; 200K or 1M limit | Limit via `tootega.contextLimit` (0 = auto by model) |
+| **Context window** meter (used / remaining / limit) | ✅ | Bar at the top, with color bands; 200K or 1M limit | Limit auto-derived from the active model |
 | **Cache**: hit-rate, read, write | ✅ | **Cache** block in the panel | — |
 | **Cost** per turn and session | 🟡 | Cost block ("estimated" label) | Estimate, not the official invoice |
 | Tokens in / out / cache-create / cache-read | ✅/🟡 | **Tokens** block | Full breakdown partial |
@@ -394,7 +394,6 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `language` | enum | `auto` | UI: `auto` (follows VS Code) / `pt-BR` / `en` |
 | `model` | enum | `default` | Default model for new sessions; reflected in the panel dropdown |
 | `effort` | enum | `default` | Default effort (`low`…`max`); `default` uses the CLI's `effortLevel` |
-| `contextLimit` | number | `0` | Meter limit; `0` = auto (1M for `[1m]` variants, otherwise 200K) |
 | `apiKey` | string | `""` | Optional API key, **only** to list models via `/v1/models`; never used in chat |
 | `autoResumeLastSession` | boolean | `true` | On opening the folder, resume the most recent session for that directory |
 | `permissionMode` | enum | `default` | Permission mode forwarded to the CLI; reflected in the dropdown |
@@ -402,11 +401,10 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `showThinking` | boolean | `false` | Expand *thinking* blocks by default |
 | `expandToolCards` | boolean | `false` | Expand tool cards by default in the timeline |
 | `userName` | string | `""` | Name shown on your messages; empty = OS user |
-| `fiveHourTokenBudget` | number | `640000000` | 5h budget = 100% of the meter; tune to your plan; `0` = no meter |
-| `weeklyTokenBudget` | number | `19400000000` | Weekly (7d) budget = 100% of the meter; `0` = no meter |
 
-> The default budgets are **approximate** — tune them to your plan's real limits so the
-> 5h / 7d meters stay faithful.
+> The 5h / 7d meters now read **real** account usage via the OAuth `/usage` API
+> (same source as the CLI's `/usage`), so no manual budgets are needed. The context
+> meter limit is auto-derived from the active model (1M for `[1m]` variants, else 200K).
 
 ![Settings](images/Settings%20View.png)
 

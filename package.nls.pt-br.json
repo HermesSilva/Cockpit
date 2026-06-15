@@ -19,11 +19,8 @@
   "cfg.showThinking": "Expande os blocos de raciocínio do Claude por padrão no chat.",
   "cfg.expandToolCards": "Expande os cartões de chamadas de ferramenta por padrão na timeline.",
   "cfg.userName": "Nome exibido nas suas mensagens no lugar de 'You'. Vazio = usuário do sistema operacional.",
-  "cfg.fiveHourTokenBudget": "Orçamento de tokens em 5h usado como 100% do gauge. O padrão é aproximado — ajuste ao seu plano. 0 = sem gauge.",
-  "cfg.weeklyTokenBudget": "Orçamento de tokens semanal (7 dias) usado como 100% do gauge. O padrão é aproximado — ajuste ao seu plano. 0 = sem gauge.",
   "cfg.model": "Modelo default para novas sessões. 'Account default' deixa o CLI escolher. Reflete (pré-seleciona) no combo Model do painel; mude lá para sobrepor só a sessão atual.",
   "cfg.effort": "Esforço de raciocínio default para novas sessões. 'CLI default' usa o effortLevel do ~/.claude/settings.json. Reflete (pré-seleciona) no combo Effort do painel; mude lá para sobrepor só a sessão atual.",
-  "cfg.contextLimit": "Limite da janela de contexto (tokens) do medidor. 0 = automático, derivado do modelo ativo (variantes '[1m]' = 1.000.000; senão 200.000). Defina um valor positivo para sobrepor.",
   "cfg.apiKey": "API key Anthropic opcional, usada **apenas** para listar modelos disponíveis via `/v1/models`. Deixe vazio se o Claude Code está autenticado por assinatura — o seletor de modelo cai para aliases, o modelo ativo e um campo custom. A key não é usada no chat (isso sempre passa pelo CLI).",
   "cfg.autoResumeLastSession": "Ao abrir uma pasta, retoma automaticamente a sessão mais recente dela (carrega o histórico). Desligue para sempre começar vazio."
 }

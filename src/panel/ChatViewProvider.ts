@@ -17,7 +17,7 @@ import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
 import { readUsageCache } from '../cli/StatuslineCache';
-import { taskTimingsAll, recordTaskTiming } from '../stats/TaskTimings';
+import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
 import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/StatuslineInstaller';
 import { fetchAccountUsage } from '../cli/UsageApi';
@@ -114,7 +114,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // Garante o contexto visível (cria/foca seu painel) p/ permissão/pergunta.
         this.openSessionPanel(tabId);
       },
-      onInit: (model, cmds) => this.onSessionInit(model, cmds),
+      onInit: (model, cmds) => this.onSessionInit(model, cmds, tabId),
       onAuthRequired: () => this.post({ kind: 'authRequired' }, tabId),
       fileText: (tool, input) => this.currentFileText(tool, input),
       claudePath: () => this.claudePath(),
@@ -124,7 +124,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
       }),
-      contextLimit: () => this.cfg().get<number>('contextLimit', 0),
     };
   }
 
@@ -214,8 +213,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** Lado global do init de uma sessão: descoberta de modelo + cache do default. */
-  private onSessionInit(model?: string, slashCommands?: string[]): void {
+  private onSessionInit(model?: string, slashCommands?: string[], tabId?: string): void {
     void this.researchSlash(slashCommands);
+    // Modelo REAL resolvido pelo CLI: o escopo de tempos pode ter mudado
+    // ('default' -> id real). Recalibra o gauge com as médias do novo escopo.
+    if (tabId) this.postTaskTimings(tabId);
     if (typeof model === 'string' && model) {
       if (!this.discoveredModels.has(model)) {
         this.discoveredModels.add(model);
@@ -267,20 +269,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.lastLimitsSource = 'real';
           this.lastUsageSource = 'statusline';
         } else {
-          // 2) Fallback: estimativa local por tokens ÷ orçamento.
+          // 2) Fallback: uso local por tokens (sem %, só USD/tokens acumulados).
           const u = await computeLocalUsage(Date.now());
-          const b5 = this.cfg().get<number>('fiveHourTokenBudget', 0);
-          const b7 = this.cfg().get<number>('weeklyTokenBudget', 0);
           this.lastLimits = {
             fiveHour: {
               usd: u.fiveHourUsd,
               tokens: u.fiveHourTokens,
-              usedPct: b5 > 0 ? Math.min(1, u.fiveHourTokens / b5) : undefined,
+              usedPct: undefined,
             },
             sevenDay: {
               usd: u.sevenDayUsd,
               tokens: u.sevenDayTokens,
-              usedPct: b7 > 0 ? Math.min(1, u.sevenDayTokens / b7) : undefined,
+              usedPct: undefined,
             },
           };
           this.lastApiSonnet = undefined;
@@ -757,6 +757,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.sendSessions();
   }
 
+  // Escopo (modelo, effort) p/ segmentar os tempos: prefere o modelo REAL
+  // resolvido pelo CLI (snapshot), caindo p/ o selecionado; effort resolve
+  // 'default' p/ o das settings.
+  private timingScope(s: Session): { model: string; effort: string } {
+    const model = s.stats.snapshot().model || s.model() || 'default';
+    let effort = s.effort() || 'default';
+    if (effort === 'default') effort = this.cfg().get<string>('effort', 'default') || 'default';
+    return { model, effort };
+  }
+
+  /** Envia ao(s) surface(s) as médias do escopo atual da aba (gauge calibrado). */
+  private postTaskTimings(tabId: string): void {
+    const s = this.sessions.get(tabId) ?? this.active();
+    const { model, effort } = this.timingScope(s);
+    this.post({ kind: 'taskTimings', timings: taskTimingsScoped(model, effort) }, tabId);
+  }
+
   // ---- Mensagens vindas do webview ----
 
   private onWebviewMessage(m: WebviewToHost, webview?: vscode.Webview): void {
@@ -772,7 +789,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.reportCliStatus();
         void this.tryDiscoverModels();
         this.startUsageTimer();
-        this.post({ kind: 'taskTimings', timings: taskTimingsAll() }); // médias p/ calibrar o gauge
+        this.postTaskTimings(bound ?? this.activeTab); // médias do escopo p/ calibrar o gauge
         this.autoResumeLast();
         this.postTabs();
         this.replayTab(bound ?? this.activeTab); // popula a superfície com sua conversa
@@ -822,11 +839,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         srcSession().setModel(m.model);
         this.pendingRestart = true;
         this.sendConfig();
+        this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
         break;
       case 'setEffort':
         srcSession().setEffort(m.effort);
         this.pendingRestart = true;
         this.sendConfig();
+        this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
         break;
       case 'setPermissionMode':
         srcSession().setPermission(m.mode);
@@ -909,12 +928,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'saveImage':
         void this.saveImage(m.mediaType, m.data);
         break;
-      case 'taskDuration':
-        // Amostra de duração por tipo: agrega/persiste (global) e devolve as
-        // médias atualizadas a TODAS as superfícies (sincroniza abas/painéis).
-        recordTaskTiming(m.type, m.ms);
-        this.post({ kind: 'taskTimings', timings: taskTimingsAll() });
+      case 'taskDuration': {
+        // Amostra de duração: agrega/persiste segmentada por (modelo, effort,
+        // tipo) e devolve ao surface da aba as médias do seu escopo atual.
+        const { model, effort } = this.timingScope(srcSession());
+        recordTaskTiming(model, effort, m.type, m.ms);
+        this.postTaskTimings(srcTab);
         break;
+      }
       case 'fetchUsage':
         void this.sendUsage(); // dado quente: busca conta + limites + breakdown ao clicar
         break;

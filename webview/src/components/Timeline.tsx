@@ -174,6 +174,12 @@ const TAU_K = Math.log((1 - GAUGE_START) / (1 - TAU_TARGET)); // ≈ 1.504
 const TAU_MIN = 1_500;
 const TAU_MAX = 120_000;
 
+/** Formata ms como min:seg (ex.: 75000 -> "1:15"). */
+function fmtMinSec(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 /** Semeia/atualiza o espelho local com as médias vindas do host. */
 export function seedTaskTimings(timings: Record<string, number>): void {
   TASK_AVG.clear();
@@ -232,7 +238,9 @@ function ActivityIndicator({
   const sent = stats?.inputTokens ?? 0;
   const received = stats?.outputTokens ?? 0;
   const [elapsed, setElapsed] = useState(0);
+  const [totalMs, setTotalMs] = useState(0); // tempo decorrido do turno (não reseta por token)
   const gaugeStartRef = useRef(Date.now()); // base do gauge (reset por liveSig)
+  const turnStartRef = useRef(Date.now()); // início do turno (montagem do indicador)
   const segStartRef = useRef(Date.now()); // base do segmento (aprendizado)
   const prevLive = useRef(liveSig);
   const prevSeg = useRef(segSig);
@@ -240,7 +248,11 @@ function ActivityIndicator({
   const tauRef = useRef(tauForType(typeRef.current)); // τ calibrado p/ esse tipo
   // Tick do cronômetro do gauge.
   useEffect(() => {
-    const id = setInterval(() => setElapsed(Date.now() - gaugeStartRef.current), 100);
+    const id = setInterval(() => {
+      const now = Date.now();
+      setElapsed(now - gaugeStartRef.current);
+      setTotalMs(now - turnStartRef.current);
+    }, 100);
     return () => clearInterval(id);
   }, []);
   // Qualquer informação que chega (item, tool result OU token fluindo) reinicia o
@@ -290,6 +302,7 @@ function ActivityIndicator({
         >
           <span className="activity-gauge-fill" style={{ width: `${(progress * 100).toFixed(1)}%` }} />
           <span className="activity-gauge-pct">{pct}%</span>
+          <span className="activity-gauge-time">{fmtMinSec(totalMs)}</span>
         </span>
       )}
     </div>
@@ -318,6 +331,7 @@ function ClaudeTurn({
   const active = items.some((i) => i.kind === 'assistant' && !i.done);
   const canceled = items.some((i) => i.kind === 'assistant' && i.canceled);
   const turnEnd = turnEndTs(items);
+  const turnStart = turnStartTs(items);
   const nodes: ReactNode[] = [];
   let todoShown = false;
   for (const it of items) {
@@ -357,7 +371,14 @@ function ClaudeTurn({
         </div>
       </Tooltip>
       {nodes}
-      {!active && turnEnd != null && <div className="turn-end">{fmtStamp(turnEnd)}</div>}
+      {!active && turnEnd != null && (
+        <div className="turn-end">
+          {fmtStamp(turnEnd)}
+          {turnStart != null && turnEnd > turnStart && (
+            <span className="turn-elapsed">{fmtMinSec(turnEnd - turnStart)}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -718,6 +739,13 @@ function turnEndTs(items: (AssistantItem | ToolItem)[]): number | undefined {
     if (it.ts) m = Math.max(m, it.ts);
   }
   return m || undefined;
+}
+
+// Primeiro carimbo do turno (início da execução do prompt).
+function turnStartTs(items: (AssistantItem | ToolItem)[]): number | undefined {
+  let m = Infinity;
+  for (const it of items) if (it.ts) m = Math.min(m, it.ts);
+  return Number.isFinite(m) ? m : undefined;
 }
 
 // Data + hora completa (HH:MM:SS) no formato da região do PC.

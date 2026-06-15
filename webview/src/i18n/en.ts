@@ -15,6 +15,10 @@ export const en = {
   'attach.remove': 'Remove attachment',
   'attach.view': 'View image',
 
+  'activity.working': 'Working…',
+  'activity.sent': 'Tokens sent',
+  'activity.received': 'Tokens received',
+
   'tip.time': 'Time',
   'tip.chars': 'Characters',
   'tip.words': 'Words',
@@ -133,6 +137,49 @@ export const en = {
   'tip.login.desc': 'Sign in to Claude in a terminal (browser OAuth via the CLI). Credentials stay in the CLI.',
   'tip.logout.title': 'Sign out',
   'tip.logout.desc': 'Sign out from Claude (runs `claude auth logout` in a terminal).',
+  'tip.usage.desc': 'Account and consumption: rate limits (5h / weekly), plan, and what is driving your usage. Fetched live on click.',
+
+  'usage.button': 'Usage',
+  'usage.title': 'Account & Usage',
+  'usage.loading': 'Fetching usage…',
+  'usage.account': 'Account',
+  'usage.authMethod': 'Auth method',
+  'usage.email': 'Email',
+  'usage.org': 'Organization',
+  'usage.plan': 'Plan',
+  'usage.notLoggedIn': 'Not signed in.',
+  'usage.usage': 'Usage',
+  'usage.session5h': 'Session (5hr)',
+  'usage.weekly7d': 'Weekly (7 day)',
+  'usage.weeklySonnet': 'Weekly Sonnet',
+  'usage.manage': 'Manage usage on claude.ai',
+  'usage.na': 'n/a',
+  'usage.resetsIn': 'Resets in {0}',
+  'usage.contributing': "What's contributing to your limits usage?",
+  'usage.day': 'Day',
+  'usage.week': 'Week',
+  'usage.approx':
+    'Approximate, based on local sessions on this machine — does not include other devices or claude.ai.',
+  'usage.noData': 'No usage recorded in this window.',
+  'usage.i.context': '{0}% of your usage was at >150k context',
+  'usage.i.context.desc':
+    'Longer sessions are more expensive even when cached. /compact mid-task, /clear when switching to new tasks.',
+  'usage.i.subagents': '{0}% of your usage came from subagents',
+  'usage.i.subagents.desc':
+    'Each subagent runs its own requests. Be deliberate about spawning them — and consider a cheaper model for simpler subagents.',
+  'usage.i.topSub': '{0}% of your usage came from subagents under "{1}"',
+  'usage.i.topSub.desc':
+    'If this runs frequently, consider configuring its subagents with a cheaper model or tightening their prompts.',
+  'usage.subagents': 'Subagents',
+  'usage.pctOfUsage': '% of usage',
+  'usage.generatedAt': 'Fetched at {0}',
+  'usage.badge.live': 'live',
+  'usage.badge.est': 'estimate',
+  'usage.est.note':
+    'Local estimate — exact account limits come from the CLI statusline (not reachable headless). Enable live tracking to capture them.',
+  'usage.est.waiting':
+    'Local estimate — real account limits appear after Claude refreshes the statusline (use the CLI once).',
+  'usage.enableTracking': 'Enable live tracking',
   'tip.stop.title': 'Interrupt',
   'tip.stop.desc': 'Stop the agent now. The current turn ends and the session stays open.',
 

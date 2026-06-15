@@ -26,6 +26,7 @@ export interface CliEvents {
 export class CliProcessManager extends EventEmitter {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private parser = new StreamParser();
+  private reqSeq = 0;
 
   constructor(private opts: CliOptions) {
     super();
@@ -75,6 +76,16 @@ export class CliProcessManager extends EventEmitter {
 
   isRunning(): boolean {
     return this.proc !== null;
+  }
+
+  /**
+   * Atualiza o id de sessão a retomar caso o processo precise respawnar. O CLI só
+   * revela o `session_id` no evento `init`; sem isto, uma reinicialização silenciosa
+   * (writeLine após o processo morrer) subiria SEM `--resume` e criaria um contexto
+   * novo no disco. Mantém a continuidade da MESMA sessão.
+   */
+  setResumeId(id: string): void {
+    if (id) this.opts.resumeSessionId = id;
   }
 
   /** Inicia o processo. Idempotente: não faz nada se já estiver rodando. */
@@ -157,9 +168,19 @@ export class CliProcessManager extends EventEmitter {
     this.proc?.stdin.write(JSON.stringify(obj) + '\n');
   }
 
-  /** Interrompe o turno atual encerrando o processo (será recriado no próximo envio). */
+  /**
+   * Interrompe o turno atual pelo protocolo de controle (`subtype: 'interrupt'`),
+   * mantendo o processo e a SESSÃO vivos. Assim o próximo envio (ex.: o prompt
+   * corrigido após cancelar) continua a MESMA sessão, em vez de respawnar uma nova
+   * — o que criaria um contexto duplicado no disco. Sem processo, nada a fazer.
+   */
   interrupt(): void {
-    this.stop();
+    if (!this.proc) return;
+    this.writeLine({
+      type: 'control_request',
+      request_id: `interrupt_${++this.reqSeq}`,
+      request: { subtype: 'interrupt' },
+    });
   }
 
   stop(): void {

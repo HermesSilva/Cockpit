@@ -132,6 +132,9 @@ export class StatsAggregator {
         if (raw?.type === 'message_start') {
           this.setModel(raw.message?.model, false); // id da API, sem [1m]
           if (raw.message?.usage) this.applyPromptUsage(raw.message.usage);
+        } else if (raw?.type === 'message_delta' && raw.usage) {
+          // Saída cumulativa do turno em voo (tempo real, token a token).
+          this.applyDeltaUsage(raw.usage);
         }
         break;
       }
@@ -153,6 +156,17 @@ export class StatsAggregator {
       }
     }
     return this.snapshot();
+  }
+
+  /**
+   * message_delta: usage com `output_tokens` cumulativo do turno em voo. Atualiza
+   * SÓ a saída em tempo real — input/cache são fixados no message_start e NÃO devem
+   * ser tocados aqui: o delta traz `input_tokens` incremental (= 0 no meio do
+   * stream), o que zeraria o input/contexto exibido e faria o número "piscar".
+   * O evento `assistant` final consolida nos totais.
+   */
+  private applyDeltaUsage(u: Usage) {
+    if (typeof u.output_tokens === 'number') this.curOutput = u.output_tokens;
   }
 
   /** input_tokens + cache_* da requisição = tamanho do prompt (≈ contexto usado). */

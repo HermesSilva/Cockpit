@@ -17,7 +17,11 @@ import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
 import { readUsageCache } from '../cli/StatuslineCache';
-import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo } from '../../shared/protocol';
+import { taskTimingsAll, recordTaskTiming } from '../stats/TaskTimings';
+import { fetchAuthStatus } from '../cli/AuthStatus';
+import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/StatuslineInstaller';
+import { fetchAccountUsage } from '../cli/UsageApi';
+import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
@@ -44,6 +48,8 @@ const MODEL_LIST = [
 const BASE_OF_1M = new Set(['claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6']);
 const EFFORT_OPTIONS = ['default', 'low', 'medium', 'high', 'xhigh', 'max'];
 const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'];
+// Cache da statusline mais velho que isto não é confiável como % "real" (engana).
+const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   // O Cockpit vive como aba no editor (WebviewPanel) + hub na Activity Bar
@@ -228,6 +234,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private lastLimits?: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
   private lastLimitsSource: 'real' | 'estimate' = 'estimate';
+  // Origem detalhada p/ o modal Usage (api > statusline > estimate).
+  private lastUsageSource: 'api' | 'statusline' | 'estimate' = 'estimate';
+  private lastApiSonnet?: LimitWindow;
   private usageStarted = false;
 
   /** Inicia (uma vez) o cálculo periódico do uso local (5h/7d). */
@@ -238,35 +247,46 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     setInterval(() => void this.refreshUsage(), 120_000);
   }
 
-  private async refreshUsage(): Promise<void> {
+  private async refreshUsage(force = false): Promise<void> {
     try {
-      // 1) Cota REAL via cache da statusline (rate_limits).
-      const real = readUsageCache();
-      if (real && (real.fiveHour || real.sevenDay)) {
-        this.lastLimits = { fiveHour: real.fiveHour, sevenDay: real.sevenDay };
+      // 0) Uso REAL da conta via API OAuth (read-only, sem gasto de token). É a
+      // mesma fonte do /usage do CLI — bate exatamente. Melhor fonte.
+      const api = await fetchAccountUsage(force);
+      if (api && (api.fiveHour || api.sevenDay)) {
+        this.lastLimits = { fiveHour: api.fiveHour, sevenDay: api.sevenDay };
+        this.lastApiSonnet = api.sevenDaySonnet;
         this.lastLimitsSource = 'real';
-        log('Usage: real account rate_limits (statusline cache)');
+        this.lastUsageSource = 'api';
       } else {
-        if (real?.raw) {
-          log(`Usage: statusline cache present but rate_limits unparsed: ${JSON.stringify(real.raw).slice(0, 400)}`);
+        // 1) Cache da statusline (rate_limits). Só confia se FRESCO.
+        const real = readUsageCache();
+        const fresh = real != null && (real.ageMs == null || real.ageMs < USAGE_CACHE_MAX_AGE_MS);
+        if (real && fresh && (real.fiveHour || real.sevenDay)) {
+          this.lastLimits = { fiveHour: real.fiveHour, sevenDay: real.sevenDay };
+          this.lastApiSonnet = real.sevenDaySonnet;
+          this.lastLimitsSource = 'real';
+          this.lastUsageSource = 'statusline';
+        } else {
+          // 2) Fallback: estimativa local por tokens ÷ orçamento.
+          const u = await computeLocalUsage(Date.now());
+          const b5 = this.cfg().get<number>('fiveHourTokenBudget', 0);
+          const b7 = this.cfg().get<number>('weeklyTokenBudget', 0);
+          this.lastLimits = {
+            fiveHour: {
+              usd: u.fiveHourUsd,
+              tokens: u.fiveHourTokens,
+              usedPct: b5 > 0 ? Math.min(1, u.fiveHourTokens / b5) : undefined,
+            },
+            sevenDay: {
+              usd: u.sevenDayUsd,
+              tokens: u.sevenDayTokens,
+              usedPct: b7 > 0 ? Math.min(1, u.sevenDayTokens / b7) : undefined,
+            },
+          };
+          this.lastApiSonnet = undefined;
+          this.lastLimitsSource = 'estimate';
+          this.lastUsageSource = 'estimate';
         }
-        // 2) Fallback: estimativa local por tokens ÷ orçamento.
-        const u = await computeLocalUsage(Date.now());
-        const b5 = this.cfg().get<number>('fiveHourTokenBudget', 0);
-        const b7 = this.cfg().get<number>('weeklyTokenBudget', 0);
-        this.lastLimits = {
-          fiveHour: {
-            usd: u.fiveHourUsd,
-            tokens: u.fiveHourTokens,
-            usedPct: b5 > 0 ? Math.min(1, u.fiveHourTokens / b5) : undefined,
-          },
-          sevenDay: {
-            usd: u.sevenDayUsd,
-            tokens: u.sevenDayTokens,
-            usedPct: b7 > 0 ? Math.min(1, u.sevenDayTokens / b7) : undefined,
-          },
-        };
-        this.lastLimitsSource = 'estimate';
       }
       for (const [id, s] of this.sessions) {
         s.applyLimits(this.lastLimits, this.lastLimitsSource);
@@ -311,7 +331,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+        localResourceRoots: [
+        vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(this.extensionUri, 'media'),
+      ],
       },
     );
     // Tabs do editor não mascaram o ícone (render cru) -> versão colorida.
@@ -325,7 +348,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       panel.webview.options = {
         enableScripts: true,
-        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+        localResourceRoots: [
+        vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(this.extensionUri, 'media'),
+      ],
       };
       panel.webview.html = this.getHtml(panel.webview, 'chat', tabId);
     } catch {
@@ -498,6 +524,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       names[s.id] ? { ...s, title: names[s.id] } : s,
     );
     this.post({ kind: 'sessions', sessions, cwd });
+  }
+
+  /** Reúne conta + limites reais (quentes) e envia ao webview (botão Usage). */
+  private async sendUsage(): Promise<void> {
+    try {
+      await this.refreshUsage(true); // força API fresca (dado quente ao clicar)
+      const account = await fetchAuthStatus(this.claudePath());
+      const sonnet = this.lastApiSonnet ?? readUsageCache()?.sevenDaySonnet;
+      this.post({
+        kind: 'usageData',
+        data: {
+          account,
+          buckets: {
+            fiveHour: toBucket(this.lastLimits?.fiveHour),
+            sevenDay: toBucket(this.lastLimits?.sevenDay),
+            sevenDaySonnet: toBucket(sonnet),
+          },
+          source: this.lastUsageSource,
+          trackingEnabled: usageTrackingEnabled(),
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (e) {
+      log(`sendUsage: ${String(e)}`);
+    }
   }
 
   private autoResumeDone = false;
@@ -721,6 +772,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.reportCliStatus();
         void this.tryDiscoverModels();
         this.startUsageTimer();
+        this.post({ kind: 'taskTimings', timings: taskTimingsAll() }); // médias p/ calibrar o gauge
         this.autoResumeLast();
         this.postTabs();
         this.replayTab(bound ?? this.activeTab); // popula a superfície com sua conversa
@@ -857,6 +909,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'saveImage':
         void this.saveImage(m.mediaType, m.data);
         break;
+      case 'taskDuration':
+        // Amostra de duração por tipo: agrega/persiste (global) e devolve as
+        // médias atualizadas a TODAS as superfícies (sincroniza abas/painéis).
+        recordTaskTiming(m.type, m.ms);
+        this.post({ kind: 'taskTimings', timings: taskTimingsAll() });
+        break;
+      case 'fetchUsage':
+        void this.sendUsage(); // dado quente: busca conta + limites + breakdown ao clicar
+        break;
+      case 'enableUsageTracking': {
+        // Instala o wrapper de statusline (captura rate_limits real no próximo render).
+        const r = enableUsageTracking(this.memory);
+        const msg =
+          r === 'ok'
+            ? vscode.l10n.t('Usage tracking enabled. Real limits appear after Claude refreshes the statusline.')
+            : r === 'unsupported'
+              ? vscode.l10n.t('Live usage tracking is only available on Windows for now.')
+              : vscode.l10n.t('Could not enable usage tracking (settings.json could not be updated).');
+        void vscode.window.showInformationMessage(msg);
+        void this.sendUsage(); // reflete o novo estado de tracking no modal
+        break;
+      }
     }
   }
 
@@ -1072,6 +1146,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const base = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(base, 'main.js'));
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(base, 'main.css'));
+    // Ícone da extensão p/ o indicador de atividade (img no webview). media/ não
+    // está em localResourceRoots por padrão — incluído junto com dist/webview.
+    const iconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'icon.png'));
     const nonce = makeNonce();
     const csp = [
       `default-src 'none'`,
@@ -1091,7 +1168,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   <div id="root"></div>
-  <script nonce="${nonce}">window.__TOOTEGA_VIEW__ = ${JSON.stringify(mode)}; window.__TOOTEGA_SESSION__ = ${JSON.stringify(sessionTab ?? '')}; window.__TOOTEGA_REGION__ = ${JSON.stringify(osRegionLocale())};</script>
+  <script nonce="${nonce}">window.__TOOTEGA_VIEW__ = ${JSON.stringify(mode)}; window.__TOOTEGA_SESSION__ = ${JSON.stringify(sessionTab ?? '')}; window.__TOOTEGA_REGION__ = ${JSON.stringify(osRegionLocale())}; window.__TOOTEGA_ICON__ = ${JSON.stringify(iconUri.toString())};</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
@@ -1101,7 +1178,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(view: vscode.WebviewView): void {
     view.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(this.extensionUri, 'media'),
+      ],
     };
     view.webview.html = this.getHtml(view.webview, 'hub');
     this.hubView = view;
@@ -1117,6 +1197,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 function dedupe(arr: string[]): string[] {
   return Array.from(new Set(arr.filter(Boolean)));
+}
+
+/** LimitWindow (interno) -> UsageBucket (protocolo do modal Usage). */
+function toBucket(w?: LimitWindow): UsageBucket | undefined {
+  if (!w) return undefined;
+  return { usedPct: w.usedPct, resetsAt: w.resetsAt, tokens: w.tokens, usd: w.usd };
 }
 
 // Locale de REGIÃO do SO (formato de data/hora), NÃO o idioma da UI.

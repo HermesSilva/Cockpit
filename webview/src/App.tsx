@@ -7,13 +7,14 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { reducer, initialState, activeTab } from './store';
-import type { HostToWebview, ImageAttachment, SessionInfo } from '../../shared/protocol';
+import type { HostToWebview, ImageAttachment, SessionInfo, UsageData } from '../../shared/protocol';
 import { send } from './vscodeApi';
 import { createTranslator } from './i18n';
 import { CliMissing } from './components/CliMissing';
-import { Timeline } from './components/Timeline';
+import { Timeline, seedTaskTimings } from './components/Timeline';
 import { Composer } from './components/Composer';
 import { HubView } from './components/HubView';
+import { UsageModal } from './components/UsageModal';
 import { PermissionModal } from './components/PermissionModal';
 import { AskQuestionModal } from './components/AskQuestionModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -24,6 +25,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [state, dispatch] = useReducer(reducer, initialState);
   const [confirmDelete, setConfirmDelete] = useState<SessionInfo | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const [usage, setUsage] = useState<UsageData | null>(null);
   // null = segue as settings; boolean = override do botão "expandir/colapsar tudo".
   const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -50,7 +53,12 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   };
 
   useEffect(() => {
-    const onMsg = (e: MessageEvent) => dispatch({ type: 'host', msg: e.data as HostToWebview });
+    const onMsg = (e: MessageEvent) => {
+      const data = e.data as HostToWebview;
+      if (data?.kind === 'taskTimings') seedTaskTimings(data.timings); // médias do host p/ o gauge
+      if (data?.kind === 'usageData') setUsage(data.data); // resposta do botão Usage (dado quente)
+      dispatch({ type: 'host', msg: data });
+    };
     window.addEventListener('message', onMsg);
     send({ kind: 'init' });
     if (view === 'hub') send({ kind: 'listSessions' });
@@ -81,6 +89,16 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     dispatch({ type: 'interruptUi' });
   };
   const onSettings = () => send({ kind: 'openSettings' });
+  const onUsage = () => {
+    setUsage(null); // limpa p/ mostrar carregando; busca sempre fresco (dado quente)
+    setShowUsage(true);
+    send({ kind: 'fetchUsage' });
+  };
+  const onManageUsage = () => send({ kind: 'openLink', href: 'https://claude.ai/settings/usage' });
+  const onEnableTracking = () => {
+    setUsage(null); // mostra carregando; host instala wrapper e reenvia usageData
+    send({ kind: 'enableUsageTracking' });
+  };
 
   // Clique em link de arquivo (a.md-link) -> abre no editor via host.
   const onContentClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -142,6 +160,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           }}
           onOpenFolder={(path) => send({ kind: 'openFolder', path })}
           onSettings={onSettings}
+          onUsage={onUsage}
           onLogin={() => send({ kind: 'loginCli' })}
           onLogout={() => send({ kind: 'logoutCli' })}
           onUpdate={() => send({ kind: 'updateCli' })}
@@ -178,6 +197,16 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onCancel={() => setConfirmDeleteAll(false)}
           />
         )}
+        {showUsage && (
+          <UsageModal
+            t={t}
+            locale={state.locale}
+            usage={usage}
+            onClose={() => setShowUsage(false)}
+            onManage={onManageUsage}
+            onEnableTracking={onEnableTracking}
+          />
+        )}
       </>
     );
   }
@@ -208,6 +237,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             userName={state.config?.userName}
             todos={tab?.todos ?? []}
             answers={tab?.answers}
+            busy={tab?.status === 'busy'}
+            stats={tab?.stats}
           />
         </div>
         <ScrollMarkers scrollRef={scrollRef} items={items} />

@@ -2,12 +2,21 @@
   "name": "tootega-cockpit",
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
-  "version": "1.0.44",
+  "icon": "media/icon.png",
+  "version": "1.0.56",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
     "name": "Tootega Pesquisa e Inovação"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hermessilva/Cockpit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hermessilva/Cockpit/issues"
+  },
+  "homepage": "https://github.com/hermessilva/Cockpit#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -263,6 +272,7 @@
   },
   "scripts": {
     "build": "node esbuild.mjs",
+    "gen-icon": "node scripts/gen-icon.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "watch": "node esbuild.mjs --watch",
@@ -272,6 +282,7 @@
     "vsix": "npm run typecheck && npm version patch --no-git-tag-version && npm run build && vsce package"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^20.11.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

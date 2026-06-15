@@ -192,6 +192,8 @@ export class Session {
         if (s.subtype === 'init') {
           if (Array.isArray(s.slash_commands)) this.slashCommands = s.slash_commands;
           this.sessionId = s.session_id;
+          if (s.session_id) this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão
+
           this.emit({
             kind: 'sessionInit',
             sessionId: s.session_id,

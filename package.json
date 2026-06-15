@@ -1,0 +1,286 @@
+{
+  "name": "tootega-cockpit",
+  "displayName": "Tootega Cockpit for Claude Code",
+  "description": "%ext.description%",
+  "version": "1.0.41",
+  "publisher": "tootega",
+  "license": "MIT",
+  "author": {
+    "name": "Tootega Pesquisa e Inovação"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "ai",
+    "agent",
+    "anthropic"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onStartupFinished",
+    "onWebviewPanel:tootega.cockpit.editor",
+    "onView:tootega.hub"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "tootega.open",
+        "title": "%cmd.open%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.newSession",
+        "title": "%cmd.newSession%",
+        "category": "Tootega",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tootega.interrupt",
+        "title": "%cmd.interrupt%",
+        "category": "Tootega",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "tootega.openSessions",
+        "title": "%cmd.openSessions%",
+        "category": "Tootega",
+        "icon": "$(history)"
+      },
+      {
+        "command": "tootega.settings",
+        "title": "%cmd.settings%",
+        "category": "Tootega",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "tootega.openInEditor",
+        "title": "%cmd.openInEditor%",
+        "category": "Tootega",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "tootega.login",
+        "title": "%cmd.login%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.logout",
+        "title": "%cmd.logout%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.toggleLanguage",
+        "title": "%cmd.toggleLanguage%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.enableUsageTracking",
+        "title": "%cmd.enableUsageTracking%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.disableUsageTracking",
+        "title": "%cmd.disableUsageTracking%",
+        "category": "Tootega"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tootega",
+          "title": "Tootega Cockpit",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "tootega": [
+        {
+          "id": "tootega.hub",
+          "name": "Cockpit",
+          "type": "webview"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "tootega.open",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c"
+      },
+      {
+        "command": "tootega.newSession",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "activeWebviewPanelId == tootega.cockpit.editor"
+      },
+      {
+        "command": "tootega.interrupt",
+        "key": "ctrl+alt+period",
+        "mac": "cmd+alt+period"
+      }
+    ],
+    "configuration": {
+      "title": "Tootega Cockpit",
+      "properties": {
+        "tootega.claudePath": {
+          "type": "string",
+          "default": "claude",
+          "description": "%cfg.claudePath%"
+        },
+        "tootega.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "pt-BR",
+            "en"
+          ],
+          "default": "auto",
+          "description": "%cfg.language%"
+        },
+        "tootega.model": {
+          "type": "string",
+          "default": "default",
+          "enum": [
+            "default",
+            "claude-opus-4-8[1m]",
+            "claude-opus-4-7[1m]",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6[1m]",
+            "claude-haiku-4-5",
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
+            "claude-fable-5"
+          ],
+          "enumDescriptions": [
+            "Account default (the CLI chooses)",
+            "Claude Opus 4.8 · 1M context",
+            "Claude Opus 4.7 · 1M context",
+            "Claude Opus 4.6",
+            "Claude Sonnet 4.6 · 1M context",
+            "Claude Haiku 4.5",
+            "Claude Opus 4.5",
+            "Claude Sonnet 4.5",
+            "Claude Fable 5"
+          ],
+          "description": "%cfg.model%"
+        },
+        "tootega.effort": {
+          "type": "string",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "enumDescriptions": [
+            "CLI default (effortLevel from ~/.claude/settings.json)",
+            "Low",
+            "Medium",
+            "High",
+            "X-High",
+            "Max"
+          ],
+          "default": "default",
+          "description": "%cfg.effort%"
+        },
+        "tootega.contextLimit": {
+          "type": "number",
+          "default": 0,
+          "description": "%cfg.contextLimit%"
+        },
+        "tootega.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%cfg.apiKey%"
+        },
+        "tootega.autoResumeLastSession": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.autoResumeLastSession%"
+        },
+        "tootega.permissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "plan",
+            "acceptEdits",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ],
+          "default": "default",
+          "description": "%cfg.permissionMode%"
+        },
+        "tootega.notifyOnComplete": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.notifyOnComplete%"
+        },
+        "tootega.showThinking": {
+          "type": "boolean",
+          "default": false,
+          "description": "%cfg.showThinking%"
+        },
+        "tootega.expandToolCards": {
+          "type": "boolean",
+          "default": false,
+          "description": "%cfg.expandToolCards%"
+        },
+        "tootega.userName": {
+          "type": "string",
+          "default": "",
+          "description": "%cfg.userName%"
+        },
+        "tootega.fiveHourTokenBudget": {
+          "type": "number",
+          "default": 640000000,
+          "description": "%cfg.fiveHourTokenBudget%"
+        },
+        "tootega.weeklyTokenBudget": {
+          "type": "number",
+          "default": 19400000000,
+          "description": "%cfg.weeklyTokenBudget%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "package": "npm version patch --no-git-tag-version && npm run build && vsce package",
+    "vsix": "npm run typecheck && npm version patch --no-git-tag-version && npm run build && vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vscode/vsce": "^3.2.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "highlight.js": "^11.9.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

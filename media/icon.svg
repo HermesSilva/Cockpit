@@ -1,0 +1,21 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <!-- Coroa de chamas (anel de fogo) — 8 línguas ao redor do círculo -->
+  <g>
+    <path id="flame" d="M12 0.6C13.9 3.4 13.7 4.8 12 6.1C10.3 4.8 10.1 3.4 12 0.6Z"/>
+    <use href="#flame" transform="rotate(45 12 12)"/>
+    <use href="#flame" transform="rotate(90 12 12)"/>
+    <use href="#flame" transform="rotate(135 12 12)"/>
+    <use href="#flame" transform="rotate(180 12 12)"/>
+    <use href="#flame" transform="rotate(225 12 12)"/>
+    <use href="#flame" transform="rotate(270 12 12)"/>
+    <use href="#flame" transform="rotate(315 12 12)"/>
+  </g>
+  <!-- Anel -->
+  <circle cx="12" cy="12" r="7.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <!-- Letras "AI" em vetor (confiável sob máscara da Activity Bar) -->
+  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8.1 16.4 L10.6 8.4 L13.1 16.4"/>
+    <path d="M8.9 13.9 H12.3"/>
+    <path d="M15.6 8.4 V16.4" stroke-width="1.8"/>
+  </g>
+</svg>

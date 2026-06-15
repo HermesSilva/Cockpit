@@ -1,0 +1,21 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Coroa de chamas (anel de fogo) — laranja/fogo -->
+  <g fill="#ff7a18">
+    <path id="flame" d="M12 0.4C14.1 3.4 13.9 4.9 12 6.3C10.1 4.9 9.9 3.4 12 0.4Z" />
+    <use href="#flame" transform="rotate(45 12 12)" />
+    <use href="#flame" transform="rotate(90 12 12)" />
+    <use href="#flame" transform="rotate(135 12 12)" />
+    <use href="#flame" transform="rotate(180 12 12)" />
+    <use href="#flame" transform="rotate(225 12 12)" />
+    <use href="#flame" transform="rotate(270 12 12)" />
+    <use href="#flame" transform="rotate(315 12 12)" />
+  </g>
+  <!-- Anel -->
+  <circle cx="12" cy="12" r="7.7" fill="none" stroke="#ff9a3c" stroke-width="1.7" />
+  <!-- Letras "AI" — azul cintilante -->
+  <g fill="none" stroke="#4da3ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7.8 16.6 L10.5 8.0 L13.2 16.6" />
+    <path d="M8.7 13.9 H12.3" />
+    <path d="M15.9 8.0 V16.6" stroke-width="2.1" />
+  </g>
+</svg>

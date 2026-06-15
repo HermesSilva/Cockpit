@@ -1,0 +1,183 @@
+// Ponto de entrada da extensão.
+import * as vscode from 'vscode';
+import { ChatViewProvider } from './panel/ChatViewProvider';
+import { enableUsageTracking, disableUsageTracking, isEnabled } from './cli/StatuslineInstaller';
+import { log } from './util/logger';
+
+export function activate(context: vscode.ExtensionContext): void {
+  log('Tootega Cockpit activating…');
+
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  context.subscriptions.push(statusBar);
+
+  const provider = new ChatViewProvider(context.extensionUri, context.globalState, statusBar);
+
+  // O Cockpit vive como aba no editor (WebviewPanel). Sem view de sidebar.
+  // O item da status bar (criado pelo provider) e o comando/atalho abrem o editor.
+
+  // Na ativação (onStartupFinished): se o CLI faltar, oferece instalar.
+  void provider.promptInstallIfMissing();
+  // Oferece (uma vez) ativar o uso real da conta via statusline — enriquece o %
+  // sempre-visível. O canal automático (rate_limit_event no stream) já funciona
+  // sem isto; a statusline complementa em uso baixo.
+  void maybeOfferUsageTracking(context, provider);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('tootega.open', () => {
+      provider.openInEditor();
+    }),
+    vscode.commands.registerCommand('tootega.newSession', () => {
+      provider.newSession();
+      vscode.window.setStatusBarMessage(vscode.l10n.t('Started a new session.'), 3000);
+    }),
+    vscode.commands.registerCommand('tootega.interrupt', () => {
+      provider.interrupt();
+      vscode.window.setStatusBarMessage(vscode.l10n.t('Agent interrupted.'), 3000);
+    }),
+    vscode.commands.registerCommand('tootega.openSessions', async () => {
+      await vscode.commands.executeCommand('workbench.view.extension.tootega');
+      provider.openSessions();
+    }),
+    vscode.commands.registerCommand('tootega.settings', () => {
+      void vscode.commands.executeCommand(
+        'workbench.action.openSettings',
+        '@ext:tootega.tootega-cockpit',
+      );
+    }),
+    vscode.commands.registerCommand('tootega.openInEditor', () => {
+      provider.openInEditor();
+    }),
+    vscode.commands.registerCommand('tootega.login', () => {
+      provider.loginCli();
+    }),
+    vscode.commands.registerCommand('tootega.logout', () => {
+      provider.logoutCli();
+    }),
+    // Hub na Activity Bar (WebviewView). Mesma bundle, modo 'hub'.
+    vscode.window.registerWebviewViewProvider('tootega.hub', provider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    // Restaura o painel-editor (e sua largura/posição) ao recarregar a janela.
+    vscode.window.registerWebviewPanelSerializer('tootega.cockpit.editor', {
+      deserializeWebviewPanel: async (panel) => {
+        provider.attachPanel(panel);
+      },
+    }),
+    vscode.commands.registerCommand('tootega.enableUsageTracking', () => {
+      const r = enableUsageTracking(context.globalState);
+      if (r === 'ok') {
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t('Real usage tracking enabled. Run an interactive `claude` session once to populate it.'),
+        );
+      } else if (r === 'unsupported') {
+        void vscode.window.showWarningMessage(
+          vscode.l10n.t('Real usage tracking is Windows-only for now.'),
+        );
+      } else {
+        void vscode.window.showWarningMessage(
+          vscode.l10n.t('Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.'),
+        );
+      }
+      provider.refreshUsageNow();
+    }),
+    vscode.commands.registerCommand('tootega.disableUsageTracking', () => {
+      const r = disableUsageTracking(context.globalState);
+      void vscode.window.showInformationMessage(
+        r === 'ok'
+          ? vscode.l10n.t('Real usage tracking disabled.')
+          : vscode.l10n.t('Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.'),
+      );
+      provider.refreshUsageNow();
+    }),
+    vscode.commands.registerCommand('tootega.toggleLanguage', async () => {
+      const cfg = vscode.workspace.getConfiguration('tootega');
+      const current = cfg.get<string>('language', 'auto');
+      const next = current === 'pt-BR' ? 'en' : 'pt-BR';
+      await cfg.update('language', next, vscode.ConfigurationTarget.Global);
+      provider.pushLocale();
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('tootega.language')) provider.pushLocale();
+      if (e.affectsConfiguration('tootega.apiKey')) provider.refreshModels();
+      if (
+        e.affectsConfiguration('tootega.fiveHourTokenBudget') ||
+        e.affectsConfiguration('tootega.weeklyTokenBudget')
+      ) {
+        provider.refreshUsageNow();
+      }
+      // Mudança de model/effort/permission: reinicia overrides + reflete nos combos.
+      if (
+        e.affectsConfiguration('tootega.model') ||
+        e.affectsConfiguration('tootega.effort') ||
+        e.affectsConfiguration('tootega.permissionMode')
+      ) {
+        provider.applyDefaultsFromSettings();
+      }
+      // Prefs só de UI: re-empurra config sem reiniciar a sessão.
+      if (
+        e.affectsConfiguration('tootega.showThinking') ||
+        e.affectsConfiguration('tootega.expandToolCards') ||
+        e.affectsConfiguration('tootega.userName')
+      ) {
+        provider.pushConfig();
+      }
+    }),
+  );
+
+  // URI handler: vscode://tootega.tootega-cockpit/open
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri: (uri) => {
+        if (uri.path === '/open' || uri.path === '') {
+          void vscode.commands.executeCommand('tootega.open');
+        }
+      },
+    }),
+  );
+
+  log('Tootega Cockpit activated.');
+}
+
+export function deactivate(): void {
+  log('Tootega Cockpit deactivated.');
+}
+
+/**
+ * Oferece (uma única vez) ativar o uso real da conta via statusline. Windows-only
+ * por enquanto. Não insiste: grava um flag em globalState após a primeira oferta.
+ */
+async function maybeOfferUsageTracking(
+  context: vscode.ExtensionContext,
+  provider: ChatViewProvider,
+): Promise<void> {
+  if (process.platform !== 'win32') return; // instalador Windows-only por ora
+  if (isEnabled()) return; // já ativo
+  if (context.globalState.get<boolean>('usageTrackingPrompted')) return;
+  void context.globalState.update('usageTrackingPrompted', true);
+  const enable = vscode.l10n.t('Enable');
+  const pick = await vscode.window.showInformationMessage(
+    vscode.l10n.t(
+      'Show real account usage (5h / 7-day limits) in the Cockpit? This wraps your Claude Code statusline; you can undo it anytime.',
+    ),
+    enable,
+  );
+  if (pick !== enable) return;
+  const r = enableUsageTracking(context.globalState);
+  if (r === 'ok') {
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t(
+        'Real usage tracking enabled. Run an interactive `claude` session once to populate it.',
+      ),
+    );
+  } else if (r !== 'unsupported') {
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        'Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.',
+      ),
+    );
+  }
+  provider.refreshUsageNow();
+}

@@ -1,0 +1,15 @@
+{
+  "Started a new session.": "Nova sessão iniciada.",
+  "Agent interrupted.": "Agente interrompido.",
+  "File not found: {0}": "Arquivo não encontrado: {0}",
+  "Claude finished responding.": "O Claude terminou de responder.",
+  "Real usage tracking enabled. Run an interactive `claude` session once to populate it.": "Uso real ativado. Rode uma sessão interativa do `claude` uma vez para preencher.",
+  "Real usage tracking disabled.": "Uso real desativado.",
+  "Real usage tracking is Windows-only for now.": "Uso real por enquanto é só no Windows.",
+  "Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.": "Não consegui atualizar ~/.claude/settings.json (tem comentários?). Edite manualmente.",
+  "Installing Claude Code CLI… when it finishes, click \"Re-check\".": "Instalando o Claude Code CLI… ao terminar, clique em \"Verificar novamente\".",
+  "Claude Code CLI not found. The Cockpit needs it to run.": "Claude Code CLI não encontrado. O Cockpit precisa dele para funcionar.",
+  "Install": "Instalar",
+  "Documentation": "Documentação",
+  "In the terminal, use /login to sign in. Then click \"Re-check\".": "No terminal, use /login para entrar. Depois clique em \"Verificar novamente\"."
+}

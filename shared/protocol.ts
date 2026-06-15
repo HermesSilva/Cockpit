@@ -38,6 +38,29 @@ export interface StatsSnapshot {
   limitsSource?: 'statusline' | 'stream' | 'estimate';
 }
 
+// --- Account & Usage (botão "Usage") ---
+export interface UsageAccount {
+  loggedIn: boolean;
+  authMethod?: string; // 'claude.ai' | 'console' | …
+  apiProvider?: string;
+  email?: string;
+  orgName?: string;
+  plan?: string; // subscriptionType ('max' | 'pro' | …)
+}
+export interface UsageBucket {
+  usedPct?: number; // 0..1
+  resetsAt?: string; // ISO 8601
+  tokens?: number; // estimativa local (quando não há % real)
+  usd?: number;
+}
+export interface UsageData {
+  account: UsageAccount;
+  buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; sevenDaySonnet?: UsageBucket };
+  source: 'api' | 'statusline' | 'stream' | 'estimate'; // origem dos %
+  trackingEnabled: boolean; // wrapper de statusline instalado (captura rate_limits real)
+  generatedAt: string; // ISO 8601
+}
+
 export interface SessionConfig {
   model: string; // valor selecionado ('default' = padrão do CLI)
   effort: string; // 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -174,6 +197,8 @@ type HostMsg =
   | { kind: 'history'; items: HistoryItem[] }
   | { kind: 'resolvedPath'; requestId: string; text: string }
   | { kind: 'openSessions' }
+  | { kind: 'taskTimings'; timings: Record<string, number> } // médias de duração por tipo (gauge)
+  | { kind: 'usageData'; data: UsageData } // resposta ao botão "Usage"
   | { kind: 'locale'; locale: string };
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
@@ -229,4 +254,7 @@ export type WebviewToHost =
   | { kind: 'compactContext' }
   | { kind: 'openEditor' }
   | { kind: 'openFolder'; path: string }
+  | { kind: 'taskDuration'; type: string; ms: number } // amostra de duração de tarefa (gauge)
+  | { kind: 'fetchUsage' } // botão "Usage": busca conta + limites + breakdown (dado quente)
+  | { kind: 'enableUsageTracking' } // instala o wrapper de statusline p/ capturar rate_limits real
   | { kind: 'saveImage'; mediaType: string; data: string };

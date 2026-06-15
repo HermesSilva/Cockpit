@@ -1,5 +1,6 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import type { Translator } from '../i18n';
+import type { StatsSnapshot } from '../../../shared/protocol';
 import { send } from '../vscodeApi';
 import type { TimelineItem, AssistantItem, ToolItem, UserItem, TodoItem, AskQuestion } from '../types';
 import { isTodoToolName } from '../store';
@@ -50,6 +51,8 @@ interface Props {
   userName?: string;
   todos: TodoItem[];
   answers?: Record<string, string>;
+  busy?: boolean; // turno em andamento: mostra o indicador de atividade no fim
+  stats?: StatsSnapshot; // tokens enviados/recebidos p/ o contador do indicador
 }
 
 // Agrupa itens em turnos: cada mensagem do usuário e, depois dela, a corrida
@@ -98,6 +101,8 @@ export function Timeline({
   userName,
   todos,
   answers,
+  busy,
+  stats,
 }: Props) {
   if (items.length === 0 && emptyHint) {
     return (
@@ -141,6 +146,151 @@ export function Timeline({
             answers={answers}
           />
         ),
+      )}
+      {busy && <ActivityIndicator t={t} items={items} stats={stats} />}
+    </div>
+  );
+}
+
+// Gauge de progresso (assintótico). Só aparece depois de GAUGE_DELAY de espera —
+// tarefas curtas (< 2s) não mostram gauge, evitando piscação. Ao surgir já começa
+// em GAUGE_START (10%) e cresce desacelerando: progress = 1 - (1-START)·e^(-(t-DELAY)/τ),
+// com teto 1 - GAUGE_FLOOR (≈ 97%, nunca 100%). Reinicia a cada informação recebida;
+// ao concluir/encerrar simplesmente some (sem flash de 100%). GAUGE_TAU = velocidade.
+const GAUGE_TAU = 25_000;
+const GAUGE_FLOOR = 0.03;
+const GAUGE_DELAY = 2_000;
+const GAUGE_START = 0.1;
+
+// --- Calibração do gauge por tipo de tarefa (menos "fake") ---
+// As médias de duração por tipo vêm do HOST (persistidas em ~/.claude/tootega,
+// globais p/ todo projeto/aba/sessão). A webview envia amostras de duração e
+// consulta o mapa recebido p/ derivar τ — assim o gauge é rápido p/ tarefas
+// tipicamente curtas e lento p/ longas, calibrado ao tempo real.
+const TASK_AVG = new Map<string, number>(); // tipo -> média (ms): espelho do host
+const TAU_TARGET = 0.8; // progresso que o gauge deve atingir na duração média
+// τ = (média - DELAY) / k, onde k resolve progress=TAU_TARGET na média.
+const TAU_K = Math.log((1 - GAUGE_START) / (1 - TAU_TARGET)); // ≈ 1.504
+const TAU_MIN = 1_500;
+const TAU_MAX = 120_000;
+
+/** Semeia/atualiza o espelho local com as médias vindas do host. */
+export function seedTaskTimings(timings: Record<string, number>): void {
+  TASK_AVG.clear();
+  for (const [k, v] of Object.entries(timings)) if (Number.isFinite(v)) TASK_AVG.set(k, v);
+}
+// Tipo da tarefa em andamento = o que se está esperando agora: o resultado de
+// uma tool (por nome) ou a próxima resposta do modelo.
+function taskType(items: TimelineItem[]): string {
+  const last = items[items.length - 1];
+  if (last && last.kind === 'tool' && !last.done) return `tool:${last.name}`;
+  return 'assistant';
+}
+function tauForType(type: string): number {
+  const avg = TASK_AVG.get(type);
+  if (avg == null) return GAUGE_TAU; // sem amostra ainda: padrão
+  return Math.min(TAU_MAX, Math.max(TAU_MIN, (avg - GAUGE_DELAY) / TAU_K));
+}
+
+// Indicador de atividade na última linha do timeline (enquanto o turno corre):
+// ícone da extensão + spinner + contador de tokens enviados/recebidos, como na
+// GUI original do Claude Code, + gauge de progresso restante (assintótico) à
+// direita do "Working". "Recebidos" soma a saída consolidada à estimativa do
+// turno em voo (texto÷4) para contar ao vivo durante o streaming.
+function ActivityIndicator({
+  t,
+  items,
+  stats,
+}: {
+  t: Translator;
+  items: TimelineItem[];
+  stats?: StatsSnapshot;
+}) {
+  const icon = window.__TOOTEGA_ICON__;
+  // Assinatura de "informação recebida": muda a cada item novo (texto/tool),
+  // resultado de tool que chega, ou resposta concluída. É o gatilho de reinício
+  // — streaming no mesmo bloco não muda o id, mas cada chegada muda a assinatura.
+  let doneAssist = 0;
+  let doneTools = 0;
+  for (const it of items) {
+    if (it.kind === 'assistant') {
+      if (it.done) doneAssist++;
+    } else if (it.kind === 'tool' && it.done) {
+      doneTools++;
+    }
+  }
+  // Texto/thinking da resposta em voo: cresce a cada token que aparece. Usado p/
+  // resetar o gauge enquanto a resposta está visivelmente chegando.
+  const last = items[items.length - 1];
+  const flowing =
+    last && last.kind === 'assistant' && !last.done ? last.text.length + last.thinking.length : 0;
+  // Segmento "grosso" (aprendizado de duração + tipo): item novo / tool / conclusão.
+  const segSig = `${items.length}:${doneAssist}:${doneTools}`;
+  // Sinal "fino" (reset visual): muda também quando chega token → o gauge não sobe
+  // enquanto a resposta chega; só sobe em stall real (> GAUGE_DELAY sem nada novo).
+  const liveSig = `${segSig}:${flowing}`;
+  const sent = stats?.inputTokens ?? 0;
+  const received = stats?.outputTokens ?? 0;
+  const [elapsed, setElapsed] = useState(0);
+  const gaugeStartRef = useRef(Date.now()); // base do gauge (reset por liveSig)
+  const segStartRef = useRef(Date.now()); // base do segmento (aprendizado)
+  const prevLive = useRef(liveSig);
+  const prevSeg = useRef(segSig);
+  const typeRef = useRef(taskType(items)); // tipo da espera atual
+  const tauRef = useRef(tauForType(typeRef.current)); // τ calibrado p/ esse tipo
+  // Tick do cronômetro do gauge.
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Date.now() - gaugeStartRef.current), 100);
+    return () => clearInterval(id);
+  }, []);
+  // Qualquer informação que chega (item, tool result OU token fluindo) reinicia o
+  // gauge — assim ele só "sobe" num stall real, e some quando a resposta chega.
+  useEffect(() => {
+    if (liveSig === prevLive.current) return;
+    prevLive.current = liveSig;
+    gaugeStartRef.current = Date.now();
+    setElapsed(0);
+  }, [liveSig]);
+  // Aprendizado: mede a duração só nos segmentos grossos (não por token, p/ não
+  // poluir a EMA) e calibra τ pelo tipo da próxima espera.
+  useEffect(() => {
+    if (segSig === prevSeg.current) return;
+    prevSeg.current = segSig;
+    const dur = Date.now() - segStartRef.current;
+    if (dur >= 150) send({ kind: 'taskDuration', type: typeRef.current, ms: dur });
+    typeRef.current = taskType(items);
+    tauRef.current = tauForType(typeRef.current);
+    segStartRef.current = Date.now();
+  }, [segSig]);
+  // Gauge só após GAUGE_DELAY (stall > 2s); surge em GAUGE_START e cresce
+  // assintótico (τ calibrado pelo tipo de tarefa) até o teto (1 - GAUGE_FLOOR).
+  const showGauge = elapsed >= GAUGE_DELAY;
+  const progress = Math.min(
+    1 - GAUGE_FLOOR,
+    1 - (1 - GAUGE_START) * Math.exp(-(elapsed - GAUGE_DELAY) / tauRef.current),
+  );
+  const pct = Math.round(progress * 100);
+  return (
+    <div className="activity" role="status" aria-live="polite">
+      {icon && <img className="activity-icon" src={icon} alt="" width={16} height={16} />}
+      <span className="activity-spinner" aria-hidden="true" />
+      <span className="activity-tokens">
+        <span className="activity-up" title={t('activity.sent')}>↑ {fmtCompact(sent)}</span>
+        <span className="activity-down" title={t('activity.received')}>↓ {fmtCompact(received)}</span>
+      </span>
+      <span className="activity-label">{t('activity.working')}</span>
+      {showGauge && (
+        <span
+          className="activity-gauge"
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          title={`${pct}%`}
+        >
+          <span className="activity-gauge-fill" style={{ width: `${(progress * 100).toFixed(1)}%` }} />
+          <span className="activity-gauge-pct">{pct}%</span>
+        </span>
       )}
     </div>
   );

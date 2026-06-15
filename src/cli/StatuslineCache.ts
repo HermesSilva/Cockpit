@@ -7,6 +7,8 @@ import type { LimitWindow } from '../../shared/protocol';
 export interface RealLimits {
   fiveHour?: LimitWindow;
   sevenDay?: LimitWindow;
+  sevenDaySonnet?: LimitWindow; // janela semanal específica de Sonnet (quando existe)
+  ageMs?: number; // idade do cache (now - ts); undefined se ts ausente
   raw?: unknown; // rate_limits cru, para depuração
 }
 
@@ -17,12 +19,23 @@ export function readUsageCache(): RealLimits | undefined {
   } catch {
     return undefined;
   }
+  const ageMs = cacheAge(obj?.ts);
   const rl = obj?.rate_limits;
-  if (!rl || typeof rl !== 'object') return undefined;
+  if (!rl || typeof rl !== 'object') return { ageMs, raw: rl };
   const fiveHour = parseWindow(rl.five_hour ?? rl.fiveHour ?? rl['5h']);
   const sevenDay = parseWindow(rl.seven_day ?? rl.sevenDay ?? rl['7d'] ?? rl.weekly);
-  if (!fiveHour && !sevenDay) return { raw: rl };
-  return { fiveHour, sevenDay, raw: rl };
+  const sevenDaySonnet = parseWindow(
+    rl.seven_day_sonnet ?? rl.sevenDaySonnet ?? rl.weekly_sonnet ?? rl.sonnet,
+  );
+  if (!fiveHour && !sevenDay && !sevenDaySonnet) return { ageMs, raw: rl };
+  return { fiveHour, sevenDay, sevenDaySonnet, ageMs, raw: rl };
+}
+
+/** Idade (ms) do cache a partir do campo `ts` (ISO). undefined se ausente/inválido. */
+function cacheAge(ts: unknown): number | undefined {
+  if (typeof ts !== 'string') return undefined;
+  const t = Date.parse(ts);
+  return Number.isNaN(t) ? undefined : Math.max(0, Date.now() - t);
 }
 
 function parseWindow(w: any): LimitWindow | undefined {

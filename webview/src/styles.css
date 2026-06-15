@@ -718,6 +718,92 @@ body {
   color: #d97757;
   opacity: 1;
 }
+/* Indicador de atividade: última linha do timeline enquanto o turno corre.
+   Ícone da extensão + spinner + contador de tokens enviados/recebidos. */
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 90%;
+  margin: 6px auto 2px 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  background: color-mix(in srgb, var(--vscode-foreground, #cccccc) 6%, transparent);
+}
+.activity-icon {
+  flex: none;
+  display: block;
+  opacity: 0.95;
+}
+.activity-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: #d97757;
+  animation: activity-spin 0.8s linear infinite;
+}
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.activity-label {
+  font-weight: 500;
+}
+.activity-tokens {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Gauge de progresso restante (assintótico): à direita do "Working". A largura
+   do fill é dirigida por JS (decaimento exponencial); a transition só suaviza
+   entre os ticks de 100ms. */
+.activity-gauge {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  overflow: hidden;
+}
+.activity-gauge-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--vscode-focusBorder, #3794ff);
+  transition: width 0.12s linear;
+}
+/* Rótulo do percentual já percorrido, centrado sobre a barra. Sombra p/ legibilidade
+   tanto sobre o trecho preenchido (azul) quanto sobre o trilho. */
+.activity-gauge-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-foreground, #e0e0e0);
+  text-shadow: 0 0 2px var(--vscode-editor-background, #1e1e1e),
+    0 0 2px var(--vscode-editor-background, #1e1e1e);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-spinner {
+    animation: none;
+  }
+  .activity-gauge-fill {
+    transition: none;
+  }
+}
 /* Elementos vindos do Claude (texto + tools): 90% da largura da webview,
    alinhados à esquerda. Prompts do usuário ficam de fora (regra .bubble.user). */
 .bubble.assistant {
@@ -2806,4 +2892,291 @@ body {
 }
 .hub .ctx-panel-body {
   padding: 12px 10px;
+}
+
+/* ===== Account & Usage modal (botão Usage) ===== */
+.modal.usage {
+  width: 460px;
+  max-width: 92vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.usage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.18));
+}
+.usage-head .modal-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.usage-close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.usage-close:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: var(--vscode-foreground, #e0e0e0);
+}
+.usage-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  font-size: 13px;
+}
+.usage-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: var(--vscode-focusBorder, #3794ff);
+  animation: activity-spin 0.8s linear infinite;
+}
+.usage-body {
+  padding: 6px 16px 16px;
+  overflow-y: auto;
+}
+.usage-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  margin: 16px 0 8px;
+}
+.usage-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.usage-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+.usage-row-k {
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  flex: 0 0 auto;
+}
+.usage-row-v {
+  margin-left: auto;
+  text-align: right;
+  color: var(--vscode-foreground, #e0e0e0);
+  overflow-wrap: anywhere;
+}
+.usage-row-v.accent {
+  color: var(--vscode-focusBorder, #4da3ff);
+  font-weight: 600;
+}
+/* Medidores das janelas de limite */
+.usage-meter {
+  margin: 10px 0 12px;
+}
+.usage-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.usage-meter-label {
+  color: var(--vscode-foreground, #e0e0e0);
+}
+.usage-meter-pct {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  overflow: hidden;
+}
+.usage-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.35s ease;
+}
+.usage-bar-fill.warm {
+  background: linear-gradient(90deg, #e08a5b, #d97757);
+}
+.usage-bar-fill.cool {
+  background: linear-gradient(90deg, #4da3ff, var(--vscode-focusBorder, #3794ff));
+}
+.usage-bar-fill.unknown {
+  background: color-mix(in srgb, currentColor 30%, transparent);
+}
+.usage-meter-sub {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.usage-link {
+  display: inline-block;
+  margin-top: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--vscode-textLink-foreground, #4daafc);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.usage-link:hover {
+  text-decoration: underline;
+}
+/* Toggle Dia/Semana */
+.usage-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  margin-bottom: 10px;
+}
+.usage-toggle button {
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  font-size: 12px;
+  padding: 3px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.usage-toggle button.on {
+  background: var(--vscode-focusBorder, #3794ff);
+  color: #fff;
+  font-weight: 600;
+}
+.usage-approx {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  margin-bottom: 12px;
+}
+.usage-insight {
+  margin-bottom: 12px;
+}
+.usage-insight-title {
+  font-size: 13px;
+  color: var(--vscode-foreground, #e0e0e0);
+  margin-bottom: 3px;
+}
+.usage-insight-desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  padding-left: 2px;
+}
+.usage-sub-table {
+  margin-top: 4px;
+  border-top: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.16));
+  padding-top: 8px;
+}
+.usage-sub-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  margin-bottom: 6px;
+}
+.usage-sub-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  padding: 3px 0;
+  color: var(--vscode-foreground, #d8d8d8);
+}
+.usage-sub-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground, #b0b0b0);
+}
+.usage-muted {
+  font-size: 12.5px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  padding: 4px 0;
+}
+.usage-stamp {
+  margin-top: 14px;
+  font-size: 10.5px;
+  text-align: right;
+  color: var(--vscode-descriptionForeground, #7a7a7a);
+}
+/* Badge de fonte (ao vivo vs estimativa) ao lado do rótulo USAGE. */
+.usage-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  vertical-align: middle;
+}
+.usage-badge.live {
+  background: color-mix(in srgb, var(--vscode-charts-green, #4caf50) 22%, transparent);
+  color: var(--vscode-charts-green, #6bbf59);
+}
+.usage-badge.est {
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #d9a23a) 22%, transparent);
+  color: var(--vscode-charts-yellow, #d9a23a);
+}
+/* Barra esmaecida quando é estimativa (não é o limite real). */
+.usage-bar-fill.estimate {
+  opacity: 0.45;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(255, 255, 255, 0.18) 4px,
+    rgba(255, 255, 255, 0.18) 8px
+  );
+}
+.usage-est-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.usage-cta {
+  flex: none;
+  background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 50%, transparent);
+  color: var(--vscode-foreground, #e0e0e0);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.usage-cta:hover {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 28%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .usage-spinner {
+    animation: none;
+  }
+  .usage-bar-fill {
+    transition: none;
+  }
 }

@@ -21,6 +21,7 @@ interface Props {
   onNewSession: () => void;
   onOpenFolder: (path: string) => void;
   onSettings: () => void;
+  onUsage: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onUpdate: () => void;
@@ -52,6 +53,7 @@ export function HubView({
   onNewSession,
   onOpenFolder,
   onSettings,
+  onUsage,
   onLogin,
   onLogout,
   onUpdate,
@@ -118,6 +120,11 @@ export function HubView({
 
       {/* Barra de botões */}
       <div className="ctx-panel-actions">
+        <Tooltip title={t('usage.title')} text={t('tip.usage.desc')}>
+          <button type="button" className="ctx-link" onClick={onUsage}>
+            📊 {t('usage.button')}
+          </button>
+        </Tooltip>
         <Tooltip title={t('tip.login.title')} text={t('tip.login.desc')}>
           <button type="button" className="ctx-link" onClick={onLogin}>
             🔑 {t('tip.login.title')}

@@ -17,6 +17,10 @@ export const ptBR: Strings = {
   'attach.remove': 'Remover anexo',
   'attach.view': 'Ver imagem',
 
+  'activity.working': 'Processando…',
+  'activity.sent': 'Tokens enviados',
+  'activity.received': 'Tokens recebidos',
+
   'tip.time': 'Horário',
   'tip.chars': 'Caracteres',
   'tip.words': 'Palavras',
@@ -135,6 +139,49 @@ export const ptBR: Strings = {
   'tip.login.desc': 'Entra no Claude num terminal (OAuth no browser via CLI). Credenciais ficam no CLI.',
   'tip.logout.title': 'Sair',
   'tip.logout.desc': 'Sai do Claude (roda `claude auth logout` num terminal).',
+  'tip.usage.desc': 'Conta e consumo: limites (5h / semana), plano e o que está puxando o seu uso. Busca ao vivo ao clicar.',
+
+  'usage.button': 'Uso',
+  'usage.title': 'Conta & Uso',
+  'usage.loading': 'Buscando uso…',
+  'usage.account': 'Conta',
+  'usage.authMethod': 'Método de login',
+  'usage.email': 'E-mail',
+  'usage.org': 'Organização',
+  'usage.plan': 'Plano',
+  'usage.notLoggedIn': 'Não autenticado.',
+  'usage.usage': 'Uso',
+  'usage.session5h': 'Sessão (5h)',
+  'usage.weekly7d': 'Semanal (7 dias)',
+  'usage.weeklySonnet': 'Semanal Sonnet',
+  'usage.manage': 'Gerenciar uso no claude.ai',
+  'usage.na': 'n/d',
+  'usage.resetsIn': 'Reinicia em {0}',
+  'usage.contributing': 'O que está contribuindo para o seu uso?',
+  'usage.day': 'Dia',
+  'usage.week': 'Semana',
+  'usage.approx':
+    'Aproximado, com base nas sessões locais desta máquina — não inclui outros dispositivos nem o claude.ai.',
+  'usage.noData': 'Sem uso registrado nesta janela.',
+  'usage.i.context': '{0}% do seu uso foi com contexto > 150k',
+  'usage.i.context.desc':
+    'Sessões longas custam mais mesmo com cache. Use /compact no meio da tarefa e /clear ao trocar de assunto.',
+  'usage.i.subagents': '{0}% do seu uso veio de subagentes',
+  'usage.i.subagents.desc':
+    'Cada subagente faz as próprias requisições. Use com critério — e considere um modelo mais barato para subagentes simples.',
+  'usage.i.topSub': '{0}% do seu uso veio de subagentes em "{1}"',
+  'usage.i.topSub.desc':
+    'Se isso roda com frequência, configure os subagentes com um modelo mais barato ou enxugue os prompts.',
+  'usage.subagents': 'Subagentes',
+  'usage.pctOfUsage': '% do uso',
+  'usage.generatedAt': 'Buscado às {0}',
+  'usage.badge.live': 'ao vivo',
+  'usage.badge.est': 'estimativa',
+  'usage.est.note':
+    'Estimativa local — os limites exatos da conta vêm da statusline do CLI (indisponível em modo headless). Ative o tracking ao vivo para capturá-los.',
+  'usage.est.waiting':
+    'Estimativa local — os limites reais aparecem depois que o Claude atualiza a statusline (use o CLI uma vez).',
+  'usage.enableTracking': 'Ativar ao vivo',
   'tip.stop.title': 'Interromper',
   'tip.stop.desc': 'Para o agente agora. O turno atual encerra e a sessão continua aberta.',
 

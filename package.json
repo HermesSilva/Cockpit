@@ -2,7 +2,7 @@
   "name": "tootega-cockpit",
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
-  "version": "1.0.41",
+  "version": "1.0.44",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -263,6 +263,8 @@
   },
   "scripts": {
     "build": "node esbuild.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit",
     "vscode:prepublish": "node esbuild.mjs --production",
@@ -271,12 +273,13 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@vscode/vsce": "^3.2.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.21.5",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "highlight.js": "^11.9.0",

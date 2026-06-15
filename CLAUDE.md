@@ -1,207 +1,207 @@
-# CLAUDE.md — Diretivas do Projeto
+# CLAUDE.md — Project Directives
 
-> Arquivo de diretivas lido pelo Claude Code (e por qualquer agente) ao trabalhar neste repositório.
-> Mantém escopo, princípios de arquitetura, convenções e o catálogo de features.
+> Directives file read by Claude Code (and any agent) when working in this repository.
+> Defines scope, architecture principles, conventions, and the feature catalog.
 
 ---
 
-## 1. Identidade do produto
+## 1. Product identity
 
-| Campo | Valor |
+| Field | Value |
 |-------|-------|
-| **Nome de trabalho** | Tootega Cockpit for Claude Code *(nome provisório — a confirmar)* |
-| **Autoria / Mantenedor** | **Tootega Pesquisa e Inovação** |
-| **Tipo** | Extensão nativa do **Visual Studio Code** (GUI) |
-| **Licença** | **MIT** (open source) |
-| **Natureza** | Interface/ferramenta que opera **através do Claude Code CLI** — não reimplementa o agente |
-| **Público** | Desenvolvedores que usam Claude Code e querem GUI rica, transparência de consumo e controle fino |
-| **Idiomas** | **Bilíngue obrigatório**: pt-BR e **inglês internacional** (neutro, sem regionalismos US/UK) |
+| **Working name** | Tootega Cockpit for Claude Code *(working name — to be confirmed)* |
+| **Authorship / Maintainer** | **Tootega Pesquisa e Inovação** |
+| **Type** | Native **Visual Studio Code** extension (GUI) |
+| **License** | **MIT** (open source) |
+| **Nature** | Interface/tool that operates **through the Claude Code CLI** — it does not reimplement the agent |
+| **Audience** | Developers who use Claude Code and want a rich GUI, consumption transparency, and fine-grained control |
+| **Languages** | **Bilingual, mandatory**: pt-BR and **international English** (neutral, no US/UK regionalisms) |
 
-### Princípio fundador
+### Founding principle
 
-Esta UI é **apenas uma camada de apresentação e controle**. Toda a orquestração — loop do agente, execução de tools, subagentes, todos, gestão de contexto, compactação, permissões, MCP, hooks, skills — **vive no Claude Code CLI**. A extensão:
+This UI is **only a presentation and control layer**. All orchestration — the agent loop, tool execution, subagents, todos, context management, compaction, permissions, MCP, hooks, skills — **lives in the Claude Code CLI**. The extension:
 
-1. **Renderiza** o stream de eventos que o CLI emite.
-2. **Captura** input do usuário e implementa o lado-cliente dos protocolos interativos (aprovação de permissão, plan mode, respostas a perguntas).
-3. **Nunca** reimplementa a lógica do motor. Se algo de orquestração precisa mudar, é problema do CLI, não nosso.
+1. **Renders** the event stream the CLI emits.
+2. **Captures** user input and implements the client side of the interactive protocols (permission approval, plan mode, answering questions).
+3. **Never** reimplements the engine logic. If something about orchestration needs to change, that is the CLI's problem, not ours.
 
 ---
 
-## 2. Arquitetura (resumo)
+## 2. Architecture (summary)
 
 ```
-┌────────────────────────────┐         stream-json (stdout)        ┌─────────────────────────────┐
-│   Claude Code CLI           │ ──────────────────────────────────▶ │  Extensão VSCode             │
-│   (motor / engine)          │                                      │                              │
-│   - agent loop              │ ◀────────────────────────────────── │  ┌────────────────────────┐  │
-│   - tools, subagentes       │      input + respostas (stdin)       │  │ Webview (React)        │  │
-│   - todos, contexto, cache  │                                      │  │ - chat / timeline      │  │
-│   - permissões, MCP, hooks  │                                      │  │ - painel de stats      │  │
+┌────────────────────────────┐         stream-json (stdout)        ┌──────────────────────────────┐
+│   Claude Code CLI          │ ──────────────────────────────────▶ │  VSCode Extension            │
+│   (engine)                 │                                      │                              │
+│   - agent loop             │ ◀────────────────────────────────── │  ┌────────────────────────┐  │
+│   - tools, subagents       │      input + responses (stdin)       │  │ Webview (React)        │  │
+│   - todos, context, cache  │                                      │  │ - chat / timeline      │  │
+│   - permissions, MCP, hooks│                                      │  │ - stats panel          │  │
 └────────────────────────────┘                                      │  │ - diff / checkpoints   │  │
-                                                                     │  └────────────────────────┘  │
-                                                                     │  ┌────────────────────────┐  │
-                                                                     │  │ Host da extensão (TS)  │  │
-                                                                     │  │ - spawn do processo    │  │
-                                                                     │  │ - parser stream-json   │  │
-                                                                     │  │ - APIs nativas VSCode  │  │
-                                                                     │  └────────────────────────┘  │
-                                                                     └─────────────────────────────┘
+                                                                    │  └────────────────────────┘  │
+                                                                    │  ┌────────────────────────┐  │
+                                                                    │  │ Extension host (TS)    │  │
+                                                                    │  │ - process spawn        │  │
+                                                                    │  │ - stream-json parser   │  │
+                                                                    │  │ - native VSCode APIs   │  │
+                                                                    │  └────────────────────────┘  │
+                                                                    └──────────────────────────────┘
 ```
 
-**Canal primário com o motor:** `claude` em modo headless/streaming:
+**Primary channel with the engine:** `claude` in headless/streaming mode:
 
 ```
 claude -p --output-format stream-json --input-format stream-json --verbose
 ```
 
-- `--output-format stream-json`: o CLI emite um evento JSON por linha (mensagens, tool_use, tool_result, usage, etc.).
-- `--input-format stream-json`: permite enviar mensagens e respostas pelo stdin durante a sessão.
-- Sessões retomáveis via `--resume <session_id>` / `--continue`.
+- `--output-format stream-json`: the CLI emits one JSON event per line (messages, tool_use, tool_result, usage, etc.).
+- `--input-format stream-json`: allows sending messages and responses via stdin during the session.
+- Resumable sessions via `--resume <session_id>` / `--continue`.
 
-**Fontes de dados complementares** (estatísticas/conta), descritas no plano de execução:
-- Hook de **statusline** (JSON com `model`, `context_window`, `cost`, `rate_limits.five_hour`, `rate_limits.seven_day`).
-- Comandos `/usage`, `/context`, `/cost` (ou seus equivalentes programáticos).
-- Arquivos de sessão/transcript em `~/.claude/`.
+**Complementary data sources** (statistics/account), described in the execution plan:
+- **Statusline** hook (JSON with `model`, `context_window`, `cost`, `rate_limits.five_hour`, `rate_limits.seven_day`).
+- `/usage`, `/context`, `/cost` commands (or their programmatic equivalents).
+- Session/transcript files in `~/.claude/`.
 
-> **Decisão de arquitetura registrada:** o canal é o **CLI**, não a Anthropic API/Agent SDK diretos. Isso mantém paridade automática com o motor oficial (auth, billing, limites da assinatura, features novas) sem reimplementar nada.
+> **Recorded architecture decision:** the channel is the **CLI**, not the Anthropic API/Agent SDK directly. This keeps automatic parity with the official engine (auth, billing, subscription limits, new features) without reimplementing anything.
 
 ---
 
-## 3. Stack técnico (alvo)
+## 3. Technical stack (target)
 
-| Camada | Tecnologia |
+| Layer | Technology |
 |--------|-----------|
-| Extensão (host) | TypeScript, VS Code Extension API |
-| UI (webview) | React + Vite, CSS com tokens de tema do VSCode (`var(--vscode-*)`) |
-| Comunicação webview ↔ host | `postMessage` / `acquireVsCodeApi()` |
-| Comunicação host ↔ motor | `child_process` (spawn do `claude`), parser NDJSON |
-| Diffs | API nativa de diff do VSCode + render custom no webview quando necessário |
-| Testes | Vitest (unit), `@vscode/test-electron` (integração) |
-| Empacotamento | `vsce` / `ovsx` (Open VSX para forks) |
+| Extension (host) | TypeScript, VS Code Extension API |
+| UI (webview) | React + Vite, CSS with VSCode theme tokens (`var(--vscode-*)`) |
+| Webview ↔ host communication | `postMessage` / `acquireVsCodeApi()` |
+| Host ↔ engine communication | `child_process` (spawning `claude`), NDJSON parser |
+| Diffs | Native VSCode diff API + custom webview rendering when needed |
+| Testing | Vitest (unit), `@vscode/test-electron` (integration) |
+| Packaging | `vsce` / `ovsx` (Open VSX for forks) |
 
 ---
 
-## 4. Catálogo de features
+## 4. Feature catalog
 
-Legenda de **Origem**: `Claude GUI` = extensão oficial do Claude Code · `CLI` = capacidade do motor a expor na UI · `Cline` / `Roo·Kilo` / `Windsurf·Cascade` = feature observada em outros agentes que vale incorporar · `Tootega` = diferencial nosso.
-Legenda de **Prio**: `P0` MVP · `P1` essencial pós-MVP · `P2` diferencial.
+**Origin** legend: `Claude GUI` = official Claude Code extension · `CLI` = engine capability to surface in the UI · `Cline` / `Roo·Kilo` / `Windsurf·Cascade` = feature seen in other agents that is worth incorporating · `Tootega` = our own differentiator.
+**Prio** legend: `P0` MVP · `P1` essential post-MVP · `P2` differentiator.
 
-### 4.1. Núcleo de conversa e agente
+### 4.1. Conversation and agent core
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| C1 | Chat com streaming token a token | Claude GUI | P0 |
-| C2 | Render de blocos de pensamento (thinking) com toggle | CLI | P1 |
-| C3 | Timeline de tool calls (cards por tool, input/output colapsáveis) | Claude GUI | P0 |
-| C4 | @-mention de arquivos, pastas, símbolos | Claude GUI | P0 |
-| C5 | Anexar imagens / colar screenshot no prompt | Claude GUI | P1 |
-| C6 | Interromper o agente a qualquer momento (stop) | CLI | P0 |
-| C7 | Fila de mensagens (enviar follow-ups sem esperar resposta) | Cline | P1 |
-| C8 | Histórico de sessões: listar, retomar, buscar, renomear | CLI | P0 |
-| C9 | Ordenar/filtrar sessões por data, **custo**, **tokens** | Cline | P2 |
-| C10 | Subagentes: visualizar threads paralelas e seu progresso | CLI | P1 |
+| C1 | Chat with token-by-token streaming | Claude GUI | P0 |
+| C2 | Render thinking blocks with toggle | CLI | P1 |
+| C3 | Tool-call timeline (cards per tool, collapsible input/output) | Claude GUI | P0 |
+| C4 | @-mention of files, folders, symbols | Claude GUI | P0 |
+| C5 | Attach images / paste screenshot into the prompt | Claude GUI | P1 |
+| C6 | Interrupt the agent at any time (stop) | CLI | P0 |
+| C7 | Message queue (send follow-ups without waiting for a response) | Cline | P1 |
+| C8 | Session history: list, resume, search, rename | CLI | P0 |
+| C9 | Sort/filter sessions by date, **cost**, **tokens** | Cline | P2 |
+| C10 | Subagents: view parallel threads and their progress | CLI | P1 |
 
-### 4.2. Edição, diff e controle humano
+### 4.2. Editing, diff, and human control
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| E1 | Inline diff lado a lado antes de gravar | Claude GUI | P0 |
-| E2 | Aceitar/rejeitar mudança por arquivo e por hunk | Roo·Kilo | P1 |
-| E3 | Aprovação de permissão (Allow/Deny + Allow-always) | CLI | P0 |
-| E4 | Modo HITL vs. modo Agent-first (auto-approve configurável) | Roo·Kilo | P1 |
-| E5 | Allowlist/denylist de tools e comandos por sessão/projeto | Roo·Kilo / CLI | P1 |
-| E6 | Plan mode: ver, **editar** e aprovar o plano antes de executar | Claude GUI | P0 |
-| E7 | Plan preview com passos numerados e aprovação por passo | Windsurf·Cascade | P2 |
-| E8 | Painel de Todos do agente (lista viva, status por item) | CLI | P1 |
+| E1 | Side-by-side inline diff before writing | Claude GUI | P0 |
+| E2 | Accept/reject change per file and per hunk | Roo·Kilo | P1 |
+| E3 | Permission approval (Allow/Deny + Allow-always) | CLI | P0 |
+| E4 | HITL mode vs. Agent-first mode (configurable auto-approve) | Roo·Kilo | P1 |
+| E5 | Tool and command allowlist/denylist per session/project | Roo·Kilo / CLI | P1 |
+| E6 | Plan mode: view, **edit**, and approve the plan before executing | Claude GUI | P0 |
+| E7 | Plan preview with numbered steps and per-step approval | Windsurf·Cascade | P2 |
+| E8 | Agent Todos panel (live list, status per item) | CLI | P1 |
 
-### 4.3. Checkpoints e recuperação
+### 4.3. Checkpoints and recovery
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| K1 | Checkpoint automático antes de mudanças grandes | Claude GUI / Cline | P0 |
-| K2 | Rewind a partir de qualquer mensagem | Claude GUI | P1 |
-| K3 | Modos de restore: **Restore Files** · **Restore Files Only** · **Restore Files & Task** | Cline | P1 |
-| K4 | Visualização de snapshot (o que mudou no checkpoint) | Cline | P2 |
+| K1 | Automatic checkpoint before large changes | Claude GUI / Cline | P0 |
+| K2 | Rewind from any message | Claude GUI | P1 |
+| K3 | Restore modes: **Restore Files** · **Restore Files Only** · **Restore Files & Task** | Cline | P1 |
+| K4 | Snapshot view (what changed in the checkpoint) | Cline | P2 |
 
-### 4.4. Estatísticas, contexto, cache e consumo *(coração do produto)*
+### 4.4. Statistics, context, cache, and consumption *(heart of the product)*
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| S1 | Medidor de **janela de contexto**: usado / restante / limite (200K · 1M) | CLI | P0 |
-| S2 | **Breakdown de contexto**: system prompt, tools, MCP, mensagens, arquivos, todos, thinking | CLI (`/context`) | P1 |
-| S3 | **Cache**: tokens de escrita, leitura, hit-rate e economia estimada | CLI / API usage | P1 |
-| S4 | **Custo**: por request, por sessão e acumulado (tokens + $) | Cline / CLI (`/cost`) | P0 |
-| S5 | Tokens por categoria: input, output, cache-create, cache-read | CLI | P1 |
-| S6 | **Limites da assinatura**: janela 5h e 7d, % usado e horário de reset | CLI (`rate_limits`) | P0 |
-| S7 | Indicador de **pacing** (ritmo de consumo vs. limite) | Statusline / Tootega | P2 |
-| S8 | Modelo ativo, effort, modo (plan/normal), workspace | CLI (statusline) | P0 |
-| S9 | Alertas: contexto perto do limite, compactação iminente, limite de plano | Tootega | P1 |
-| S10 | Histórico/gráficos de consumo ao longo do tempo (sessão e diário) | Cline / Tootega | P2 |
-| S11 | Evento de **compactação** visível (quanto foi condensado) | CLI | P2 |
+| S1 | **Context window** meter: used / remaining / limit (200K · 1M) | CLI | P0 |
+| S2 | **Context breakdown**: system prompt, tools, MCP, messages, files, todos, thinking | CLI (`/context`) | P1 |
+| S3 | **Cache**: write tokens, read tokens, hit-rate, and estimated savings | CLI / API usage | P1 |
+| S4 | **Cost**: per request, per session, and cumulative (tokens + $) | Cline / CLI (`/cost`) | P0 |
+| S5 | Tokens per category: input, output, cache-create, cache-read | CLI | P1 |
+| S6 | **Subscription limits**: 5h and 7d windows, % used, and reset time | CLI (`rate_limits`) | P0 |
+| S7 | **Pacing** indicator (consumption rate vs. limit) | Statusline / Tootega | P2 |
+| S8 | Active model, effort, mode (plan/normal), workspace | CLI (statusline) | P0 |
+| S9 | Alerts: context near the limit, imminent compaction, plan limit | Tootega | P1 |
+| S10 | Consumption history/charts over time (session and daily) | Cline / Tootega | P2 |
+| S11 | Visible **compaction** event (how much was condensed) | CLI | P2 |
 
-### 4.5. Extensibilidade (expor o que o CLI permite)
+### 4.5. Extensibility (surface what the CLI allows)
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| X1 | Slash commands (built-in + custom do projeto/usuário) com autocomplete | CLI | P0 |
-| X2 | Skills: listar, descrever, acionar | CLI | P1 |
-| X3 | Subagentes customizados: listar e selecionar | CLI | P1 |
-| X4 | MCP servers: status, tools expostas, conectar/desconectar | CLI | P1 |
-| X5 | Hooks: visualizar configurados e seus disparos | CLI | P2 |
-| X6 | Editor de `CLAUDE.md` / settings com validação | CLI | P1 |
-| X7 | Gestão de permissões persistidas (settings.json) | CLI | P1 |
+| X1 | Slash commands (built-in + project/user custom) with autocomplete | CLI | P0 |
+| X2 | Skills: list, describe, trigger | CLI | P1 |
+| X3 | Custom subagents: list and select | CLI | P1 |
+| X4 | MCP servers: status, exposed tools, connect/disconnect | CLI | P1 |
+| X5 | Hooks: view configured ones and their triggers | CLI | P2 |
+| X6 | `CLAUDE.md` / settings editor with validation | CLI | P1 |
+| X7 | Persisted permission management (settings.json) | CLI | P1 |
 
-### 4.6. Modos e produtividade
+### 4.6. Modes and productivity
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| M1 | Modos por papel (Code, Architect, Ask, Debug, Test) como presets | Roo·Kilo | P2 |
-| M2 | Seletor de modelo e de effort por sessão | CLI | P1 |
-| M3 | Consciência de workspace: arquivos abertos, seleção, terminal | Windsurf·Cascade | P2 |
-| M4 | Memória de projeto (notas persistentes que o agente consulta) | Windsurf·Cascade | P2 |
-| M5 | Múltiplas sessões/abas simultâneas | Tootega | P2 |
-| M6 | Integração com git worktrees (sessão por branch) | Tootega | P2 |
+| M1 | Role-based modes (Code, Architect, Ask, Debug, Test) as presets | Roo·Kilo | P2 |
+| M2 | Model and effort selector per session | CLI | P1 |
+| M3 | Workspace awareness: open files, selection, terminal | Windsurf·Cascade | P2 |
+| M4 | Project memory (persistent notes the agent consults) | Windsurf·Cascade | P2 |
+| M5 | Multiple simultaneous sessions/tabs | Tootega | P2 |
+| M6 | Git worktrees integration (session per branch) | Tootega | P2 |
 
-### 4.7. Apresentação e acessibilidade
+### 4.7. Presentation and accessibility
 
-| # | Feature | Origem | Prio |
+| # | Feature | Origin | Prio |
 |---|---------|--------|------|
-| P1 | Tema sincronizado com o VSCode (claro/escuro/high-contrast) | Claude GUI | P0 |
-| P2 | Markdown rico + syntax highlight nos blocos de código | Claude GUI | P0 |
-| P3 | Atalhos de teclado e navegação por teclado completa | Claude GUI | P1 |
-| P4 | **i18n bilíngue: pt-BR + inglês internacional**, troca em runtime, segue locale do VSCode | Tootega | **P0** |
-| P5 | Densidade de UI configurável (compacto/confortável) | Tootega | P2 |
+| P1 | Theme synced with VSCode (light/dark/high-contrast) | Claude GUI | P0 |
+| P2 | Rich Markdown + syntax highlighting in code blocks | Claude GUI | P0 |
+| P3 | Keyboard shortcuts and full keyboard navigation | Claude GUI | P1 |
+| P4 | **Bilingual i18n: pt-BR + international English**, runtime switching, follows the VSCode locale | Tootega | **P0** |
+| P5 | Configurable UI density (compact/comfortable) | Tootega | P2 |
 
 ---
 
-## 5. Convenções de código
+## 5. Code conventions
 
-- **Idioma:** identificadores e código em inglês; comentários e docs do repositório em **pt-BR**.
-- **Estilo:** seguir o padrão do arquivo vizinho (naming, densidade de comentário, idioma).
-- **Sem reimplementar o motor.** Se a tentação for replicar lógica de orquestração, pare — exponha o que o CLI já faz.
-- **Parsing do stream:** tolerante a versões — eventos desconhecidos são ignorados graciosamente, nunca quebram a UI.
-- **Segurança:** nunca logar conteúdo de credenciais; respeitar o modelo de permissão do CLI; não burlar prompts de aprovação.
+- **Language:** identifiers and code in English; comments and repository documentation in **pt-BR**.
+- **Style:** follow the neighboring file's pattern (naming, comment density, language).
+- **Do not reimplement the engine.** If you are tempted to replicate orchestration logic, stop — surface what the CLI already does.
+- **Stream parsing:** version-tolerant — unknown events are ignored gracefully and never break the UI.
+- **Security:** never log credential content; respect the CLI's permission model; do not bypass approval prompts.
 
-### i18n (regra obrigatória)
+### i18n (mandatory rule)
 
-- **Toda string visível ao usuário passa por i18n.** Proibido texto hardcoded na UI — usar chaves de tradução.
-- **Locales suportados:** `pt-BR` e `en` (inglês **internacional**, neutro — vocabulário e datas/números sem viés US/UK).
-- **Idioma padrão:** segue o `vscode.env.language`; cai para `en` quando o locale não for suportado. Override manual nas settings.
-- **Troca em runtime** (sem reload da extensão).
-- Catálogos em `l10n/` (`bundle.l10n.pt-br.json`, `bundle.l10n.json` como base em inglês), via `vscode.l10n` no host e equivalente no webview.
-- Pluralização e interpolação tratadas pela camada de i18n, nunca por concatenação de strings.
-
----
-
-## 6. Não-objetivos (escopo fora)
-
-- Não substituir nem competir com a extensão oficial em paridade 1:1 — buscamos **transparência de consumo e controle fino** como diferencial.
-- Não falar com a Anthropic API diretamente (o canal é o CLI).
-- Não implementar billing/pagamento próprios — a conta e os limites são os da assinatura Claude do usuário.
-- Não armazenar dados do usuário fora da máquina dele.
+- **Every user-visible string goes through i18n.** No hardcoded text in the UI — use translation keys.
+- **Supported locales:** `pt-BR` and `en` (**international** English, neutral — vocabulary and date/number formats without US/UK bias).
+- **Default language:** follows `vscode.env.language`; falls back to `en` when the locale is not supported. Manual override available in settings.
+- **Runtime switching** (no extension reload).
+- Catalogs live in `l10n/` (`bundle.l10n.pt-br.json`, with `bundle.l10n.json` as the English base), via `vscode.l10n` on the host and an equivalent layer on the webview.
+- Pluralization and interpolation are handled by the i18n layer, never by string concatenation.
 
 ---
 
-## 7. Documentos relacionados
+## 6. Non-goals (out of scope)
 
-- [Docs/plano-de-execucao.md](Docs/plano-de-execucao.md) — roteiro, marcos e requisitos detalhados.
+- Do not replace or compete with the official extension at 1:1 parity — we aim for **consumption transparency and fine-grained control** as the differentiator.
+- Do not talk to the Anthropic API directly (the channel is the CLI).
+- Do not implement our own billing/payment — the account and limits are those of the user's Claude subscription.
+- Do not store user data outside their machine.
+
+---
+
+## 7. Related documents
+
+- [Docs/plano-de-execucao.md](Docs/plano-de-execucao.md) — roadmap, milestones, and detailed requirements.

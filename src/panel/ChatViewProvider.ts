@@ -11,8 +11,13 @@ import {
   loadTranscript,
   deleteSession,
   deleteAllSessions,
+  truncateTranscriptAt,
   latestSessionId,
 } from '../session/SessionStore';
+import { resolveMinEffort, EFFORT_RANK } from '../session/RepoDirectives';
+import { VoiceSession } from '../cli/VoiceStream';
+import { AudioCapture } from '../cli/AudioCapture';
+import { correctText } from '../cli/TextCorrector';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
@@ -81,6 +86,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private observedDefaultModel?: string;
   // model/effort/permission mudou e ainda não reiniciou a sessão (avisa na UI).
   private pendingRestart = false;
+  // Sessão de ditado por voz ativa (uma de cada vez; o mic é um só).
+  private voice?: VoiceSession;
+  private voiceCapture?: AudioCapture;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -612,6 +620,99 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     log(`Resuming session ${sessionId} (${items.length} items) in ${tab}`);
   }
 
+  /**
+   * Rebobina a conversa até o (index)-ésimo prompt do usuário: corta o transcript
+   * nesse prompt (removendo-o e tudo depois), rearma --resume da sessão truncada e
+   * recarrega o histórico na webview. A próxima mensagem continua daquele ponto.
+   */
+  private rewind(tabId: string, index: number): void {
+    const s = this.sessions.get(tabId);
+    if (!s || s.busy) return; // não rebobina turno em andamento
+    const id = s.sessionId ?? s.resumeId;
+    if (!id) return;
+    const cwd = this.workspaceCwd();
+    const users = loadTranscript(cwd, id).filter((i) => i.kind === 'user');
+    const target = users[index];
+    if (!target) return;
+    if (!truncateTranscriptAt(cwd, id, target.id)) {
+      log(`rewind: prompt #${index} (uuid ${target.id}) não encontrado no transcript`);
+      return;
+    }
+    s.resume(id); // limpa a conversa e rearma --resume a partir do transcript truncado
+    this.replayTab(tabId); // recarrega o histórico (já cortado) na webview
+    this.postTabs();
+    this.sendSessions();
+    log(`rewind: sessão ${id} cortada no prompt #${index}`);
+  }
+
+  /**
+   * Inicia o ditado por voz (STT) p/ a aba: abre o WS OAuth, captura o mic NO
+   * HOST (via ffmpeg — o webview bloqueia getUserMedia) e roteia as transcrições
+   * de volta à superfície. Encerra uma sessão anterior, se houver.
+   */
+  private startVoice(tabId: string, language?: string): void {
+    this.stopVoice();
+    // Idioma: setting explícito (tootega.voiceLanguage) tem prioridade; senão o
+    // locale do webview; senão o locale do Cockpit. Normaliza p/ curto (pt-BR->pt).
+    const forced = this.cfg().get<string>('voiceLanguage', '').trim();
+    const lang = ((forced || language || this.voiceLanguage()).split('-')[0] || 'en').toLowerCase();
+    // Termos de reconhecimento: nome do projeto (melhora vocabulário).
+    const keyterms = path.basename(this.workspaceCwd());
+    const capture = new AudioCapture({
+      ffmpegPath: this.cfg().get<string>('ffmpegPath', '') || undefined,
+    });
+    this.voiceCapture = capture;
+    this.voice = new VoiceSession(lang, keyterms, {
+      onOpen: () => {
+        // WS pronto: começa a capturar e empurrar PCM.
+        void capture.start(
+          (buf) => this.voice?.pushAudio(buf),
+          (message) => {
+            this.post({ kind: 'voiceError', message }, tabId);
+            this.stopVoice();
+          },
+          () => {
+            /* ffmpeg saiu: o stop() do WS cuida do encerramento */
+          },
+        );
+      },
+      onTranscript: (text, isFinal) => this.post({ kind: 'voiceTranscript', text, isFinal }, tabId),
+      onError: (message) => this.post({ kind: 'voiceError', message }, tabId),
+      onClose: () => {
+        this.voiceCapture?.stop();
+        this.voiceCapture = undefined;
+        this.voice = undefined;
+        this.post({ kind: 'voiceClosed' }, tabId);
+      },
+    });
+    this.voice.start();
+  }
+
+  /** Encerra a captura e o WS de voz, se ativos. */
+  private stopVoice(): void {
+    this.voiceCapture?.stop();
+    this.voiceCapture = undefined;
+    this.voice?.stop();
+  }
+
+  /** Corrige o texto ditado via Haiku (one-shot isolado) e devolve à superfície. */
+  private async correctVoice(tabId: string, text: string): Promise<void> {
+    const t = text.trim();
+    if (!t) {
+      this.post({ kind: 'voiceCorrectError' }, tabId);
+      return;
+    }
+    const corrected = await correctText(t);
+    if (corrected) this.post({ kind: 'voiceCorrected', text: corrected }, tabId);
+    else this.post({ kind: 'voiceCorrectError' }, tabId);
+  }
+
+  /** Idioma do ditado: locale do Cockpit -> código BCP47 curto (pt-BR -> pt). */
+  private voiceLanguage(): string {
+    const loc = resolveLocale();
+    return (loc.split('-')[0] || 'en').toLowerCase();
+  }
+
   /** Título curto a partir da primeira fala do usuário no transcript. */
   private titleFromItems(items: { kind: string; text?: string }[]): string {
     const first = items.find((i) => i.kind === 'user' && i.text)?.text ?? '';
@@ -644,9 +745,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private renameSession(id: string, name: string): void {
     const names = this.memory.get<Record<string, string>>('sessionNames', {});
     const next = { ...names };
-    if (name.trim()) next[id] = name.trim();
+    const trimmed = name.trim();
+    if (trimmed) next[id] = trimmed;
     else delete next[id];
     void this.memory.update('sessionNames', next);
+    // Atualiza de imediato o título da aba/webview aberta dessa sessão (se houver).
+    // Casa por sessionId (turno já rodou) OU resumeId (retomada ainda sem turno).
+    for (const [tabId, s] of this.sessions) {
+      if (s.sessionId === id || s.resumeId === id) {
+        this.setTabTitle(tabId, trimmed);
+        break;
+      }
+    }
     this.sendSessions();
   }
 
@@ -716,6 +826,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         expandToolCards: this.cfg().get<boolean>('expandToolCards', false),
         pendingRestart: this.pendingRestart,
         userName: this.userName(),
+        voiceCorrect: this.cfg().get<boolean>('voiceCorrect', true),
       },
     });
   }
@@ -758,12 +869,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   // Escopo (modelo, effort) p/ segmentar os tempos: prefere o modelo REAL
-  // resolvido pelo CLI (snapshot), caindo p/ o selecionado; effort resolve
-  // 'default' p/ o das settings.
+  // resolvido pelo CLI (snapshot), caindo p/ o selecionado. Effort: o CLI não
+  // ecoa o nível no stream, então resolvemos 'default' p/ o setting do Cockpit e,
+  // se ainda 'default', p/ o effortLevel REAL do CLI (~/.claude/settings.json) —
+  // assim a chave não fica num 'default' ambíguo.
   private timingScope(s: Session): { model: string; effort: string } {
     const model = s.stats.snapshot().model || s.model() || 'default';
     let effort = s.effort() || 'default';
     if (effort === 'default') effort = this.cfg().get<string>('effort', 'default') || 'default';
+    if (effort === 'default') effort = this.defaults.effort || 'default';
     return { model, effort };
   }
 
@@ -796,6 +910,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (bound) this.primeCommands(bound); // carrega slash commands sem esperar o 1º envio
         break;
       case 'sendMessage': {
+        // Gate de effort mínimo: resolvido AGORA do CLAUDE.md aplicável à pasta de
+        // trabalho da sessão (não vive em config — pastas diferentes, valores
+        // diferentes). Abaixo do mínimo e sem 'force' → pede confirmação e NÃO envia.
+        const s = srcSession();
+        const cwd = this.workspaceCwd();
+        const min = resolveMinEffort(cwd, cwd);
+        const eff = this.timingScope(s).effort;
+        log(`sendMessage: effort=${eff} minEffort=${min ?? 'none'} force=${!!m.force}`);
+        if (
+          !m.force &&
+          min &&
+          eff in EFFORT_RANK &&
+          EFFORT_RANK[eff] < (EFFORT_RANK[min] ?? 0)
+        ) {
+          this.post({ kind: 'effortGate', selected: eff, min }, srcTab);
+          break; // bloqueia: webview confirma e reenvia com force
+        }
         if (!this.tabMeta.get(srcTab)?.title && m.text.trim()) {
           this.setTabTitle(srcTab, m.text.replace(/\s+/g, ' ').trim().slice(0, 28));
         }
@@ -804,7 +935,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.pendingRestart = false;
           this.sendConfig();
         }
-        srcSession().send(m.text, m.images);
+        s.send(m.text, m.images);
         break;
       }
       case 'resolvePaths':
@@ -936,6 +1067,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.postTaskTimings(srcTab);
         break;
       }
+      case 'rewind':
+        this.rewind(srcTab, m.index);
+        break;
+      case 'voiceStart':
+        log('[voice] start requested by webview');
+        this.startVoice(srcTab, m.language);
+        break;
+      case 'voiceStop':
+        log('[voice] webview requested stop');
+        this.stopVoice();
+        break;
+      case 'voiceCorrect':
+        void this.correctVoice(srcTab, m.text);
+        break;
       case 'fetchUsage':
         void this.sendUsage(); // dado quente: busca conta + limites + breakdown ao clicar
         break;

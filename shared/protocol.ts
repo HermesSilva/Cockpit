@@ -75,6 +75,7 @@ export interface SessionConfig {
   expandToolCards: boolean; // expandir cards de tool por padrão na timeline
   pendingRestart: boolean; // model/effort/permission mudou e reinicia no próximo envio
   userName: string; // nome do assinante para o rótulo "You" (vazio = usa o padrão)
+  voiceCorrect: boolean; // corrigir o texto ditado via Haiku ao parar o ditado
 }
 
 export interface ModelGroup {
@@ -199,6 +200,12 @@ type HostMsg =
   | { kind: 'openSessions' }
   | { kind: 'taskTimings'; timings: Record<string, number> } // médias por tipo, já no escopo (modelo,effort) atual (gauge)
   | { kind: 'usageData'; data: UsageData } // resposta ao botão "Usage"
+  | { kind: 'effortGate'; selected: string; min: string } // effort < mínimo do CLAUDE.md da pasta: confirmar antes
+  | { kind: 'voiceCorrected'; text: string } // ditado: texto corrigido (libera o input)
+  | { kind: 'voiceCorrectError' } // ditado: correção falhou (mantém o original, libera)
+  | { kind: 'voiceTranscript'; text: string; isFinal: boolean } // ditado: transcrição parcial/final
+  | { kind: 'voiceError'; message: string } // ditado: falha (sem token, ws, etc.)
+  | { kind: 'voiceClosed' } // ditado: sessão encerrada
   | { kind: 'locale'; locale: string };
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
@@ -220,7 +227,7 @@ export interface ImageAttachment {
 // webview -> host
 export type WebviewToHost =
   | { kind: 'init' }
-  | { kind: 'sendMessage'; text: string; images?: ImageAttachment[] }
+  | { kind: 'sendMessage'; text: string; images?: ImageAttachment[]; force?: boolean }
   | { kind: 'resolvePaths'; requestId: string; absPaths: string[] }
   | { kind: 'readClipboardFiles'; requestId: string }
   | { kind: 'openLink'; href: string; preview?: boolean }
@@ -255,6 +262,10 @@ export type WebviewToHost =
   | { kind: 'openEditor' }
   | { kind: 'openFolder'; path: string }
   | { kind: 'taskDuration'; type: string; ms: number } // amostra de duração de tarefa (gauge)
+  | { kind: 'rewind'; index: number } // rebobina a conversa até o (index)-ésimo prompt do usuário, removendo-o
+  | { kind: 'voiceStart'; language?: string } // ditado: host abre o WS + captura o mic (ffmpeg)
+  | { kind: 'voiceStop' } // ditado: finaliza a captura
+  | { kind: 'voiceCorrect'; text: string } // ditado: corrige o texto via Haiku (one-shot)
   | { kind: 'fetchUsage' } // botão "Usage": busca conta + limites + breakdown (dado quente)
   | { kind: 'enableUsageTracking' } // instala o wrapper de statusline p/ capturar rate_limits real
   | { kind: 'saveImage'; mediaType: string; data: string };

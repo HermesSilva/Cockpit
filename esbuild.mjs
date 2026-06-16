@@ -23,7 +23,9 @@ const hostCtx = await esbuild.context({
   outfile: 'dist/extension.js',
   platform: 'node',
   format: 'cjs',
-  external: ['vscode'],
+  // 'vscode' é provido pelo host. bufferutil/utf-8-validate são deps NATIVAS
+  // OPCIONAIS do 'ws' (require em try/catch); externaliza p/ não quebrar o bundle.
+  external: ['vscode', 'bufferutil', 'utf-8-validate'],
 });
 
 // 2) Webview — React, roda no browser do webview.

@@ -53,6 +53,7 @@ interface Props {
   answers?: Record<string, string>;
   busy?: boolean; // turno em andamento: mostra o indicador de atividade no fim
   stats?: StatsSnapshot; // tokens enviados/recebidos p/ o contador do indicador
+  onRewind?: (userIndex: number) => void; // rebobinar até este prompt (remove-o)
 }
 
 // Agrupa itens em turnos: cada mensagem do usuário e, depois dela, a corrida
@@ -103,6 +104,7 @@ export function Timeline({
   answers,
   busy,
   stats,
+  onRewind,
 }: Props) {
   if (items.length === 0 && emptyHint) {
     return (
@@ -123,17 +125,24 @@ export function Timeline({
     }
     if (g.kind === 'user') lastUserGroup = i;
   });
+  // Ordinal de cada prompt do usuário (casa com a ordem no transcript do host),
+  // p/ o rewind referenciar o prompt certo independentemente do id local/uuid.
+  let userOrdinal = -1;
   return (
     <div className="timeline">
       {groups.map((g, gi) =>
         g.kind === 'user' ? (
-          <UserBubble
-            key={g.item.id}
-            item={g.item}
-            t={t}
-            userName={userName}
-            pinned={gi === lastUserGroup}
-          />
+          ((userOrdinal += 1),
+          (
+            <UserBubble
+              key={g.item.id}
+              item={g.item}
+              t={t}
+              userName={userName}
+              pinned={gi === lastUserGroup}
+              onRewind={onRewind ? ((idx) => () => onRewind(idx))(userOrdinal) : undefined}
+            />
+          ))
         ) : (
           <ClaudeTurn
             key={g.items[0].id}
@@ -388,11 +397,13 @@ function UserBubble({
   t,
   userName,
   pinned,
+  onRewind,
 }: {
   item: UserItem;
   t: Translator;
   userName?: string;
   pinned?: boolean;
+  onRewind?: () => void;
 }) {
   const openImage = useImageViewer();
   return (
@@ -406,6 +417,16 @@ function UserBubble({
           <span>{userName || t('role.user')}</span>
           {item.ts && <span className="bubble-time">{fmtStamp(item.ts)}</span>}
           {item.text && <CopyButton text={item.text} t={t} />}
+          {onRewind && (
+            <button
+              type="button"
+              className="msg-rewind"
+              title={t('rewind.title')}
+              onClick={onRewind}
+            >
+              ↶
+            </button>
+          )}
         </div>
         {item.images && item.images.length > 0 && (
           <div className="bubble-images">

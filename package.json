@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.58",
+  "version": "1.0.75",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -251,6 +251,44 @@
           "type": "string",
           "default": "",
           "description": "%cfg.userName%"
+        },
+        "tootega.ffmpegPath": {
+          "type": "string",
+          "default": "",
+          "description": "%cfg.ffmpegPath%"
+        },
+        "tootega.voiceCorrect": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.voiceCorrect%"
+        },
+        "tootega.voiceLanguage": {
+          "type": "string",
+          "enum": [
+            "",
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "ru",
+            "nl",
+            "pl",
+            "tr",
+            "uk",
+            "hi",
+            "id",
+            "cs",
+            "da",
+            "el",
+            "no",
+            "sv"
+          ],
+          "default": "",
+          "description": "%cfg.voiceLanguage%"
         }
       }
     }
@@ -272,6 +310,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.21.5",
     "typescript": "^5.4.5",
@@ -280,6 +319,7 @@
   "dependencies": {
     "highlight.js": "^11.9.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "ws": "^8.21.0"
   }
 }

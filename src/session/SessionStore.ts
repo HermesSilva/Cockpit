@@ -109,6 +109,45 @@ export function deleteSession(cwd: string, sessionId: string): boolean {
   }
 }
 
+/**
+ * Rebobina o transcript: mantém só as linhas ANTES daquela cujo `uuid` casa com
+ * `uuid`, descartando o prompt-alvo e tudo que veio depois. Grava de forma atômica
+ * (tmp + rename). Retorna true se cortou. Irreversível.
+ */
+export function truncateTranscriptAt(cwd: string, sessionId: string, uuid: string): boolean {
+  const file = path.join(projectsDir(cwd), `${sessionId}.jsonl`);
+  let content: string;
+  try {
+    content = fs.readFileSync(file, 'utf8');
+  } catch {
+    return false;
+  }
+  const lines = content.split('\n');
+  let cut = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (!ln.trim()) continue;
+    try {
+      if (JSON.parse(ln).uuid === uuid) {
+        cut = i;
+        break;
+      }
+    } catch {
+      /* linha inválida: ignora */
+    }
+  }
+  if (cut < 0) return false;
+  const kept = lines.slice(0, cut).join('\n').replace(/\n*$/, '\n');
+  try {
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, kept);
+    fs.renameSync(tmp, file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Apaga todos os transcripts (.jsonl) do cwd. Retorna o nº removido. Irreversível. */
 export function deleteAllSessions(cwd: string): number {
   const dir = projectsDir(cwd);

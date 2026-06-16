@@ -9,6 +9,9 @@ export const en = {
   'composer.placeholder': 'Ask Claude Code…  (Enter to send, Shift+Enter for newline)',
   'composer.send': 'Send',
   'composer.stop': 'Stop',
+  'voice.start': 'Dictate (voice to text)',
+  'voice.stop': 'Stop dictation',
+  'voice.correcting': 'Correcting…',
   'composer.expandAll': 'Expand all cards in this context',
   'composer.collapseAll': 'Collapse all cards in this context',
   'composer.newSession': 'New session',
@@ -312,6 +315,13 @@ export const en = {
   'confirm.deleteAll.title': 'Delete all sessions?',
   'confirm.deleteAll.body': 'This permanently deletes all {0} sessions in this folder from disk and cannot be undone.',
   'confirm.deleteAll.action': 'Delete all',
+  'confirm.rewind.title': 'Rewind to here?',
+  'confirm.rewind.body': 'This removes this prompt and everything after it from the conversation and cannot be undone.',
+  'confirm.rewind.action': 'Rewind',
+  'confirm.effort.title': 'Effort below repo minimum',
+  'confirm.effort.body': 'This repo requires at least "{1}" effort, but the current effort is "{0}". Send anyway, or cancel and raise the effort first?',
+  'confirm.effort.action': 'Send anyway',
+  'rewind.title': 'Rewind to here (removes this prompt and everything after)',
   'confirm.cancel': 'Cancel',
 };
 

@@ -25,6 +25,11 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [state, dispatch] = useReducer(reducer, initialState);
   const [confirmDelete, setConfirmDelete] = useState<SessionInfo | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [confirmRewind, setConfirmRewind] = useState<number | null>(null);
+  // Gate de effort: o host bloqueia e manda 'effortGate'; guardamos o último envio
+  // p/ reenviar com force=true se o usuário confirmar.
+  const [confirmEffort, setConfirmEffort] = useState<{ selected: string; min: string } | null>(null);
+  const lastSendRef = useRef<{ text: string; images: ImageAttachment[] } | null>(null);
   const [showUsage, setShowUsage] = useState(false);
   const [usage, setUsage] = useState<UsageData | null>(null);
   // null = segue as settings; boolean = override do botão "expandir/colapsar tudo".
@@ -57,6 +62,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       const data = e.data as HostToWebview;
       if (data?.kind === 'taskTimings') seedTaskTimings(data.timings); // médias do host p/ o gauge
       if (data?.kind === 'usageData') setUsage(data.data); // resposta do botão Usage (dado quente)
+      if (data?.kind === 'effortGate') setConfirmEffort({ selected: data.selected, min: data.min });
       dispatch({ type: 'host', msg: data });
     };
     window.addEventListener('message', onMsg);
@@ -79,7 +85,11 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     setAtBottom(true);
   }, [state.activeTab]);
 
+  // Envia otimista (bolha local + manda ao host). O gate de effort é decidido NO
+  // HOST (lê o CLAUDE.md da pasta): se bloquear, manda 'effortGate' e não roda;
+  // confirmando, reenviamos o último com force=true.
   const onSend = (text: string, images: ImageAttachment[]) => {
+    lastSendRef.current = { text, images };
     const previews = images.map((i) => `data:${i.mediaType};base64,${i.data}`);
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
     send({ kind: 'sendMessage', text, images: images.length ? images : undefined });
@@ -173,6 +183,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             send({ kind: 'openEditor' });
           }}
           onDelete={onAskDelete}
+          onRename={(s, name) => send({ kind: 'renameSession', sessionId: s.id, name })}
           onDeleteAll={() => setConfirmDeleteAll(true)}
         />
         {confirmDelete && (
@@ -239,6 +250,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             answers={tab?.answers}
             busy={tab?.status === 'busy'}
             stats={tab?.stats}
+            onRewind={tab?.status === 'busy' ? undefined : (idx) => setConfirmRewind(idx)}
           />
         </div>
         <ScrollMarkers scrollRef={scrollRef} items={items} />
@@ -256,6 +268,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
 
       <Composer
         t={t}
+        locale={state.locale}
+        correctEnabled={state.config?.voiceCorrect !== false}
         busy={tab?.status === 'busy'}
         disabled={cliMissing}
         slashCommands={tab?.slashCommands ?? []}
@@ -280,6 +294,47 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           cancelLabel={t('confirm.cancel')}
           onConfirm={onConfirmDelete}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {confirmRewind !== null && (
+        <ConfirmDialog
+          danger
+          title={t('confirm.rewind.title')}
+          body={t('confirm.rewind.body')}
+          confirmLabel={t('confirm.rewind.action')}
+          cancelLabel={t('confirm.cancel')}
+          onConfirm={() => {
+            send({ kind: 'rewind', index: confirmRewind });
+            setConfirmRewind(null);
+          }}
+          onCancel={() => setConfirmRewind(null)}
+        />
+      )}
+
+      {confirmEffort && (
+        <ConfirmDialog
+          danger
+          title={t('confirm.effort.title')}
+          body={t('confirm.effort.body', confirmEffort.selected, confirmEffort.min)}
+          confirmLabel={t('confirm.effort.action')}
+          cancelLabel={t('confirm.cancel')}
+          onConfirm={() => {
+            const p = lastSendRef.current;
+            if (p) {
+              send({
+                kind: 'sendMessage',
+                text: p.text,
+                images: p.images.length ? p.images : undefined,
+                force: true,
+              });
+            }
+            setConfirmEffort(null);
+          }}
+          onCancel={() => {
+            dispatch({ type: 'removeLastUser' }); // desfaz a bolha otimista (não vai rodar)
+            setConfirmEffort(null);
+          }}
         />
       )}
     </div>

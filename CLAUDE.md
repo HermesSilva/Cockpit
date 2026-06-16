@@ -196,7 +196,7 @@ claude -p --output-format stream-json --input-format stream-json --verbose
 ## 6. Non-goals (out of scope)
 
 - Do not replace or compete with the official extension at 1:1 parity — we aim for **consumption transparency and fine-grained control** as the differentiator.
-- Do not talk to the Anthropic API directly (the channel is the CLI).
+- Do not talk to the Anthropic API directly for the **agent loop** (the channel is the CLI). **Exception:** isolated utility calls authenticated with the local Claude.ai OAuth token (`~/.claude/.credentials.json`) are allowed when they are *clean* (only what the task needs — no agent system prompt, no tools, no MCP, no project context) and not part of the agent orchestration. Examples: `GET /api/oauth/usage` (real usage, same as `/usage`, no token spend); the speech-to-text WebSocket (`/api/ws/speech_to_text/voice_stream`, no token spend); and dictation text correction via `POST /v1/messages` with Haiku (spends *minimal* subscription tokens, but sends only the instruction + text — far cleaner/faster than a CLI one-shot, which has ~5s cold start and loads the full system prompt + tools/MCP every call). Never write or log credentials.
 - Do not implement our own billing/payment — the account and limits are those of the user's Claude subscription.
 - Do not store user data outside their machine.
 

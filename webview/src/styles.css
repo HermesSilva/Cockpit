@@ -1257,6 +1257,10 @@ body {
   color: var(--vscode-focusBorder, #3794ff);
   border-color: var(--vscode-focusBorder, #3794ff);
 }
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vscode-charts-red, #f85149) 60%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--vscode-charts-red, #f85149) 0%, transparent); }
+}
 /* Combobox de slash commands (botão "/" + dropdown agrupado, abre p/ cima). */
 .slash-cmd-wrap {
   position: relative;
@@ -1411,6 +1415,38 @@ body {
 }
 .composer-input-wrap:focus-within {
   outline: 1px solid var(--vscode-focusBorder);
+}
+/* Botão de mic na coluna lateral (junto de send/stop). Azul; vermelho gravando. */
+.composer-side-btn.voice {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+/* Corrigindo: spinner no lugar do ícone. */
+.voice-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 35%, transparent);
+  border-top-color: var(--vscode-charts-blue, #3794ff);
+  border-radius: 50%;
+  animation: voice-spin 0.7s linear infinite;
+}
+@keyframes voice-spin {
+  to { transform: rotate(360deg); }
+}
+/* Input travado durante a correção: leve dimming. */
+.composer-input[readonly] {
+  opacity: 0.7;
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-spinner { animation: none; }
+}
+.composer-side-btn.voice.recording {
+  color: #fff;
+  background: var(--vscode-charts-red, #f85149);
+  border-color: var(--vscode-charts-red, #f85149);
+  animation: voice-pulse 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-side-btn.voice.recording { animation: none; }
 }
 /* Tipografia/box IDÊNTICOS nos dois p/ o texto alinhar com o highlight. */
 .composer-highlight,
@@ -1603,6 +1639,26 @@ body {
 }
 .msg-copy:hover {
   opacity: 1 !important;
+}
+/* Botão rebobinar no cabeçalho do prompt (oculto até hover da bolha). */
+.msg-rewind {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  opacity: 0;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  margin-left: 2px;
+  padding: 0 3px;
+  transition: opacity 0.12s, color 0.12s;
+}
+.bubble:hover .msg-rewind {
+  opacity: 0.5;
+}
+.msg-rewind:hover {
+  opacity: 1 !important;
+  color: var(--vscode-charts-red, #f85149);
 }
 
 /* ---------- Todos / Tasks (checklist inline no corpo) ---------- */
@@ -2800,23 +2856,54 @@ body {
   direction: rtl; /* mantém o fim do caminho visível ao truncar */
   text-align: left;
 }
-.ctx-card-del {
+/* Ações do card (renomear/apagar) no canto sup. direito; surgem ao passar o mouse. */
+.ctx-card-actions {
   position: absolute;
   top: 4px;
   right: 4px;
-  font-size: 11px;
+  display: flex;
+  gap: 2px;
+}
+.ctx-card-edit-btn,
+.ctx-card-del {
+  font-size: 12px;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border-radius: 5px;
   opacity: 0;
+  background: transparent;
   cursor: pointer;
+  transition: opacity 0.12s, background 0.12s;
 }
+/* Card sob o mouse: ações totalmente opacas, com fundo sólido p/ contraste. */
+.ctx-card:hover .ctx-card-edit-btn,
 .ctx-card:hover .ctx-card-del {
-  opacity: 0.6;
-}
-.ctx-card-del:hover {
   opacity: 1;
-  background: color-mix(in srgb, var(--vscode-charts-red, #f85149) 18%, transparent);
+  background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-editorWidget-background));
+}
+.ctx-card:hover .ctx-card-edit-btn:hover {
+  background: var(--vscode-focusBorder, #3794ff);
+  color: #fff;
+}
+.ctx-card:hover .ctx-card-del:hover {
+  background: var(--vscode-charts-red, #f85149);
+  color: #fff;
+}
+/* Card em edição: input inline no lugar do título. */
+.ctx-card.editing {
+  cursor: default;
+}
+.ctx-card-edit {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 4px;
+  border: 1px solid var(--vscode-focusBorder, #3794ff);
+  border-radius: 5px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  outline: none;
 }
 
 /* Classes genéricas reusadas pelo painel (título de coluna, seções, linhas) */

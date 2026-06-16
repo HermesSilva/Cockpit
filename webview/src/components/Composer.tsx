@@ -9,6 +9,8 @@ import { SlashMenu } from './SlashMenu';
 
 interface Props {
   t: Translator;
+  locale: string;
+  correctEnabled: boolean;
   busy: boolean;
   disabled: boolean;
   slashCommands: string[];
@@ -32,6 +34,8 @@ const rid = () => `c_${Date.now()}_${seq++}`;
 
 export function Composer({
   t,
+  locale,
+  correctEnabled,
   busy,
   disabled,
   slashCommands,
@@ -50,6 +54,12 @@ export function Composer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null); // espelho com syntax highlight atrás do textarea
   const baseH = useRef(0); // altura padrão (rows=2), capturada na 1ª medição
+  // Ditado por voz: estado do botão + base do texto ao começar. A captura do mic
+  // acontece NO HOST (webview do VSCode bloqueia getUserMedia); aqui só sinaliza.
+  const [recording, setRecording] = useState(false);
+  const [correcting, setCorrecting] = useState(false); // corrigindo texto (input readonly)
+  const recordingRef = useRef(false); // espelho síncrono p/ os listeners (sem stale closure)
+  const voiceBaseRef = useRef('');
 
   // Auto-expande a altura (até 4x) e atualiza o espelho de highlight.
   useEffect(() => {
@@ -106,6 +116,65 @@ export function Composer({
     window.addEventListener('message', h);
     return () => window.removeEventListener('message', h);
   }, []);
+
+  // Junta dois trechos com um espaço se necessário.
+  const joinText = (a: string, b: string) => (a && !/\s$/.test(a) ? `${a} ${b}` : `${a}${b}`);
+
+  // Transcrições vindas do host (STT): parcial atualiza ao vivo; final fixa.
+  useEffect(() => {
+    const h = (e: MessageEvent) => {
+      const m = e.data;
+      if (m?.kind === 'voiceTranscript') {
+        if (!recordingRef.current) return; // ignora transcrições tardias (parou/digitou)
+        if (m.isFinal) {
+          voiceBaseRef.current = joinText(voiceBaseRef.current, m.text);
+          setText(voiceBaseRef.current);
+        } else {
+          setText(joinText(voiceBaseRef.current, m.text));
+        }
+      } else if (m?.kind === 'voiceClosed') {
+        stopVoice();
+      } else if (m?.kind === 'voiceError') {
+        // eslint-disable-next-line no-console
+        console.warn('[voice] error:', m.message);
+        stopVoice();
+      } else if (m?.kind === 'voiceCorrected') {
+        voiceBaseRef.current = m.text;
+        setText(m.text); // troca pelo corrigido
+        setCorrecting(false); // libera o input p/ RW
+        requestAnimationFrame(() => ref.current?.focus());
+      } else if (m?.kind === 'voiceCorrectError') {
+        setCorrecting(false); // mantém o original, libera
+      }
+    };
+    window.addEventListener('message', h);
+    return () => window.removeEventListener('message', h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const stopVoice = () => {
+    if (recordingRef.current) send({ kind: 'voiceStop' });
+    recordingRef.current = false;
+    setRecording(false);
+  };
+
+  const toggleVoice = () => {
+    if (recording) {
+      stopVoice();
+      // Correção habilitada: trava o input (readonly) e manda corrigir via Haiku.
+      if (correctEnabled && text.trim()) {
+        setCorrecting(true);
+        send({ kind: 'voiceCorrect', text });
+      }
+    } else {
+      if (disabled || correcting) return;
+      voiceBaseRef.current = text;
+      recordingRef.current = true;
+      setRecording(true);
+      send({ kind: 'voiceStart', language: locale }); // host abre o WS e captura o mic (ffmpeg)
+      requestAnimationFrame(() => ref.current?.focus()); // foco no input ao ligar
+    }
+  };
 
   const insertAtCaret = (s: string) => {
     const el = ref.current;
@@ -216,7 +285,7 @@ export function Composer({
     }
   };
 
-  const canSend = !disabled && (!!text.trim() || images.length > 0);
+  const canSend = !disabled && !correcting && (!!text.trim() || images.length > 0);
 
   return (
     <div className="composer">
@@ -267,11 +336,13 @@ export function Composer({
           <textarea
             ref={ref}
             className="composer-input"
-            placeholder={t('composer.placeholder')}
+            placeholder={correcting ? t('voice.correcting') : t('composer.placeholder')}
             value={text}
             disabled={disabled}
+            readOnly={correcting}
             rows={2}
             onChange={(e) => {
+              if (recordingRef.current) stopVoice(); // digitou: encerra o ditado na hora
               setText(e.target.value);
               setSlashDismissed(false);
               setSlashIdx(0);
@@ -282,6 +353,40 @@ export function Composer({
           />
         </div>
         <div className="composer-side">
+          <Tooltip text={correcting ? t('voice.correcting') : recording ? t('voice.stop') : t('voice.start')}>
+            <button
+              type="button"
+              className={`composer-side-btn voice ${recording ? 'recording' : ''} ${correcting ? 'correcting' : ''}`}
+              onClick={toggleVoice}
+              disabled={disabled || correcting}
+              aria-pressed={recording}
+            >
+              {correcting ? (
+                <span className="voice-spinner" aria-hidden="true" />
+              ) : recording ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
+                </svg>
+              ) : (
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="9" y="2" width="6" height="11" rx="3" />
+                  <path d="M5 10a7 7 0 0 0 14 0" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                </svg>
+              )}
+            </button>
+          </Tooltip>
           <SlashMenu t={t} commands={slashCommands} meta={slashMeta} busy={slashBusy} onPick={pickSlash} />
           <Tooltip text={allExpanded ? t('composer.collapseAll') : t('composer.expandAll')}>
             <button

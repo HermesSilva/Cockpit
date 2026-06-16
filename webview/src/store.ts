@@ -86,6 +86,7 @@ export function nextUserId(): string {
 export type Action =
   | { type: 'host'; msg: HostToWebview }
   | { type: 'localUser'; text: string; images?: string[] }
+  | { type: 'removeLastUser' }
   | { type: 'clearPermission' }
   | { type: 'clearAsk'; answers?: Record<string, string> }
   | { type: 'setSessionsOpen'; open: boolean }
@@ -101,6 +102,15 @@ export function reducer(state: UiState, action: Action): UiState {
         { kind: 'user', id: nextUserId(), text: action.text, images: action.images, ts: Date.now() },
       ],
     }));
+  }
+  if (action.type === 'removeLastUser') {
+    // Desfaz a última bolha do usuário (envio bloqueado pelo gate de effort).
+    return patchTab(state, state.activeTab, (tab) => {
+      const idx = [...tab.items].reverse().findIndex((i) => i.kind === 'user');
+      if (idx < 0) return tab;
+      const at = tab.items.length - 1 - idx;
+      return { ...tab, items: tab.items.filter((_, i) => i !== at) };
+    });
   }
   if (action.type === 'clearPermission') {
     return patchTab(state, state.activeTab, (tab) => ({ ...tab, permission: undefined }));

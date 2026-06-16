@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import type { Translator } from '../i18n';
 import type { StatsSnapshot, SessionConfig, SessionInfo } from '../../../shared/protocol';
 import { fmtInt, fmtPct, fmtCompact, fmtBytes } from '../util/format';
@@ -31,6 +32,7 @@ interface Props {
   onPermission: (mode: string) => void;
   onResume: (id: string) => void;
   onDelete: (session: SessionInfo) => void;
+  onRename: (session: SessionInfo, name: string) => void;
   onDeleteAll: () => void;
 }
 
@@ -63,6 +65,7 @@ export function HubView({
   onPermission,
   onResume,
   onDelete,
+  onRename,
   onDeleteAll,
 }: Props) {
   return (
@@ -203,41 +206,127 @@ export function HubView({
           ) : (
             <div className="ctx-grid">
               {sessions.map((s) => (
-                <Tooltip
+                <SessionCard
                   key={s.id}
-                  className="tt-block"
-                  title={s.title || t('session.untitled')}
-                  text={t('sessions.openHint')}
-                  rows={sessionRows(s, t)}
-                >
-                  <button
-                    type="button"
-                    className={`ctx-card ${s.id === activeSessionId ? 'active' : ''}`}
-                    onClick={() => onResume(s.id)}
-                  >
-                    <span className="ctx-card-title">{s.title || t('session.untitled')}</span>
-                    <span className="ctx-card-meta">
-                      {fmtDate(s.updatedAt)} · {s.messageCount} {t('sessions.messages')}
-                    </span>
-                    <span
-                      className="ctx-card-del"
-                      title={t('sessions.delete')}
-                      role="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(s);
-                      }}
-                    >
-                      🗑
-                    </span>
-                  </button>
-                </Tooltip>
+                  s={s}
+                  t={t}
+                  active={s.id === activeSessionId}
+                  onResume={onResume}
+                  onDelete={onDelete}
+                  onRename={onRename}
+                />
               ))}
             </div>
           )}
         </section>
       </div>
     </div>
+  );
+}
+
+// Card de um contexto salvo. Abre ao clicar; ✏ entra em edição inline do nome,
+// 🗑 remove. Ao salvar, dispara onRename (host persiste e atualiza o título da
+// webview aberta, se houver).
+function SessionCard({
+  s,
+  t,
+  active,
+  onResume,
+  onDelete,
+  onRename,
+}: {
+  s: SessionInfo;
+  t: Translator;
+  active: boolean;
+  onResume: (id: string) => void;
+  onDelete: (session: SessionInfo) => void;
+  onRename: (session: SessionInfo, name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(s.title || '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function startEdit(): void {
+    setDraft(s.title || '');
+    setEditing(true);
+  }
+  function commit(): void {
+    const name = draft.trim();
+    if (name && name !== s.title) onRename(s, name);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className={`ctx-card editing ${active ? 'active' : ''}`}>
+        <input
+          ref={inputRef}
+          className="ctx-card-edit"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            else if (e.key === 'Escape') setEditing(false);
+          }}
+          onBlur={commit}
+          aria-label={t('sessions.rename')}
+        />
+        <span className="ctx-card-meta">
+          {fmtDate(s.updatedAt)} · {s.messageCount} {t('sessions.messages')}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <Tooltip
+      className="tt-block"
+      title={s.title || t('session.untitled')}
+      text={t('sessions.openHint')}
+      rows={sessionRows(s, t)}
+    >
+      <button
+        type="button"
+        className={`ctx-card ${active ? 'active' : ''}`}
+        onClick={() => onResume(s.id)}
+      >
+        <span className="ctx-card-title">{s.title || t('session.untitled')}</span>
+        <span className="ctx-card-meta">
+          {fmtDate(s.updatedAt)} · {s.messageCount} {t('sessions.messages')}
+        </span>
+        <span className="ctx-card-actions">
+          <span
+            className="ctx-card-edit-btn"
+            title={t('sessions.rename')}
+            role="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              startEdit();
+            }}
+          >
+            ✏
+          </span>
+          <span
+            className="ctx-card-del"
+            title={t('sessions.delete')}
+            role="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(s);
+            }}
+          >
+            🗑
+          </span>
+        </span>
+      </button>
+    </Tooltip>
   );
 }
 

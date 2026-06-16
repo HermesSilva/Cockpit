@@ -102,6 +102,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('tootega.language')) provider.pushLocale();
       if (e.affectsConfiguration('tootega.apiKey')) provider.refreshModels();
+      if (e.affectsConfiguration('tootega.internalModel')) provider.applyInternalModel();
       // Mudança de model/effort/permission: reinicia overrides + reflete nos combos.
       if (
         e.affectsConfiguration('tootega.model') ||

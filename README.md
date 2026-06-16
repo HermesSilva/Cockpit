@@ -11,7 +11,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.44` |
+| **Extension version** | `1.0.79` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (screenshots show `2.1.177`) |
 | **Languages** | pt-BR and international English (runtime switching) |
@@ -29,7 +29,9 @@
 - [Build and packaging (.vsix)](#build-and-packaging-vsix)
 - [Getting started](#getting-started)
 - [Features](#features)
+- [Cockpit-exclusive features](#cockpit-exclusive-features)
 - [Models, effort, and sessions](#models-effort-and-sessions)
+- [Voice dictation](#voice-dictation)
 - [Composer attachments](#composer-attachments)
 - [Settings reference](#settings-reference)
 - [Commands and keyboard shortcuts](#commands-and-keyboard-shortcuts)
@@ -59,6 +61,9 @@ The Cockpit gives Claude Code users a complete GUI inside VS Code, focused on
   diffs — all via the CLI's interactive protocol.
 - A list of saved sessions (contexts) with resume, statistics, and deletion.
 - A **model** and **effort** selector per session; runtime language switching.
+- **Voice dictation** (speech-to-text) straight into the composer, with optional
+  spelling/grammar correction — and other Cockpit-only differentiators (see
+  [Cockpit-exclusive features](#cockpit-exclusive-features)).
 
 It runs as an **editor tab** (resizable panel) and/or as a **view in the Activity Bar**
 (the *Tootega Cockpit* container, view id `tootega.hub`).
@@ -261,7 +266,9 @@ automatically resumes the most recent session for that directory.
 | *Thinking* blocks with toggle | ✅ | Expand in the chat; default controlled by `tootega.showThinking` | Only appears if the model/effort emits thinking |
 | Tool-call timeline (expandable cards) | ✅ | Click a card for input/output; default via `tootega.expandToolCards` | Inline diff in the editor not yet (rendered in the webview) |
 | Interrupt the agent (Stop) | ✅ | **Stop** button or **Ctrl+Alt+.** | Stops by ending the CLI process; it respawns on the next send |
-| Session history: list, resume, rename | ✅/🟡 | **Saved contexts** drawer; click to resume | Rename / advanced search partial |
+| Session history: list, resume, rename | ✅ | **Saved contexts** drawer; click to resume; **rename** button on the context card (updates the open webview title) | Advanced search partial |
+| **Rewind** from a prompt | ✅ | Rewind button on a prompt — truncates the transcript at that point and re-arms `--resume` | Restores the conversation, not the files on disk (Git checkpoints still planned) |
+| **Elapsed time** per turn | ✅ | Shown live on the gauge and again at the end of the turn | — |
 | Subagents (parallel threads) | 🟡 | Rendered when the CLI emits them | A dedicated parallel view is planned |
 | Message queue (follow-ups) | ⏳ | — | — |
 
@@ -296,7 +303,7 @@ automatically resumes the most recent session for that directory.
 | Feature | Status | Note |
 |---|---|---|
 | Automatic checkpoint before large changes | ⏳ | Planned (Git) |
-| Rewind from any message | ⏳ | — |
+| Rewind from any message | 🟡 | Truncates the transcript and re-arms `--resume` (conversation rewind); file restore via Git still planned |
 | Restore Files / Files Only / Files & Task | ⏳ | — |
 
 ### Statistics, context, cache, and consumption *(the heart of the product)*
@@ -307,7 +314,8 @@ automatically resumes the most recent session for that directory.
 | **Cache**: hit-rate, read, write | ✅ | **Cache** block in the panel | — |
 | **Cost** per turn and session | 🟡 | Cost block ("estimated" label) | Estimate, not the official invoice |
 | Tokens in / out / cache-create / cache-read | ✅/🟡 | **Tokens** block | Full breakdown partial |
-| **Subscription limits** (5h and 7d, % used) | 🟡 | Meters in the panel | Need a real usage source — see [statusline](#real-account-usage-statusline) |
+| **Subscription limits** (5h and 7d, % used) | ✅ | Meters in the panel, fed by the real OAuth `/usage` API (same source as `/usage`) | Statusline complements it during low usage — see [statusline](#real-account-usage-statusline) |
+| **Turn timing** segmented by (model, effort, type) | ✅ | Sample counts per segment; debounced flush with a cross-process lock (atomic merge) | — |
 | Context-near-limit alert | ✅ | Automatic warning above ~85% | — |
 | Context **breakdown** via `/context` | ⏳ | — | UI ready, data source pending |
 | Historical consumption charts | ⏳ | — | — |
@@ -353,6 +361,36 @@ by a confirmation:
 
 ---
 
+## Cockpit-exclusive features
+
+Differentiators that go **beyond surfacing the CLI** — the Cockpit's own value layer. Most
+rely on a deliberately narrow exception to the "CLI-only" rule: a handful of **clean,
+isolated** calls authenticated with the local Claude.ai OAuth token
+(`~/.claude/.credentials.json`). These are **not** the agent loop — they send only what the
+task needs (instruction + text), with **no** agent system prompt, tools, MCP, or project
+context, and **never** write or log credentials.
+
+| Feature | What it does | Channel |
+|---|---|---|
+| 🎙️ **Voice dictation** (speech-to-text) | Dictate straight into the composer — see [Voice dictation](#voice-dictation) | OAuth STT WebSocket (same service as the CLI's `/voice`); **no** token spend |
+| ✍️ **Dictation correction** | Optional spelling/grammar pass after you stop dictating; a clean one-shot (instruction + text only, ~1.7 s) | Anthropic Messages API with the internal model (`tootega.internalModel`, default Haiku) |
+| 🧠 **Internal AI utility helper** ([`AiClient`](src/cli/AiClient.ts)) | Shared, clean one-shot helper for the Cockpit's own utility calls (dictation correction, slash-command research). Avoids the CLI one-shot's ~5 s cold start + full system prompt/tools | Anthropic Messages API (OAuth), isolated |
+| 🏷️ **Slash-command auto-research** ([`SlashCommandResearch`](src/cli/SlashCommandResearch.ts)) | Categorizes/labels **unknown** slash commands (category, short hint, detail) in the UI language; results cached globally in `~/.claude/tootega/` so each command is researched only once | Internal AI helper |
+| 🚦 **Minimum-effort gate** ([`RepoDirectives`](src/session/RepoDirectives.ts)) | A folder can pin a minimum reasoning effort via a `CLAUDE.md` tag (`<!-- **enffort=max** -->`); on send, if the selected effort is below the folder's floor the Cockpit asks to confirm | Local (reads `CLAUDE.md`) |
+| ⏪ **Prompt rewind** | Rewind to an earlier prompt: truncates the transcript and re-arms `--resume` | Local |
+| ✏️ **Rename context** | Rename a saved session from its card; updates the open webview title | Local |
+| ⏱️ **Per-turn elapsed time** | Live on the gauge and again at the end of each turn | Local |
+| 📊 **Real account usage** | 5h / 7d meters fed by the real OAuth `/usage` API (no manual budgets) | OAuth `/usage`; **no** token spend |
+| 🪟 **Statusline real-usage wrapper** | Reversible wrapper that caches `rate_limits` / `context_window` and re-invokes your original statusline — see [statusline](#real-account-usage-statusline) | Local (Windows) |
+
+> **Why the exception is safe:** these calls are *clean and isolated* and sit outside agent
+> orchestration. The agent loop, billing parity, and subscription limits stay 100% on the
+> CLI. The OAuth token is **read-only**; `/usage` and STT spend **no** tokens, and the
+> dictation correction spends only *minimal* subscription tokens (instruction + text). See
+> [`CLAUDE.md`](CLAUDE.md) §6 for the recorded decision.
+
+---
+
 ## Models, effort, and sessions
 
 - **Model** and **Effort** are *session overrides* (they do not change global settings);
@@ -369,6 +407,30 @@ by a confirmation:
   `claude-sonnet-4-6[1m]`, `claude-haiku-4-5`, `claude-fable-5`) as the fallback when
   `/v1/models` is not reachable.
 - **Effort** is a fixed CLI enum: `low / medium / high / xhigh / max`.
+
+---
+
+## Voice dictation
+
+Dictate prompts straight into the composer. The **mic button** in the composer bar starts
+and stops capture.
+
+- **Transcription** runs over the OAuth **speech-to-text WebSocket**
+  (`/api/ws/speech_to_text/voice_stream`) — the same service the CLI's `/voice` uses
+  (`deepgram-nova3`, live interim results, endpointing). It spends **no** tokens.
+- **Mic capture happens on the host** via **ffmpeg** (the webview blocks `getUserMedia`).
+  Point `tootega.ffmpegPath` at your ffmpeg binary, or leave it empty to use `ffmpeg` from
+  the `PATH`.
+- **Optional correction:** with `tootega.voiceCorrect` on, when you stop, the text is sent
+  to the **internal model** (`tootega.internalModel`, default Haiku) for a quick
+  spelling/grammar pass — a clean, isolated one-shot (instruction + text only, ~1.7 s).
+- **Language:** `tootega.voiceLanguage` sets the dictation language; empty follows the
+  Cockpit UI language.
+- **UX:** the input gets focus when dictation starts; on stop it goes read-only with a
+  spinner while correcting; typing ends the dictation.
+
+> Voice features use the OAuth exception (clean, isolated calls) — see
+> [Cockpit-exclusive features](#cockpit-exclusive-features).
 
 ---
 
@@ -401,6 +463,10 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `showThinking` | boolean | `false` | Expand *thinking* blocks by default |
 | `expandToolCards` | boolean | `false` | Expand tool cards by default in the timeline |
 | `userName` | string | `""` | Name shown on your messages; empty = OS user |
+| `internalModel` | enum | `claude-haiku-4-5` | Model for the Cockpit's internal AI calls (dictation correction, slash-command research) — clean, isolated calls; Haiku is fastest/cheapest |
+| `voiceCorrect` | boolean | `true` | After stopping dictation, run a spelling/grammar pass with the internal model (clean one-shot) |
+| `voiceLanguage` | string | `""` | Dictation language (speech-to-text); empty follows the UI language |
+| `ffmpegPath` | string | `""` | Path to ffmpeg used for voice capture; empty = `ffmpeg` from PATH |
 
 > The 5h / 7d meters now read **real** account usage via the OAuth `/usage` API
 > (same source as the CLI's `/usage`), so no manual budgets are needed. The context
@@ -437,8 +503,12 @@ URI handler: `vscode://tootega.tootega-cockpit/open` opens the Cockpit.
 
 Slash commands are surfaced from the CLI (which exposes only their **names** via
 `sessionInit`); the Cockpit adds curated categories and descriptions
-([`webview/src/slashCatalog.ts`](webview/src/slashCatalog.ts)). Anything outside the
-catalog falls under **Other**.
+([`webview/src/slashCatalog.ts`](webview/src/slashCatalog.ts)). Commands **outside** the
+curated catalog are auto-researched by the internal AI helper
+([`SlashCommandResearch`](src/cli/SlashCommandResearch.ts)) — category, short hint, and
+detail in the UI language, cached globally in `~/.claude/tootega/` so each one is researched
+only once. Third-party plugin commands group under **Plugin**; anything still unresolved
+falls under **Other**.
 
 | Category | Commands |
 |---|---|
@@ -448,6 +518,8 @@ catalog falls under **Other**.
 | Tools | `review`, `init`, `mcp`, `agents`, `hooks` |
 | Account | `login`, `logout` |
 | Info | `cost`, `usage`, `status`, `help`, `doctor` |
+| Plugin | third-party plugin commands (auto-grouped) |
+| Other | anything still unresolved after auto-research |
 
 ---
 
@@ -578,13 +650,17 @@ Host logs: *Output → Tootega Cockpit*.
 ## Known limitations
 
 - **Inline diff in the native editor**, **editing a plan before approving**,
-  **checkpoints/rewind**, and the **context breakdown via `/context`** are still planned.
+  **Git checkpoints / file-restore**, and the **context breakdown via `/context`** are still
+  planned. **Rewind** today restores the *conversation* (transcript truncation + `--resume`),
+  not the files on disk.
 - **Cost** is an estimate ("estimated" label), not Anthropic's official invoice.
-- **Statusline / real usage** is **Windows-only** for now.
+- **Statusline** real-usage wrapper is **Windows-only** for now (the OAuth `/usage` meters
+  themselves are cross-platform); **voice capture** needs **ffmpeg** on the host.
 - The **event contract** is not yet frozen against real fixtures of a target `claude`
   version; version changes may affect parts of the rendering (the parser degrades
   gracefully, ignoring unknown events).
-- **Slash-command** descriptions/categories are curated (the CLI exposes only names).
+- **Slash-command** categories/descriptions are curated, then auto-researched by the
+  internal AI helper for anything outside the catalog (the CLI exposes only names).
 
 See the detailed status in
 [`Docs/status-implementacao.en.md`](Docs/status-implementacao.en.md).
@@ -595,7 +671,10 @@ See the detailed status in
 
 - Do not compete with the official extension at 1:1 parity — the differentiator is
   **consumption transparency and fine-grained control**.
-- Do not talk to the Anthropic API directly — the channel is the **CLI**.
+- Do not talk to the Anthropic API directly **for the agent loop** — that channel is the
+  **CLI**. The only exception is a few **clean, isolated** utility calls with the local OAuth
+  token (real usage, voice STT, dictation correction); see
+  [Cockpit-exclusive features](#cockpit-exclusive-features) and [`CLAUDE.md`](CLAUDE.md) §6.
 - Do not implement our own billing — the account and limits are the user's subscription.
 - Do not store user data off their machine.
 
@@ -606,6 +685,9 @@ See the detailed status in
 - Credential content is **never** logged.
 - The CLI's permission model is honored; approvals are not bypassed by the UI.
 - The optional `apiKey` is used **only** to list models (`/v1/models`), never in chat.
+- The local OAuth token (`~/.claude/.credentials.json`) is read **read-only** for the clean
+  utility calls (real usage, voice STT, dictation correction); it is **never** written or
+  logged, and those calls carry no agent context.
 - Session data lives locally in `~/.claude/` (transcripts) — nothing leaves the machine.
 
 ---

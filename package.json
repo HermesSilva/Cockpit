@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.75",
+  "version": "1.0.79",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -256,6 +256,25 @@
           "type": "string",
           "default": "",
           "description": "%cfg.ffmpegPath%"
+        },
+        "tootega.internalModel": {
+          "type": "string",
+          "default": "claude-haiku-4-5",
+          "enum": [
+            "claude-haiku-4-5",
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-5",
+            "claude-opus-4-6",
+            "claude-fable-5"
+          ],
+          "enumDescriptions": [
+            "Claude Haiku 4.5 (fast, cheap — recommended)",
+            "Claude Sonnet 4.6",
+            "Claude Sonnet 4.5",
+            "Claude Opus 4.6",
+            "Claude Fable 5"
+          ],
+          "description": "%cfg.internalModel%"
         },
         "tootega.voiceCorrect": {
           "type": "boolean",

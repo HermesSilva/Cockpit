@@ -1,11 +1,12 @@
-// Pesquisa, via IA (CLI one-shot), metadados de slash commands desconhecidos:
-// categoria (p/ agrupar), hint curto e detalhe — no idioma do Cockpit. Resultado
-// é cacheado num arquivo GLOBAL em ~/.claude/tootega/ (serve qualquer projeto).
-// No carregamento, só os comandos ausentes no cache são pesquisados.
+// Pesquisa, via IA, metadados de slash commands desconhecidos: categoria (p/
+// agrupar), hint curto e detalhe — no idioma do Cockpit. Resultado é cacheado num
+// arquivo GLOBAL em ~/.claude/tootega/ (serve qualquer projeto). No carregamento,
+// só os comandos ausentes no cache são pesquisados. Usa o helper AiClient (API
+// direta, ~1-2s) — antes era one-shot do CLI (~5s de cold start).
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import { ask } from './AiClient';
 import { log } from '../util/logger';
 
 export type CmdCategory =
@@ -84,11 +85,9 @@ let inFlight = false;
 export async function researchCommands(opts: {
   commands: string[];
   locale: string;
-  claudePath: string;
-  cwd: string;
   onResearchStart?: () => void; // chamado só quando vai mesmo consultar a IA
 }): Promise<Record<string, CmdInfo>> {
-  const { commands, locale, claudePath, cwd, onResearchStart } = opts;
+  const { commands, locale, onResearchStart } = opts;
   const cache = loadCache();
   const known = cache.locales[locale] ?? {};
   const names = commands.map((c) => c.replace(/^\//, '').trim()).filter(Boolean);
@@ -98,7 +97,7 @@ export async function researchCommands(opts: {
   inFlight = true;
   onResearchStart?.();
   try {
-    const researched = await askAI(missing, locale, claudePath, cwd);
+    const researched = await askAI(missing, locale);
     const now = new Date().toISOString();
     for (const [name, info] of Object.entries(researched)) {
       known[name] = { ...info, researchedAt: now };
@@ -116,41 +115,10 @@ export async function researchCommands(opts: {
 
 type AiInfo = { category: CmdCategory; hint: string; detail?: string; group?: string };
 
-function askAI(
-  missing: string[],
-  locale: string,
-  claudePath: string,
-  cwd: string,
-): Promise<Record<string, AiInfo>> {
-  const prompt = buildPrompt(missing, locale);
-  return new Promise((resolve, reject) => {
-    const useShell = process.platform === 'win32';
-    // Prompt vai pelo STDIN (não como arg): evita o cmd.exe quebrar em < > | { } "
-    // quando shell:true no Windows.
-    const child = spawn(shellSafe(claudePath, useShell), ['-p', '--output-format', 'json'], {
-      cwd,
-      env: process.env,
-      shell: useShell,
-    });
-    let out = '';
-    child.stdout.on('data', (d) => (out += d));
-    child.on('error', reject);
-    child.on('close', () => {
-      try {
-        resolve(parseAI(out, missing));
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      }
-    });
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
-}
-
-/** No Windows com shell, envolve o caminho em aspas se tiver espaços. */
-function shellSafe(p: string, useShell: boolean): string {
-  if (useShell && /\s/.test(p) && !p.startsWith('"')) return `"${p}"`;
-  return p;
+async function askAI(missing: string[], locale: string): Promise<Record<string, AiInfo>> {
+  const text = await ask({ prompt: buildPrompt(missing, locale), maxTokens: 2048 });
+  if (!text) throw new Error('no ai output');
+  return parseAI(text, missing);
 }
 
 function buildPrompt(missing: string[], locale: string): string {
@@ -165,15 +133,8 @@ function buildPrompt(missing: string[], locale: string): string {
   ].join('\n');
 }
 
-function parseAI(stdout: string, missing: string[]): Record<string, AiInfo> {
-  // --output-format json envelopa a resposta do modelo em { result: "<texto>" }.
-  let text = stdout.trim();
-  try {
-    const wrap = JSON.parse(stdout);
-    if (wrap && typeof wrap.result === 'string') text = wrap.result;
-  } catch {
-    /* stdout pode já ser o texto cru */
-  }
+function parseAI(text: string, missing: string[]): Record<string, AiInfo> {
+  // O helper devolve o texto do modelo direto (o JSON pedido).
   const raw = JSON.parse(extractJson(text)) as Record<string, unknown>;
   const out: Record<string, AiInfo> = {};
   for (const name of missing) {

@@ -18,6 +18,7 @@ import { resolveMinEffort, EFFORT_RANK } from '../session/RepoDirectives';
 import { VoiceSession } from '../cli/VoiceStream';
 import { AudioCapture } from '../cli/AudioCapture';
 import { correctText } from '../cli/TextCorrector';
+import { setInternalModel } from '../cli/AiClient';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
@@ -99,6 +100,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
     this.statusBar = statusBar;
     this.updateStatusBar(false);
+    setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
   }
 
   // ---- Abas / sessões paralelas ----
@@ -510,8 +512,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const meta = await researchCommands({
         commands: slashCommands,
         locale: resolveLocale(),
-        claudePath: this.claudePath(),
-        cwd: this.workspaceCwd(),
         onResearchStart: () => {
           started = true;
           this.post({ kind: 'slashResearching', busy: true });
@@ -843,6 +843,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   refreshModels(): void {
     this.discoveryTried = false;
     void this.tryDiscoverModels();
+  }
+
+  /** Aplica o modelo interno (tootega.internalModel) ao helper de IA. */
+  applyInternalModel(): void {
+    setInternalModel(this.cfg().get<string>('internalModel', ''));
   }
 
   /** Recalcula o uso local (ex.: após mudar orçamento nas settings). */

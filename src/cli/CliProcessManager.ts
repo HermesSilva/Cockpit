@@ -114,6 +114,11 @@ export class CliProcessManager extends EventEmitter {
       cwd: this.opts.cwd,
       env: process.env,
       shell: useShell, // resolve 'claude.cmd' no Windows e evita EINVAL no Node 22+
+      // Fora do Windows, dá ao `claude` um GRUPO de processos próprio (detached) p/
+      // encerrar a ÁRVORE inteira (claude + subagents) via kill(-pid) no stop().
+      // Sem isto, um SIGTERM só no líder deixava netos órfãos. No Windows o
+      // shell:true torna `proc` o cmd.exe → lá usamos taskkill /T.
+      detached: !useShell,
     }) as ChildProcessWithoutNullStreams;
 
     proc.stdout.setEncoding('utf8');
@@ -197,6 +202,10 @@ export class CliProcessManager extends EventEmitter {
       // (node) filho órfão e ainda executando. taskkill /T encerra a árvore toda.
       if (process.platform === 'win32' && proc.pid != null) {
         spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F']);
+      } else if (proc.pid != null) {
+        // Não-Windows: `claude` é líder do próprio grupo (detached). Encerra o grupo
+        // inteiro (negativo = grupo) — pega subagents/filhos junto.
+        killGroup(proc.pid);
       } else {
         proc.kill('SIGTERM');
       }
@@ -204,6 +213,31 @@ export class CliProcessManager extends EventEmitter {
       /* noop */
     }
   }
+}
+
+/**
+ * Encerra a árvore de um processo detached fora do Windows. `process.kill(-pid)`
+ * sinaliza o GRUPO inteiro (líder + filhos). SIGTERM primeiro (saída limpa) e,
+ * se algo persistir, SIGKILL após uma folga. Tolerante a ESRCH (já morto).
+ */
+function killGroup(pid: number): void {
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    try {
+      process.kill(pid, 'SIGTERM'); // sem grupo (raro): mata ao menos o líder
+    } catch {
+      /* já encerrado */
+    }
+  }
+  const t = setTimeout(() => {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      /* já encerrado */
+    }
+  }, 2000);
+  t.unref?.(); // não segura o event loop
 }
 
 /** No Windows com shell, envolve o caminho em aspas se tiver espaços. */

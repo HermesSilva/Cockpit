@@ -6,6 +6,7 @@
   "Real usage tracking enabled. Run an interactive `claude` session once to populate it.": "Uso real ativado. Rode uma sessão interativa do `claude` uma vez para preencher.",
   "Real usage tracking disabled.": "Uso real desativado.",
   "Real usage tracking is Windows-only for now.": "Uso real por enquanto é só no Windows.",
+  "Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)": "O uso real da conta já vem da API do Claude nesta plataforma — nada a instalar. (O wrapper de statusline é uma fonte extra só do Windows.)",
   "Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.": "Não consegui atualizar ~/.claude/settings.json (tem comentários?). Edite manualmente.",
   "Installing Claude Code CLI… when it finishes, click \"Re-check\".": "Instalando o Claude Code CLI… ao terminar, clique em \"Verificar novamente\".",
   "Claude Code CLI not found. The Cockpit needs it to run.": "Claude Code CLI não encontrado. O Cockpit precisa dele para funcionar.",

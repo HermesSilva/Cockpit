@@ -74,8 +74,12 @@ export function activate(context: vscode.ExtensionContext): void {
           vscode.l10n.t('Real usage tracking enabled. Run an interactive `claude` session once to populate it.'),
         );
       } else if (r === 'unsupported') {
-        void vscode.window.showWarningMessage(
-          vscode.l10n.t('Real usage tracking is Windows-only for now.'),
+        // Fora do Windows o wrapper de statusline não se aplica — mas o uso real já
+        // vem da API OAuth /usage (fonte primária, cross-platform). Nada a instalar.
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t(
+            'Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)',
+          ),
         );
       } else {
         void vscode.window.showWarningMessage(

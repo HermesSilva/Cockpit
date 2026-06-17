@@ -6,5 +6,6 @@
   "Real usage tracking enabled. Run an interactive `claude` session once to populate it.": "Real usage tracking enabled. Run an interactive `claude` session once to populate it.",
   "Real usage tracking disabled.": "Real usage tracking disabled.",
   "Real usage tracking is Windows-only for now.": "Real usage tracking is Windows-only for now.",
+  "Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)": "Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)",
   "Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.": "Could not update ~/.claude/settings.json (does it have comments?). Edit it manually."
 }

@@ -23,6 +23,7 @@
   "cfg.voiceLanguage": "Idioma do ditado por voz (fala para texto). Vazio = segue o idioma da UI do Cockpit.",
   "cfg.voiceCorrect": "Ao parar o ditado, envia o texto para o modelo interno corrigir ortografia/gramática. Chamada limpa e isolada (só instrução + texto; sem tools/MCP/contexto).",
   "cfg.internalModel": "Modelo usado nas chamadas internas de IA do Cockpit (correção do ditado, ajuda dos comandos '/'). São chamadas limpas e isoladas (sem tools/MCP/contexto). O Haiku é o mais rápido/barato.",
+  "cfg.verbosity": "Quanto do timeline mostrar (só exibição — não muda o agente). Verbose = tudo; Necessary = edições + explicações finais; Dialogo = edições + o que está fazendo; Quiet = só explicações finais.",
   "cfg.model": "Modelo default para novas sessões. 'Account default' deixa o CLI escolher. Reflete (pré-seleciona) no combo Model do painel; mude lá para sobrepor só a sessão atual.",
   "cfg.effort": "Esforço de raciocínio default para novas sessões. 'CLI default' usa o effortLevel do ~/.claude/settings.json. Reflete (pré-seleciona) no combo Effort do painel; mude lá para sobrepor só a sessão atual.",
   "cfg.apiKey": "API key Anthropic opcional, usada **apenas** para listar modelos disponíveis via `/v1/models`. Deixe vazio se o Claude Code está autenticado por assinatura — o seletor de modelo cai para aliases, o modelo ativo e um campo custom. A key não é usada no chat (isso sempre passa pelo CLI).",

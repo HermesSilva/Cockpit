@@ -11,7 +11,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.79` |
+| **Extension version** | `1.0.99` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (screenshots show `2.1.177`) |
 | **Languages** | pt-BR and international English (runtime switching) |
@@ -31,6 +31,8 @@
 - [Features](#features)
 - [Cockpit-exclusive features](#cockpit-exclusive-features)
 - [Models, effort, and sessions](#models-effort-and-sessions)
+- [Plugins](#plugins)
+- [Timeline verbosity](#timeline-verbosity)
 - [Voice dictation](#voice-dictation)
 - [Composer attachments](#composer-attachments)
 - [Settings reference](#settings-reference)
@@ -330,6 +332,7 @@ automatically resumes the most recent session for that directory.
 | Feature | Status | Note |
 |---|---|---|
 | Slash commands (built-in + custom) with autocomplete | ✅/🟡 | Curated catalog (context, session, config, tools, account, info); the CLI exposes only names via `sessionInit`, descriptions are curated |
+| **Plugins manager** (browse / install / remove / enable / disable / update + marketplaces) | ✅ | 🧩 **Plugins** in the Hub — see [Plugins](#plugins) |
 | Skills: list / trigger | 🟡 | Via slash commands when exposed |
 | Custom subagents: list / select | ⏳ | — |
 | MCP servers: status / tools / connect | 🟡 | `/mcp` forwarded to the CLI |
@@ -376,6 +379,8 @@ context, and **never** write or log credentials.
 | ✍️ **Dictation correction** | Optional spelling/grammar pass after you stop dictating; a clean one-shot (instruction + text only, ~1.7 s) | Anthropic Messages API with the internal model (`tootega.internalModel`, default Haiku) |
 | 🧠 **Internal AI utility helper** ([`AiClient`](src/cli/AiClient.ts)) | Shared, clean one-shot helper for the Cockpit's own utility calls (dictation correction, slash-command research). Avoids the CLI one-shot's ~5 s cold start + full system prompt/tools | Anthropic Messages API (OAuth), isolated |
 | 🏷️ **Slash-command auto-research** ([`SlashCommandResearch`](src/cli/SlashCommandResearch.ts)) | Categorizes/labels **unknown** slash commands (category, short hint, detail) in the UI language; results cached globally in `~/.claude/tootega/` so each command is researched only once | Internal AI helper |
+| 🧩 **Plugins manager** ([`PluginManager`](src/cli/PluginManager.ts)) | Browse/install/remove/enable/disable/update plugins + marketplaces; canonical URL and kind badge per plugin resolved once by the internal helper and cached — see [Plugins](#plugins) | CLI (`claude plugin …`) + internal AI helper for URL/kind |
+| 🎚️ **Timeline verbosity** | Display-only filter (verbose / necessary / dialogo / quiet) that collapses tool noise — see [Timeline verbosity](#timeline-verbosity) | Local |
 | 🚦 **Minimum-effort gate** ([`RepoDirectives`](src/session/RepoDirectives.ts)) | A folder can pin a minimum reasoning effort via a `CLAUDE.md` tag (`<!-- **enffort=max** -->`); on send, if the selected effort is below the folder's floor the Cockpit asks to confirm | Local (reads `CLAUDE.md`) |
 | ⏪ **Prompt rewind** | Rewind to an earlier prompt: truncates the transcript and re-arms `--resume` | Local |
 | ✏️ **Rename context** | Rename a saved session from its card; updates the open webview title | Local |
@@ -407,6 +412,42 @@ context, and **never** write or log credentials.
   `claude-sonnet-4-6[1m]`, `claude-haiku-4-5`, `claude-fable-5`) as the fallback when
   `/v1/models` is not reachable.
 - **Effort** is a fixed CLI enum: `low / medium / high / xhigh / max`.
+
+---
+
+## Plugins
+
+A full **plugins manager** ([`src/cli/PluginManager.ts`](src/cli/PluginManager.ts),
+[`PluginsModal`](webview/src/components/PluginsModal.tsx)), opened from the 🧩 **Plugins**
+entry in the Hub. Everything goes through the official CLI (`claude plugin …`) — the Cockpit
+only surfaces it:
+
+- **List** installed + available plugins (across configured marketplaces) and filter by
+  **All / Installed / Available**; search by name; sort exposes install counts.
+- **Actions:** install (with scope), uninstall, enable, disable, update.
+- **Marketplaces:** add (URL, `owner/repo`, or local path) and remove.
+- **Enrichment:** each plugin shows a **kind** badge (skills · agents · commands · MCP ·
+  hooks · mixed) and a canonical **URL**. The kind of *installed* plugins is computed
+  precisely from local components; URL + kind for the rest are resolved once by the internal
+  AI helper (Haiku) and **cached** in `~/.claude/tootega/plugin-urls.json` (**Refresh** can
+  force re-validation). Best-effort — failure keeps the derived values.
+
+---
+
+## Timeline verbosity
+
+`tootega.verbosity` controls **how much of the timeline is shown — display only; it does not
+change the agent or what the CLI does.** Modes:
+
+| Mode | Shows |
+|---|---|
+| `verbose` (default) | Everything (as before) |
+| `necessary` | Only edits and final explanations |
+| `dialogo` | Only edits and what it's doing |
+| `quiet` | Only final explanations |
+
+In non-verbose modes the progress bar collapses several hidden tool calls into a single
+turn/edit segment instead of one card per tool.
 
 ---
 
@@ -461,6 +502,7 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `permissionMode` | enum | `default` | Permission mode forwarded to the CLI; reflected in the dropdown |
 | `notifyOnComplete` | boolean | `true` | Notify when the agent finishes and the panel is not visible |
 | `showThinking` | boolean | `false` | Expand *thinking* blocks by default |
+| `verbosity` | enum | `verbose` | Timeline display level — `verbose` / `necessary` / `dialogo` / `quiet` (display only; see [Timeline verbosity](#timeline-verbosity)) |
 | `expandToolCards` | boolean | `false` | Expand tool cards by default in the timeline |
 | `userName` | string | `""` | Name shown on your messages; empty = OS user |
 | `internalModel` | enum | `claude-haiku-4-5` | Model for the Cockpit's internal AI calls (dictation correction, slash-command research) — clean, isolated calls; Haiku is fastest/cheapest |

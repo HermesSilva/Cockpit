@@ -7,7 +7,13 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { reducer, initialState, activeTab } from './store';
-import type { HostToWebview, ImageAttachment, SessionInfo, UsageData } from '../../shared/protocol';
+import type {
+  HostToWebview,
+  ImageAttachment,
+  PluginsData,
+  SessionInfo,
+  UsageData,
+} from '../../shared/protocol';
 import { send } from './vscodeApi';
 import { createTranslator } from './i18n';
 import { CliMissing } from './components/CliMissing';
@@ -15,6 +21,7 @@ import { Timeline, seedTaskTimings } from './components/Timeline';
 import { Composer } from './components/Composer';
 import { HubView } from './components/HubView';
 import { UsageModal } from './components/UsageModal';
+import { PluginsModal } from './components/PluginsModal';
 import { PermissionModal } from './components/PermissionModal';
 import { AskQuestionModal } from './components/AskQuestionModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -30,8 +37,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // p/ reenviar com force=true se o usuário confirmar.
   const [confirmEffort, setConfirmEffort] = useState<{ selected: string; min: string } | null>(null);
   const lastSendRef = useRef<{ text: string; images: ImageAttachment[] } | null>(null);
+  const [draftRestore, setDraftRestore] = useState<{ text: string; images: ImageAttachment[] } | null>(null);
   const [showUsage, setShowUsage] = useState(false);
   const [usage, setUsage] = useState<UsageData | null>(null);
+  const [showPlugins, setShowPlugins] = useState(false);
+  const [plugins, setPlugins] = useState<PluginsData | null>(null);
+  const [pluginsBusy, setPluginsBusy] = useState(false);
+  const [pluginsBusyLabel, setPluginsBusyLabel] = useState<string | undefined>(undefined);
+  const [pluginsError, setPluginsError] = useState<string | undefined>(undefined);
   // null = segue as settings; boolean = override do botão "expandir/colapsar tudo".
   const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -63,6 +76,13 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       if (data?.kind === 'taskTimings') seedTaskTimings(data.timings); // médias do host p/ o gauge
       if (data?.kind === 'usageData') setUsage(data.data); // resposta do botão Usage (dado quente)
       if (data?.kind === 'effortGate') setConfirmEffort({ selected: data.selected, min: data.min });
+      if (data?.kind === 'pluginsData') setPlugins(data.data);
+      if (data?.kind === 'pluginsBusy') {
+        setPluginsBusy(data.busy);
+        setPluginsBusyLabel(data.busy ? data.label : undefined);
+        if (data.busy) setPluginsError(undefined);
+      }
+      if (data?.kind === 'pluginsError') setPluginsError(data.message);
       dispatch({ type: 'host', msg: data });
     };
     window.addEventListener('message', onMsg);
@@ -105,6 +125,10 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     send({ kind: 'fetchUsage' });
   };
   const onManageUsage = () => send({ kind: 'openLink', href: 'https://claude.ai/settings/usage' });
+  const onPlugins = () => {
+    setShowPlugins(true);
+    send({ kind: 'pluginsRefresh' }); // carrega ao abrir
+  };
   const onEnableTracking = () => {
     setUsage(null); // mostra carregando; host instala wrapper e reenvia usageData
     send({ kind: 'enableUsageTracking' });
@@ -161,6 +185,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           stats={tab?.stats}
           config={state.config}
           activeModel={tab?.stats?.model ?? tab?.session?.model}
+          loggedIn={state.loggedIn}
           sessions={state.sessions}
           cwd={state.sessionsCwd}
           activeSessionId={tab?.sessionId ?? tab?.session?.sessionId}
@@ -171,6 +196,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onOpenFolder={(path) => send({ kind: 'openFolder', path })}
           onSettings={onSettings}
           onUsage={onUsage}
+          onPlugins={onPlugins}
           onLogin={() => send({ kind: 'loginCli' })}
           onLogout={() => send({ kind: 'logoutCli' })}
           onUpdate={() => send({ kind: 'updateCli' })}
@@ -218,6 +244,19 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onEnableTracking={onEnableTracking}
           />
         )}
+        {showPlugins && (
+          <PluginsModal
+            t={t}
+            data={plugins}
+            busy={pluginsBusy}
+            busyLabel={pluginsBusyLabel}
+            error={pluginsError}
+            onAction={(action, arg, scope) => send({ kind: 'pluginAction', action, arg, scope })}
+            onRefresh={() => send({ kind: 'pluginsRefresh', force: true })}
+            onOpenLink={(href) => send({ kind: 'openLink', href })}
+            onClose={() => setShowPlugins(false)}
+          />
+        )}
       </>
     );
   }
@@ -251,6 +290,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             busy={tab?.status === 'busy'}
             stats={tab?.stats}
             onRewind={tab?.status === 'busy' ? undefined : (idx) => setConfirmRewind(idx)}
+            verbosity={state.config?.verbosity}
           />
         </div>
         <ScrollMarkers scrollRef={scrollRef} items={items} />
@@ -276,6 +316,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         slashMeta={state.slashMeta}
         slashBusy={state.slashResearching}
         allExpanded={allExpanded ?? false}
+        injectDraft={draftRestore}
+        onDraftInjected={() => setDraftRestore(null)}
         onToggleExpandAll={() => setAllExpanded((a) => !(a ?? false))}
         onSend={onSend}
         onStop={onStop}
@@ -333,6 +375,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           }}
           onCancel={() => {
             dispatch({ type: 'removeLastUser' }); // desfaz a bolha otimista (não vai rodar)
+            if (lastSendRef.current) setDraftRestore(lastSendRef.current); // devolve o texto ao input
             setConfirmEffort(null);
           }}
         />

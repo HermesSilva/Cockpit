@@ -19,6 +19,7 @@ import { VoiceSession } from '../cli/VoiceStream';
 import { AudioCapture } from '../cli/AudioCapture';
 import { correctText } from '../cli/TextCorrector';
 import { setInternalModel } from '../cli/AiClient';
+import { listPlugins, pluginAction } from '../cli/PluginManager';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
@@ -227,7 +228,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void this.researchSlash(slashCommands);
     // Modelo REAL resolvido pelo CLI: o escopo de tempos pode ter mudado
     // ('default' -> id real). Recalibra o gauge com as médias do novo escopo.
-    if (tabId) this.postTaskTimings(tabId);
+    if (tabId) {
+      this.postTaskTimings(tabId);
+      // sessionId agora existe: persiste o override (se houver) desta sessão nova.
+      const s = this.sessions.get(tabId);
+      if (s) this.saveSessionModel(s);
+    }
     if (typeof model === 'string' && model) {
       if (!this.discoveredModels.has(model)) {
         this.discoveredModels.add(model);
@@ -534,6 +540,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'sessions', sessions, cwd });
   }
 
+  /** Lista plugins + marketplaces e envia ao modal. force = re-valida URLs (Haiku). */
+  private async sendPlugins(force = false): Promise<void> {
+    this.post({ kind: 'pluginsBusy', busy: true });
+    try {
+      const data = await listPlugins(this.claudePath(), force);
+      this.post({ kind: 'pluginsData', data });
+    } catch (e) {
+      this.post({ kind: 'pluginsError', message: String(e) });
+    } finally {
+      this.post({ kind: 'pluginsBusy', busy: false });
+    }
+  }
+
+  /** Executa uma ação de plugin (install/uninstall/…); ao fim, recarrega a lista. */
+  private async runPluginAction(
+    action: 'install' | 'uninstall' | 'enable' | 'disable' | 'update' | 'marketAdd' | 'marketRemove',
+    arg: string,
+    scope?: string,
+  ): Promise<void> {
+    this.post({ kind: 'pluginsBusy', busy: true, label: `${action} ${arg}` });
+    try {
+      const r = await pluginAction(this.claudePath(), action, arg, scope);
+      if (!r.ok) this.post({ kind: 'pluginsError', message: r.message ?? 'failed' });
+      const data = await listPlugins(this.claudePath());
+      this.post({ kind: 'pluginsData', data });
+    } catch (e) {
+      this.post({ kind: 'pluginsError', message: String(e) });
+    } finally {
+      this.post({ kind: 'pluginsBusy', busy: false });
+    }
+  }
+
   /** Reúne conta + limites reais (quentes) e envia ao webview (botão Usage). */
   private async sendUsage(): Promise<void> {
     try {
@@ -570,7 +608,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const s = this.active();
     if (s.resumeId || s.cli || s.sessionId) return; // já há sessão ativa
     const id = latestSessionId(this.workspaceCwd());
-    if (id) s.resume(id);
+    if (id) {
+      s.resume(id);
+      this.restoreSessionModel(s, id); // restaura model/effort salvos
+      this.sendConfig(); // reflete o model/effort restaurado nos combos
+    }
   }
 
   /**
@@ -612,12 +654,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private resumeInTab(tab: string, sessionId: string): void {
     const s = this.sessions.get(tab);
     s?.resume(sessionId);
+    if (s) this.restoreSessionModel(s, sessionId); // model/effort salvos desta sessão
     const items = loadTranscript(this.workspaceCwd(), sessionId);
     const names = this.memory.get<Record<string, string>>('sessionNames', {});
     this.setTabTitle(tab, names[sessionId] || this.titleFromItems(items));
     this.post({ kind: 'history', items }, tab);
     this.postTabs();
     log(`Resuming session ${sessionId} (${items.length} items) in ${tab}`);
+  }
+
+  /** Persiste o model/effort (override) da sessão por sessionId, p/ restaurar depois. */
+  private saveSessionModel(s: Session): void {
+    const id = s.sessionId ?? s.resumeId;
+    if (!id) return; // sessão nova ainda sem id: salva quando o init trouxer o id
+    const map = this.memory.get<Record<string, { model?: string; effort?: string }>>('sessionModels', {});
+    map[id] = { model: s.modelOverride, effort: s.effortOverride };
+    void this.memory.update('sessionModels', map);
+  }
+
+  /** Restaura o model/effort salvos de uma sessão (sem reiniciar — ainda sem CLI). */
+  private restoreSessionModel(s: Session, id: string): void {
+    const map = this.memory.get<Record<string, { model?: string; effort?: string }>>('sessionModels', {});
+    const o = map[id];
+    if (!o) return;
+    if (o.model) s.modelOverride = o.model;
+    if (o.effort) s.effortOverride = o.effort;
   }
 
   /**
@@ -827,6 +888,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         pendingRestart: this.pendingRestart,
         userName: this.userName(),
         voiceCorrect: this.cfg().get<boolean>('voiceCorrect', true),
+        verbosity: this.cfg().get<string>('verbosity', 'verbose') || 'verbose',
       },
     });
   }
@@ -862,9 +924,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.sendConfig();
   }
 
-  /** Prefs só de UI (thinking/tool cards/nome): re-empurra config sem mexer na sessão. */
+  /** Prefs só de UI (thinking/tool cards/nome/verbosity): re-empurra config sem mexer na sessão. */
   pushConfig(): void {
     this.sendConfig();
+    if (this.activeTab) this.postTaskTimings(this.activeTab); // verbosity muda o escopo do gauge
   }
 
   /** Abre a lista de sessões na UI (comando/atalho). */
@@ -878,19 +941,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // ecoa o nível no stream, então resolvemos 'default' p/ o setting do Cockpit e,
   // se ainda 'default', p/ o effortLevel REAL do CLI (~/.claude/settings.json) —
   // assim a chave não fica num 'default' ambíguo.
-  private timingScope(s: Session): { model: string; effort: string } {
+  private timingScope(s: Session): { model: string; effort: string; verbosity: string } {
     const model = s.stats.snapshot().model || s.model() || 'default';
     let effort = s.effort() || 'default';
     if (effort === 'default') effort = this.cfg().get<string>('effort', 'default') || 'default';
     if (effort === 'default') effort = this.defaults.effort || 'default';
-    return { model, effort };
+    const verbosity = this.cfg().get<string>('verbosity', 'verbose') || 'verbose';
+    return { model, effort, verbosity };
   }
 
   /** Envia ao(s) surface(s) as médias do escopo atual da aba (gauge calibrado). */
   private postTaskTimings(tabId: string): void {
     const s = this.sessions.get(tabId) ?? this.active();
-    const { model, effort } = this.timingScope(s);
-    this.post({ kind: 'taskTimings', timings: taskTimingsScoped(model, effort) }, tabId);
+    const { model, effort, verbosity } = this.timingScope(s);
+    this.post({ kind: 'taskTimings', timings: taskTimingsScoped(model, effort, verbosity) }, tabId);
   }
 
   // ---- Mensagens vindas do webview ----
@@ -908,6 +972,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.reportCliStatus();
         void this.tryDiscoverModels();
         this.startUsageTimer();
+        this.reportAuth(); // estado de login p/ o botão Sign in/out
         this.postTaskTimings(bound ?? this.activeTab); // médias do escopo p/ calibrar o gauge
         this.autoResumeLast();
         this.postTabs();
@@ -973,12 +1038,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'setModel':
         srcSession().setModel(m.model);
+        this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;
         this.sendConfig();
         this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
         break;
       case 'setEffort':
         srcSession().setEffort(m.effort);
+        this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;
         this.sendConfig();
         this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
@@ -1033,6 +1100,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'recheckCli':
         this.reportCliStatus();
+        this.reportAuth();
         break;
       case 'loginCli':
         this.loginCli();
@@ -1066,9 +1134,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'taskDuration': {
         // Amostra de duração: agrega/persiste segmentada por (modelo, effort,
-        // tipo) e devolve ao surface da aba as médias do seu escopo atual.
-        const { model, effort } = this.timingScope(srcSession());
-        recordTaskTiming(model, effort, m.type, m.ms);
+        // verbosity, tipo) e devolve ao surface da aba as médias do escopo atual.
+        const { model, effort, verbosity } = this.timingScope(srcSession());
+        recordTaskTiming(model, effort, verbosity, m.type, m.ms);
         this.postTaskTimings(srcTab);
         break;
       }
@@ -1085,6 +1153,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'voiceCorrect':
         void this.correctVoice(srcTab, m.text);
+        break;
+      case 'pluginsRefresh':
+        void this.sendPlugins(m.force);
+        break;
+      case 'pluginAction':
+        void this.runPluginAction(m.action, m.arg, m.scope);
         break;
       case 'fetchUsage':
         void this.sendUsage(); // dado quente: busca conta + limites + breakdown ao clicar
@@ -1277,6 +1351,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void vscode.window.showInformationMessage(
       vscode.l10n.t('Signing in via your browser. Approve the request, then click "Re-check".'),
     );
+    this.scheduleAuthRefresh(); // o fluxo é assíncrono no terminal: re-checa em seguida
   }
 
   /** Logout nativo do CLI (`claude auth logout`) num terminal. O Cockpit não toca em credenciais. */
@@ -1287,6 +1362,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void vscode.window.showInformationMessage(
       vscode.l10n.t('Signing out in the terminal. Use Sign in when you want to log back in.'),
     );
+    this.scheduleAuthRefresh();
+  }
+
+  /** Busca o estado de login e empurra ao webview (mostra Sign in OU Sign out). */
+  reportAuth(): void {
+    void fetchAuthStatus(this.claudePath()).then((a) =>
+      this.post({ kind: 'auth', loggedIn: a.loggedIn }),
+    );
+  }
+
+  /** Re-checa o login algumas vezes (o fluxo de login/logout roda no terminal). */
+  private scheduleAuthRefresh(): void {
+    for (const ms of [3000, 8000, 15000]) setTimeout(() => this.reportAuth(), ms);
   }
 
   // ---- util ----

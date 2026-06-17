@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.79",
+  "version": "1.0.99",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -246,6 +246,23 @@
           "type": "boolean",
           "default": false,
           "description": "%cfg.expandToolCards%"
+        },
+        "tootega.verbosity": {
+          "type": "string",
+          "default": "verbose",
+          "enum": [
+            "verbose",
+            "necessary",
+            "dialogo",
+            "quiet"
+          ],
+          "enumDescriptions": [
+            "Verbose: everything (as today)",
+            "Necessary: only edits and final explanations",
+            "Dialogo: only edits and what it's doing",
+            "Quiet: only final explanations"
+          ],
+          "description": "%cfg.verbosity%"
         },
         "tootega.userName": {
           "type": "string",

@@ -7,6 +7,10 @@ import { log } from './util/logger';
 export function activate(context: vscode.ExtensionContext): void {
   log('Tootega Cockpit activating…');
 
+  // Reinício/reload: o VSCode tenta restaurar as abas-webview dos contextos, mas
+  // sem estado elas ficam "mortas". Fecha todas ao ativar — começa limpo.
+  closeStaleCockpitTabs();
+
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   context.subscriptions.push(statusBar);
 
@@ -115,7 +119,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (
         e.affectsConfiguration('tootega.showThinking') ||
         e.affectsConfiguration('tootega.expandToolCards') ||
-        e.affectsConfiguration('tootega.userName')
+        e.affectsConfiguration('tootega.userName') ||
+        e.affectsConfiguration('tootega.verbosity')
       ) {
         provider.pushConfig();
       }
@@ -138,6 +143,26 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   log('Tootega Cockpit deactivated.');
+}
+
+/** Fecha as abas-webview do Cockpit (viewType tootega.cockpit.editor) que o VSCode
+ *  tentou restaurar sem estado após reload/reinício. */
+function closeStaleCockpitTabs(): void {
+  try {
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        const input = tab.input;
+        if (
+          input instanceof vscode.TabInputWebview &&
+          input.viewType.includes('tootega.cockpit.editor')
+        ) {
+          void vscode.window.tabGroups.close(tab);
+        }
+      }
+    }
+  } catch (e) {
+    log(`closeStaleCockpitTabs: ${String(e)}`);
+  }
 }
 
 /**

@@ -16,6 +16,7 @@ interface Props {
   stats?: StatsSnapshot;
   config?: SessionConfig;
   activeModel?: string;
+  loggedIn: boolean;
   sessions: SessionInfo[];
   cwd?: string;
   activeSessionId?: string;
@@ -23,6 +24,7 @@ interface Props {
   onOpenFolder: (path: string) => void;
   onSettings: () => void;
   onUsage: () => void;
+  onPlugins: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onUpdate: () => void;
@@ -49,6 +51,7 @@ export function HubView({
   stats,
   config,
   activeModel,
+  loggedIn,
   sessions,
   cwd,
   activeSessionId,
@@ -56,6 +59,7 @@ export function HubView({
   onOpenFolder,
   onSettings,
   onUsage,
+  onPlugins,
   onLogin,
   onLogout,
   onUpdate,
@@ -128,14 +132,22 @@ export function HubView({
             📊 {t('usage.button')}
           </button>
         </Tooltip>
-        <Tooltip title={t('tip.login.title')} text={t('tip.login.desc')}>
-          <button type="button" className="ctx-link" onClick={onLogin}>
-            🔑 {t('tip.login.title')}
-          </button>
-        </Tooltip>
-        <Tooltip title={t('tip.logout.title')} text={t('tip.logout.desc')}>
-          <button type="button" className="ctx-link" onClick={onLogout}>
-            🚪 {t('tip.logout.title')}
+        {loggedIn ? (
+          <Tooltip title={t('tip.logout.title')} text={t('tip.logout.desc')}>
+            <button type="button" className="ctx-link" onClick={onLogout}>
+              🚪 {t('tip.logout.title')}
+            </button>
+          </Tooltip>
+        ) : (
+          <Tooltip title={t('tip.login.title')} text={t('tip.login.desc')}>
+            <button type="button" className="ctx-link" onClick={onLogin}>
+              🔑 {t('tip.login.title')}
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip title={t('plugins.title')} text={t('plugins.desc')}>
+          <button type="button" className="ctx-link" onClick={onPlugins}>
+            🧩 {t('plugins.title')}
           </button>
         </Tooltip>
         <Tooltip

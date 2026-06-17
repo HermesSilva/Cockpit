@@ -17,6 +17,9 @@ interface Props {
   slashMeta: Record<string, SlashCmdMeta>;
   slashBusy: boolean;
   allExpanded: boolean;
+  // Draft a restaurar no input (ex.: cancelou o gate de effort). Muda de ref p/ disparar.
+  injectDraft?: { text: string; images: ImageAttachment[] } | null;
+  onDraftInjected?: () => void;
   onToggleExpandAll: () => void;
   onSend: (text: string, images: ImageAttachment[]) => void;
   onStop: () => void;
@@ -42,6 +45,8 @@ export function Composer({
   slashMeta,
   slashBusy,
   allExpanded,
+  injectDraft,
+  onDraftInjected,
   onToggleExpandAll,
   onSend,
   onStop,
@@ -244,6 +249,23 @@ export function Composer({
     send({ kind: 'readClipboardFiles', requestId });
   };
 
+  // Restaura um draft (ex.: cancelou o gate de effort: o texto havia sido limpo).
+  useEffect(() => {
+    if (!injectDraft) return;
+    setText(injectDraft.text);
+    setImages(
+      injectDraft.images.map((i) => ({
+        id: rid(),
+        mediaType: i.mediaType,
+        data: i.data,
+        url: `data:${i.mediaType};base64,${i.data}`,
+      })),
+    );
+    requestAnimationFrame(() => ref.current?.focus());
+    onDraftInjected?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injectDraft]);
+
   const submit = () => {
     const v = text.trim();
     if ((!v && images.length === 0) || disabled) return;
@@ -281,6 +303,13 @@ export function Composer({
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      // Enter durante o ditado: encerra a captura SEM correção e envia já.
+      if (recordingRef.current) {
+        recordingRef.current = false;
+        setRecording(false);
+        send({ kind: 'voiceStop' });
+      }
+      if (correcting) setCorrecting(false); // cancela correção em curso, envia o que tem
       submit();
     }
   };
@@ -331,7 +360,21 @@ export function Composer({
         </div>
       )}
       <div className="composer-row">
-        <div className="composer-input-wrap">
+        <div
+          className="composer-input-wrap"
+          onMouseDown={(e) => {
+            // Clique na área vazia (abaixo do texto): mantém o foco no textarea.
+            if (e.target !== ref.current && !correcting) {
+              e.preventDefault();
+              const el = ref.current;
+              if (el) {
+                el.focus();
+                const end = el.value.length;
+                el.setSelectionRange(end, end);
+              }
+            }
+          }}
+        >
           <pre className="composer-highlight hljs" ref={hlRef} aria-hidden="true" />
           <textarea
             ref={ref}

@@ -54,6 +54,7 @@ interface Props {
   busy?: boolean; // turno em andamento: mostra o indicador de atividade no fim
   stats?: StatsSnapshot; // tokens enviados/recebidos p/ o contador do indicador
   onRewind?: (userIndex: number) => void; // rebobinar até este prompt (remove-o)
+  verbosity?: string; // verbose|necessary|dialogo|quiet — filtra a exibição
 }
 
 // Agrupa itens em turnos: cada mensagem do usuário e, depois dela, a corrida
@@ -105,6 +106,7 @@ export function Timeline({
   busy,
   stats,
   onRewind,
+  verbosity = 'verbose',
 }: Props) {
   if (items.length === 0 && emptyHint) {
     return (
@@ -153,10 +155,11 @@ export function Timeline({
             todos={todos}
             showTodos={gi === lastTodoGroup}
             answers={answers}
+            verbosity={verbosity}
           />
         ),
       )}
-      {busy && <ActivityIndicator t={t} items={items} stats={stats} />}
+      {busy && <ActivityIndicator t={t} items={items} stats={stats} verbosity={verbosity} />}
     </div>
   );
 }
@@ -207,6 +210,23 @@ function tauForType(type: string): number {
   return Math.min(TAU_MAX, Math.max(TAU_MIN, (avg - GAUGE_DELAY) / TAU_K));
 }
 
+// Comando/ferramenta em execução agora (último tool não concluído): nome +
+// arquivo/comando/padrão. Usado na barra de progresso nos modos não-verbose.
+function currentCmd(items: TimelineItem[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'tool' && !it.done) {
+      const input = (it.input ?? {}) as Record<string, unknown>;
+      const file = typeof input.file_path === 'string' ? basename(input.file_path) : undefined;
+      const cmd = typeof input.command === 'string' ? input.command : undefined;
+      const pat = typeof input.pattern === 'string' ? input.pattern : undefined;
+      const detail = file || (cmd ? cmd.slice(0, 48) : pat ? pat.slice(0, 48) : '');
+      return detail ? `${it.name}: ${detail}` : it.name;
+    }
+  }
+  return undefined;
+}
+
 // Indicador de atividade na última linha do timeline (enquanto o turno corre):
 // ícone da extensão + spinner + contador de tokens enviados/recebidos, como na
 // GUI original do Claude Code, + gauge de progresso restante (assintótico) à
@@ -216,34 +236,49 @@ function ActivityIndicator({
   t,
   items,
   stats,
+  verbosity = 'verbose',
 }: {
   t: Translator;
   items: TimelineItem[];
   stats?: StatsSnapshot;
+  verbosity?: string;
 }) {
   const icon = window.__TOOTEGA_ICON__;
   // Assinatura de "informação recebida": muda a cada item novo (texto/tool),
   // resultado de tool que chega, ou resposta concluída. É o gatilho de reinício
   // — streaming no mesmo bloco não muda o id, mas cada chegada muda a assinatura.
+  // O gauge só deve reiniciar quando algo é REALMENTE pintado no timeline (conforme
+  // a verbosity). Em quiet, tools ocultos mudam de comando sem pintar nada → não
+  // resetam. Por isso contamos só os items VISÍVEIS.
+  const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant')?.id;
+  const vis = items.filter((it) => visibleInTimeline(it, verbosity, lastAssistId));
   let doneAssist = 0;
   let doneTools = 0;
-  for (const it of items) {
+  for (const it of vis) {
     if (it.kind === 'assistant') {
       if (it.done) doneAssist++;
     } else if (it.kind === 'tool' && it.done) {
       doneTools++;
     }
   }
-  // Texto/thinking da resposta em voo: cresce a cada token que aparece. Usado p/
-  // resetar o gauge enquanto a resposta está visivelmente chegando.
-  const last = items[items.length - 1];
+  // Texto/thinking da resposta visível em voo: cresce a cada token que aparece.
+  const last = vis[vis.length - 1];
   const flowing =
     last && last.kind === 'assistant' && !last.done ? last.text.length + last.thinking.length : 0;
-  // Segmento "grosso" (aprendizado de duração + tipo): item novo / tool / conclusão.
-  const segSig = `${items.length}:${doneAssist}:${doneTools}`;
-  // Sinal "fino" (reset visual): muda também quando chega token → o gauge não sobe
-  // enquanto a resposta chega; só sobe em stall real (> GAUGE_DELAY sem nada novo).
-  const liveSig = `${segSig}:${flowing}`;
+  // Edições visíveis concluídas (deliverables pintados em necessary/dialogo).
+  const editsDone = vis.filter((i) => i.kind === 'tool' && i.done && MERGE_EDIT.test(i.name)).length;
+  // Fronteira de segmento (aprendizado) e reset visual, POR MODO:
+  //  - quiet: VÁRIOS comandos = UMA barra do turno inteiro → nunca reseta.
+  //  - necessary: reseta só quando uma EDIÇÃO é pintada (entre edições = 1 barra).
+  //  - verbose/dialogo: reseta por item visível (cada comando/texto = 1 barra).
+  let segSig: string;
+  if (verbosity === 'quiet') segSig = 'turn';
+  else if (verbosity === 'necessary') segSig = `e${editsDone}`;
+  else segSig = `${vis.length}:${doneAssist}:${doneTools}`;
+  // Reset "fino": inclui o streaming do texto (não sobe enquanto a resposta chega)
+  // só onde o texto é pintado (verbose/dialogo). Quiet/necessary ignoram tokens.
+  const liveSig =
+    verbosity === 'verbose' || verbosity === 'dialogo' ? `${segSig}:${flowing}` : segSig;
   const sent = stats?.inputTokens ?? 0;
   const received = stats?.outputTokens ?? 0;
   const [elapsed, setElapsed] = useState(0);
@@ -253,7 +288,12 @@ function ActivityIndicator({
   const segStartRef = useRef(Date.now()); // base do segmento (aprendizado)
   const prevLive = useRef(liveSig);
   const prevSeg = useRef(segSig);
-  const typeRef = useRef(taskType(items)); // tipo da espera atual
+  // Tipo do segmento p/ o aprendizado de duração:
+  //  - verbose: cada comando é um segmento próprio → tipo = comando (tool:Read…).
+  //  - não-verbose: UMA barra cobre VÁRIOS comandos diferentes (entre dois itens
+  //    pintados) → não dá p/ keyar por comando; usa um bucket único 'batch'.
+  const segType = () => (verbosity === 'verbose' ? taskType(vis) : 'batch');
+  const typeRef = useRef(segType());
   const tauRef = useRef(tauForType(typeRef.current)); // τ calibrado p/ esse tipo
   // Tick do cronômetro do gauge.
   useEffect(() => {
@@ -279,10 +319,19 @@ function ActivityIndicator({
     prevSeg.current = segSig;
     const dur = Date.now() - segStartRef.current;
     if (dur >= 150) send({ kind: 'taskDuration', type: typeRef.current, ms: dur });
-    typeRef.current = taskType(items);
+    typeRef.current = segType();
     tauRef.current = tauForType(typeRef.current);
     segStartRef.current = Date.now();
   }, [segSig]);
+  // Fim do turno (indicador desmonta): grava a última barra ainda em curso —
+  // é o que captura a duração da barra ÚNICA do quiet (que nunca muda segSig).
+  useEffect(() => {
+    return () => {
+      const dur = Date.now() - segStartRef.current;
+      if (dur >= 150) send({ kind: 'taskDuration', type: typeRef.current, ms: dur });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Gauge só após GAUGE_DELAY (stall > 2s); surge em GAUGE_START e cresce
   // assintótico (τ calibrado pelo tipo de tarefa) até o teto (1 - GAUGE_FLOOR).
   const showGauge = elapsed >= GAUGE_DELAY;
@@ -291,6 +340,9 @@ function ActivityIndicator({
     1 - (1 - GAUGE_START) * Math.exp(-(elapsed - GAUGE_DELAY) / tauRef.current),
   );
   const pct = Math.round(progress * 100);
+  // Em modos não-verbose os cards de tool ficam ocultos: mostra à esquerda o
+  // comando em execução agora (nome + arquivo/comando).
+  const cmd = verbosity !== 'verbose' ? currentCmd(items) : undefined;
   return (
     <div className="activity" role="status" aria-live="polite">
       {icon && <img className="activity-icon" src={icon} alt="" width={16} height={16} />}
@@ -299,7 +351,7 @@ function ActivityIndicator({
         <span className="activity-up" title={t('activity.sent')}>↑ {fmtCompact(sent)}</span>
         <span className="activity-down" title={t('activity.received')}>↓ {fmtCompact(received)}</span>
       </span>
-      <span className="activity-label">{t('activity.working')}</span>
+      <span className="activity-label">{cmd || t('activity.working')}</span>
       {showGauge && (
         <span
           className="activity-gauge"
@@ -320,6 +372,41 @@ function ActivityIndicator({
 
 // Um turno do Claude: cabeçalho único + texto/tools na ordem. Corridas de tools
 // de tarefa são fundidas numa única checklist inline (TodoCard).
+// Família de edição: agrupa entre si (Edit/Write/MultiEdit) no mesmo arquivo.
+const MERGE_EDIT = /^(Edit|MultiEdit|Write|NotebookEdit)$/;
+
+/**
+ * Chave de mesclagem: tools consecutivos com a MESMA chave viram um card só.
+ *  - edição no mesmo arquivo → `edit:<file>` (mescla Edit/Write/MultiEdit juntos)
+ *  - outro file-tool → `<name>:<file>` (Read do mesmo arquivo, etc.)
+ *  - demais (Bash/Grep/…) → `<name>` (sequência do mesmo comando)
+ */
+function mergeKey(it: ToolItem): string {
+  const input = (it.input ?? {}) as Record<string, unknown>;
+  const file = typeof input.file_path === 'string' ? input.file_path : undefined;
+  if (MERGE_EDIT.test(it.name) && file) return `edit:${file}`;
+  if (file) return `${it.name}:${file}`;
+  return it.name;
+}
+
+/**
+ * Um item é EXIBIDO no timeline conforme a verbosity (só display):
+ *   verbose=tudo; dialogo=edições+todo texto; necessary=edições+texto final;
+ *   quiet=só texto final. Ask/checklist sempre; user sempre.
+ */
+function visibleInTimeline(it: TimelineItem, verbosity: string, lastAssistId?: string): boolean {
+  if (verbosity === 'verbose') return true;
+  if (it.kind === 'user') return true;
+  if (it.kind === 'assistant') {
+    if (verbosity === 'dialogo') return true; // todo o texto
+    return it.id === lastAssistId; // necessary/quiet: só o final
+  }
+  // tool
+  if (it.name === 'AskUserQuestion' || isTodoToolName(it.name)) return true;
+  if (verbosity === 'quiet') return false;
+  return MERGE_EDIT.test(it.name); // necessary/dialogo: só edições
+}
+
 function ClaudeTurn({
   items,
   t,
@@ -328,6 +415,7 @@ function ClaudeTurn({
   todos,
   showTodos,
   answers,
+  verbosity,
 }: {
   items: (AssistantItem | ToolItem)[];
   t: Translator;
@@ -336,6 +424,7 @@ function ClaudeTurn({
   todos: TodoItem[];
   showTodos: boolean;
   answers?: Record<string, string>;
+  verbosity: string;
 }) {
   const active = items.some((i) => i.kind === 'assistant' && !i.done);
   const canceled = items.some((i) => i.kind === 'assistant' && i.canceled);
@@ -343,33 +432,64 @@ function ClaudeTurn({
   const turnStart = turnStartTs(items);
   const nodes: ReactNode[] = [];
   let todoShown = false;
-  for (const it of items) {
+  // Verbosity filtra a EXIBIÇÃO (não muda nada no agente):
+  //   verbose   = tudo (como hoje)
+  //   necessary = edições + explicação final
+  //   dialogo   = edições + texto do que está fazendo (todo o texto)
+  //   quiet     = só a explicação final
+  const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant')?.id;
+  const visible = items.filter((it) => visibleInTimeline(it, verbosity, lastAssistId));
+  // Buffer p/ mesclar tools ADJACENTES de mesma chave (mesmo arquivo/comando).
+  let group: ToolItem[] = [];
+  let groupKey = '';
+  const flushGroup = () => {
+    if (group.length === 0) return;
+    const grp = group;
+    group = [];
+    nodes.push(
+      <Tooltip key={grp[0].id} className="tt-block" title={grp[0].name} rows={toolRows(grp[0], t)}>
+        <ToolCard items={grp} t={t} defaultOpen={defaultOpenTools} />
+      </Tooltip>,
+    );
+  };
+  for (const it of visible) {
     // ToolSearch é plumbing interno do CLI (carrega schemas de tools deferred): oculta.
     if (it.kind === 'tool' && it.name === 'ToolSearch') continue;
     // Tools de tarefa não viram cards: alimentam a checklist única do turno.
     if (it.kind === 'tool' && isTodoToolName(it.name)) {
+      flushGroup();
       if (showTodos && !todoShown && todos.length > 0) {
         nodes.push(<TodoCard key={`todo-${it.id}`} t={t} todos={todos} />);
         todoShown = true;
       }
       continue;
     }
-    if (it.kind === 'assistant') {
-      nodes.push(
-        <Tooltip key={it.id} className="tt-block" title={t('role.assistant')} rows={assistantRows(it, t)}>
-          <AssistantContent item={it} t={t} defaultShowThinking={defaultShowThinking} />
-        </Tooltip>,
-      );
-    } else if (it.name === 'AskUserQuestion') {
+    // AskUserQuestion: card próprio (não mescla).
+    if (it.kind === 'tool' && it.name === 'AskUserQuestion') {
+      flushGroup();
       nodes.push(<AskCard key={it.id} item={it} t={t} answers={answers} />);
-    } else {
-      nodes.push(
-        <Tooltip key={it.id} className="tt-block" title={it.name} rows={toolRows(it, t)}>
-          <ToolCard item={it} t={t} defaultOpen={defaultOpenTools} />
-        </Tooltip>,
-      );
+      continue;
     }
+    // Demais tools: acumula no grupo enquanto a chave de mesclagem se mantém.
+    if (it.kind === 'tool') {
+      const key = mergeKey(it);
+      if (group.length && groupKey === key) group.push(it);
+      else {
+        flushGroup();
+        group = [it];
+        groupKey = key;
+      }
+      continue;
+    }
+    // Assistente (texto/thinking): quebra o grupo.
+    flushGroup();
+    nodes.push(
+      <Tooltip key={it.id} className="tt-block" title={t('role.assistant')} rows={assistantRows(it, t)}>
+        <AssistantContent item={it} t={t} defaultShowThinking={defaultShowThinking} />
+      </Tooltip>,
+    );
   }
+  flushGroup();
   return (
     <div className="bubble assistant turn">
       <Tooltip className="tt-block" focusable title={t('role.assistant')} rows={turnRows(items, t)}>
@@ -490,29 +610,26 @@ function AssistantContent({
   );
 }
 
-function ToolCard({ item, t, defaultOpen }: { item: ToolItem; t: Translator; defaultOpen: boolean }) {
+function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   // Default global (setting) mudou: re-sincroniza os cards já montados.
   useEffect(() => setOpen(defaultOpen), [defaultOpen]);
-  const statusCls = item.isError ? 'err' : item.done ? 'ok' : 'busy';
+  const item = items[0]; // primário (cabeçalho)
+  const last = items[items.length - 1];
+  const merged = items.length > 1;
+  // Status agregado: erro se qualquer um errou; ocupado se algum não concluiu.
+  const anyErr = items.some((i) => i.isError);
+  const anyBusy = items.some((i) => !i.done);
+  const statusCls = anyErr ? 'err' : anyBusy ? 'busy' : 'ok';
   const input = (item.input ?? {}) as Record<string, unknown>;
   const filePath = typeof input.file_path === 'string' ? input.file_path : undefined;
-  const lang = languageFromPath(filePath);
   const name = item.name;
-  const command = typeof input.command === 'string' ? input.command : undefined;
-  const description = typeof input.description === 'string' ? input.description : undefined;
-  const writeContent =
-    typeof input.content === 'string'
-      ? input.content
-      : typeof input.new_string === 'string'
-        ? input.new_string
-        : undefined;
 
   return (
     <div className={`tool-card ${statusCls}`}>
       <button type="button" className="tool-head" onClick={() => setOpen((o) => !o)}>
         <span className="tool-icon">{toolIcon(name)}</span>
-        <span className="tool-name">{name}</span>
+        <span className="tool-name">{name}{merged && <span className="tool-count">×{items.length}</span>}</span>
         {filePath && (
           <span
             className="tool-file"
@@ -526,7 +643,7 @@ function ToolCard({ item, t, defaultOpen }: { item: ToolItem; t: Translator; def
             {basename(filePath)}
           </span>
         )}
-        {item.ts && <span className="tool-time">{fmtStamp(item.ts)}</span>}
+        {last.ts && <span className="tool-time">{fmtStamp(last.ts)}</span>}
         {filePath && hasPreview(filePath) && (
           <span
             className="tool-view"
@@ -541,15 +658,35 @@ function ToolCard({ item, t, defaultOpen }: { item: ToolItem; t: Translator; def
           </span>
         )}
         <span className="tool-status">
-          {item.isError ? t('tool.error') : item.done ? '' : t('tool.running')}
+          {anyErr ? t('tool.error') : anyBusy ? t('tool.running') : ''}
         </span>
         <span className="chevron">{open ? '▾' : '▸'}</span>
       </button>
-      {open && <div className="tool-body">{renderBody()}</div>}
+      {open && (
+        <div className="tool-body">
+          {items.map((it, i) => (
+            <div key={it.id} className={i > 0 ? 'tool-merge-part' : undefined}>
+              {renderBody(it)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
-  function renderBody() {
+  function renderBody(item: ToolItem) {
+    const input = (item.input ?? {}) as Record<string, unknown>;
+    const filePath = typeof input.file_path === 'string' ? input.file_path : undefined;
+    const lang = languageFromPath(filePath);
+    const name = item.name;
+    const command = typeof input.command === 'string' ? input.command : undefined;
+    const description = typeof input.description === 'string' ? input.description : undefined;
+    const writeContent =
+      typeof input.content === 'string'
+        ? input.content
+        : typeof input.new_string === 'string'
+          ? input.new_string
+          : undefined;
     // Bash: comando shell destacado + saída (stdout) em texto.
     if (name === 'Bash' && command !== undefined) {
       return (

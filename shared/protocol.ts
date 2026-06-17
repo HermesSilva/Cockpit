@@ -38,6 +38,36 @@ export interface StatsSnapshot {
   limitsSource?: 'statusline' | 'stream' | 'estimate';
 }
 
+// --- Plugins (modal "Plugins") ---
+export interface InstalledPlugin {
+  id: string; // name@marketplace
+  version?: string;
+  scope?: string; // user | project | local
+  enabled: boolean;
+  description?: string; // do manifest plugin.json
+  url?: string; // homepage/repo/author do manifest
+  kind?: string; // tipo: skills|agents|commands|mcp|hooks|mixed (dos componentes)
+}
+export interface AvailablePlugin {
+  pluginId: string; // name@marketplace
+  name: string;
+  description?: string;
+  marketplaceName?: string;
+  installCount?: number;
+  url?: string; // repositório de origem (source.url)
+  kind?: string; // tipo (classificado pelo Haiku)
+}
+export interface Marketplace {
+  name: string;
+  source?: string; // github | git | path
+  repo?: string;
+}
+export interface PluginsData {
+  installed: InstalledPlugin[];
+  available: AvailablePlugin[];
+  marketplaces: Marketplace[];
+}
+
 // --- Account & Usage (botão "Usage") ---
 export interface UsageAccount {
   loggedIn: boolean;
@@ -76,6 +106,7 @@ export interface SessionConfig {
   pendingRestart: boolean; // model/effort/permission mudou e reinicia no próximo envio
   userName: string; // nome do assinante para o rótulo "You" (vazio = usa o padrão)
   voiceCorrect: boolean; // corrigir o texto ditado via Haiku ao parar o ditado
+  verbosity: string; // verbose|necessary|dialogo|quiet — o que mostrar no timeline
 }
 
 export interface ModelGroup {
@@ -206,6 +237,10 @@ type HostMsg =
   | { kind: 'voiceTranscript'; text: string; isFinal: boolean } // ditado: transcrição parcial/final
   | { kind: 'voiceError'; message: string } // ditado: falha (sem token, ws, etc.)
   | { kind: 'voiceClosed' } // ditado: sessão encerrada
+  | { kind: 'auth'; loggedIn: boolean } // estado de login (mostra Sign in OU Sign out)
+  | { kind: 'pluginsData'; data: PluginsData } // lista de plugins/marketplaces (modal)
+  | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operação em andamento
+  | { kind: 'pluginsError'; message: string } // falha numa ação de plugin
   | { kind: 'locale'; locale: string };
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
@@ -266,6 +301,13 @@ export type WebviewToHost =
   | { kind: 'voiceStart'; language?: string } // ditado: host abre o WS + captura o mic (ffmpeg)
   | { kind: 'voiceStop' } // ditado: finaliza a captura
   | { kind: 'voiceCorrect'; text: string } // ditado: corrige o texto via Haiku (one-shot)
+  | { kind: 'pluginsRefresh'; force?: boolean } // modal Plugins: (re)carrega; force = re-valida URLs via Haiku
+  | {
+      kind: 'pluginAction';
+      action: 'install' | 'uninstall' | 'enable' | 'disable' | 'update' | 'marketAdd' | 'marketRemove';
+      arg: string;
+      scope?: string;
+    }
   | { kind: 'fetchUsage' } // botão "Usage": busca conta + limites + breakdown (dado quente)
   | { kind: 'enableUsageTracking' } // instala o wrapper de statusline p/ capturar rate_limits real
   | { kind: 'saveImage'; mediaType: string; data: string };

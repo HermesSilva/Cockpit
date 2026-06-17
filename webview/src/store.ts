@@ -53,6 +53,7 @@ export interface UiState {
   showSessions: boolean;
   showContext: boolean;
   error?: string;
+  loggedIn: boolean; // estado de login (Sign in vs Sign out). Otimista até confirmar.
   tabs: TabState[];
   activeTab: string;
 }
@@ -65,6 +66,7 @@ export const initialState: UiState = {
   slashResearching: false,
   showSessions: false,
   showContext: false,
+  loggedIn: true,
   tabs: [],
   activeTab: '',
 };
@@ -167,6 +169,8 @@ export function reducer(state: UiState, action: Action): UiState {
       return { ...state, slashResearching: msg.busy };
     case 'openSessions':
       return { ...state, showSessions: true };
+    case 'auth':
+      return { ...state, loggedIn: msg.loggedIn };
     case 'error':
       return { ...state, error: msg.message };
     case 'tabs': {

@@ -22,7 +22,7 @@ import { log } from '../util/logger';
 const DIR = path.join(os.homedir(), '.claude', 'tootega');
 const FILE = path.join(DIR, 'task-timings.json');
 const LOCK = path.join(DIR, 'task-timings.lock');
-const VERSION = 3; // v3: { ms, n } por chave (v1/v2 descartados)
+const VERSION = 4; // v4: chave inclui verbosity (model::effort::verbosity::type)
 const EMA_ALPHA = 0.3; // peso da amostra nova depois de estabilizada (0..1)
 const MIN_MS = 150; // ignora ruído (reinícios quase instantâneos)
 const MAX_MS = 30 * 60_000; // ignora outliers (processo travado)
@@ -49,8 +49,8 @@ const pending: { key: string; ms: number }[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Chave composta legível p/ o store. */
-function keyOf(model: string, effort: string, type: string): string {
-  return `${model}${SEP}${effort}${SEP}${type}`;
+function keyOf(model: string, effort: string, verbosity: string, type: string): string {
+  return `${model}${SEP}${effort}${SEP}${verbosity}${SEP}${type}`;
 }
 
 /** Lê o store do disco (ou vazio). Não usa cache — é a base p/ mesclar no flush. */
@@ -152,12 +152,16 @@ function flush(): void {
 }
 
 /**
- * Médias só do escopo (modelo, effort) pedido, com a chave reduzida ao `type`
- * puro — a webview consulta por tipo (tool:Read/assistant) sem conhecer
- * modelo/effort. Só entram chaves com >= MIN_SAMPLES amostras (confiáveis).
+ * Médias só do escopo (modelo, effort, verbosity) pedido, com a chave reduzida ao
+ * `type` puro — a webview consulta por tipo (tool:Read/assistant) sem conhecer o
+ * escopo. Só entram chaves com >= MIN_SAMPLES amostras (confiáveis).
  */
-export function taskTimingsScoped(model: string, effort: string): Record<string, number> {
-  const prefix = `${model}${SEP}${effort}${SEP}`;
+export function taskTimingsScoped(
+  model: string,
+  effort: string,
+  verbosity: string,
+): Record<string, number> {
+  const prefix = `${model}${SEP}${effort}${SEP}${verbosity}${SEP}`;
   const out: Record<string, number> = {};
   for (const [k, st] of Object.entries(load().stats)) {
     if (k.startsWith(prefix) && st.n >= MIN_SAMPLES) out[k.slice(prefix.length)] = st.ms;
@@ -165,9 +169,15 @@ export function taskTimingsScoped(model: string, effort: string): Record<string,
   return out;
 }
 
-/** Enfileira uma amostra de duração (ms) p/ (modelo, effort, tipo); persiste debounced. */
-export function recordTaskTiming(model: string, effort: string, type: string, ms: number): void {
+/** Enfileira uma amostra (ms) p/ (modelo, effort, verbosity, tipo); persiste debounced. */
+export function recordTaskTiming(
+  model: string,
+  effort: string,
+  verbosity: string,
+  type: string,
+  ms: number,
+): void {
   if (!model || !type || !Number.isFinite(ms) || ms < MIN_MS || ms > MAX_MS) return;
-  pending.push({ key: keyOf(model, effort || 'default', type), ms });
+  pending.push({ key: keyOf(model, effort || 'default', verbosity || 'verbose', type), ms });
   scheduleSave();
 }

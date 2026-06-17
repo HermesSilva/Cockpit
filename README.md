@@ -203,6 +203,15 @@ run-dev.cmd
 run-dev.cmd C:\path\to\project
 ```
 
+**macOS / Linux (bash):**
+
+```bash
+./run-dev.sh                       # test window without a folder
+./run-dev.sh /path/to/project      # open pointing at a project
+./run-dev.sh --watch               # recompile on save
+./run-dev.sh --code code-insiders  # use VS Code Insiders
+```
+
 **Via VS Code:** open this folder and press `F5` (the *Run extension (dev)* configuration
 in [`.vscode/launch.json`](.vscode/launch.json)).
 
@@ -233,7 +242,9 @@ Available scripts ([`package.json`](package.json)):
 | `package` | `npm version patch` → build → `vsce package` |
 | `vsix` | typecheck → bump → build → `vsce package` |
 
-On Windows there are also `package-vsix.ps1` / `package-vsix.cmd` as shortcuts.
+On Windows there are also `package-vsix.ps1` / `package-vsix.cmd` as shortcuts; on
+macOS/Linux use `./package-vsix.sh [out.vsix]`. For the dev host, `./run-dev.sh` mirrors
+`run-dev.ps1`.
 Build output lands in `dist/` (`extension.js`, `webview/main.js`, `webview/main.css`).
 Packaging boundaries are controlled by [`.vscodeignore`](.vscodeignore) — only `dist/`,
 `l10n/`, `media/`, `package.nls*.json`, `LICENSE`, and `README.md` ship in the `.vsix`.

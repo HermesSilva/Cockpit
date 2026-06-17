@@ -483,7 +483,9 @@ and stops capture.
 - **Paste file** (with a path): inserts the **address** into the text — **relative** to the
   context cwd if inside it, otherwise **absolute** (resolved on the host with
   `path.relative`). The path comes from `File.path` (Electron) or `text/uri-list`
-  (`file://…`) as a fallback.
+  (`file://…`); when the webview exposes neither, the host reads the OS clipboard
+  (cross-platform: `Get-Clipboard` on Windows, AppleScript on macOS, `wl-paste`/`xclip`
+  on Linux).
 
 ---
 
@@ -665,9 +667,11 @@ active model), `assistant` / `user` messages, `result`, `stream_event` (partial 
 and `control_request` (`can_use_tool`, which carries both tool-permission prompts and
 **AskUserQuestion**).
 
-**Interrupt** ends the CLI process; on Windows (`shell: true`) the host uses
-`taskkill /T` to kill the whole tree so the orphaned `node` child does not keep running.
-The process respawns on the next send. **Resume** re-arms `--resume <session_id>` and
+**Interrupt** ends the CLI process and **kills the whole tree** so no orphaned child
+(e.g. a `node` subagent) keeps running: on Windows (`shell: true`) via `taskkill /T`; on
+macOS/Linux the CLI is spawned `detached` (its own process group) and killed with
+`process.kill(-pid)` (SIGTERM, then SIGKILL after a grace period). The process respawns on
+the next send. **Resume** re-arms `--resume <session_id>` and
 replays the transcript read from `~/.claude/projects/<encoded-cwd>/<id>.jsonl` (the cwd is
 encoded by mapping `:` `\` `/` → `-`).
 

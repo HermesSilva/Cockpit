@@ -1,7 +1,7 @@
 // Agrega usage dos eventos em um StatsSnapshot para a UI.
 // Cobre contexto, cache, custo e (quando disponível) limites da conta.
 import type { ClaudeEvent, Usage } from '../../shared/events';
-import type { StatsSnapshot, LimitWindow } from '../../shared/protocol';
+import type { StatsSnapshot, LimitWindow, ToolDecision } from '../../shared/protocol';
 
 // Preços por 1M tokens (USD). Estimativa — rotulada como tal na Ui.
 interface Price {
@@ -62,6 +62,9 @@ export class StatsAggregator {
   private lastTurnCostUsd = 0;
   private costIsEstimate = true;
 
+  private sessionStartTs?: number;
+  private toolDecisions = new Map<string, { allow: number; allowAlways: number; deny: number }>();
+
   private limits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow } = {};
   private limitsSource: 'real' | 'estimate' = 'estimate';
   // Canal separado: limites vindos do stream (rate_limit_event). Não é tocado por
@@ -120,12 +123,24 @@ export class StatsAggregator {
     this.streamSeen = true;
   }
 
+  /** Registra decisão de permissão do usuário (allow/deny) por ferramenta. */
+  recordDecision(tool: string, decision: 'allow' | 'deny' | 'allow_always'): void {
+    const entry = this.toolDecisions.get(tool) ?? { allow: 0, allowAlways: 0, deny: 0 };
+    if (decision === 'allow') entry.allow++;
+    else if (decision === 'allow_always') entry.allowAlways++;
+    else entry.deny++;
+    this.toolDecisions.set(tool, entry);
+  }
+
   /** Processa um evento e devolve o snapshot atualizado. */
   ingest(ev: ClaudeEvent): StatsSnapshot {
     switch (ev.type) {
       case 'system':
         this.setModel((ev as any).model, true); // init: autoritativo (traz o [1m])
         if ((ev as any).permissionMode) this.mode = (ev as any).permissionMode;
+        if (!this.sessionStartTs && (ev as any).subtype === 'init') {
+          this.sessionStartTs = Date.now();
+        }
         break;
       case 'stream_event': {
         const raw = (ev as any).event;
@@ -212,9 +227,21 @@ export class StatsAggregator {
     const read = this.cacheReadTokens + this.curRead;
     const promptTotal = read + create + input;
     const hit = promptTotal > 0 ? read / promptTotal : 0;
+
+    // Economia do cache: o que custaria se os tokens lidos tivessem sido input normal.
+    const p = priceFor(this.model);
+    const cacheSavingsUsd = read > 0 ? (read * (p.input - p.cacheRead)) / 1_000_000 : undefined;
+
+    // Aceitação de ferramentas (só inclui se houve decisões).
+    const toolAcceptance: ToolDecision[] | undefined =
+      this.toolDecisions.size > 0
+        ? [...this.toolDecisions.entries()].map(([tool, d]) => ({ tool, ...d }))
+        : undefined;
+
     return {
       model: this.model,
       mode: this.mode,
+      sessionStartTs: this.sessionStartTs,
       contextUsed: this.contextUsed,
       contextLimit: this.contextLimit,
       contextBreakdown: undefined, // preenchido quando /context estiver disponível
@@ -223,9 +250,11 @@ export class StatsAggregator {
       cacheCreateTokens: create,
       cacheReadTokens: read,
       cacheHitRate: hit,
+      cacheSavingsUsd,
       sessionCostUsd: this.sessionCostUsd,
       lastTurnCostUsd: this.lastTurnCostUsd,
       costIsEstimate: this.costIsEstimate,
+      toolAcceptance,
       limits: {
         fiveHour: mergeWindow(this.limits.fiveHour, this.streamLimits.fiveHour),
         sevenDay: mergeWindow(this.limits.sevenDay, this.streamLimits.sevenDay),

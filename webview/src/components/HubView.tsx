@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Translator } from '../i18n';
 import type { StatsSnapshot, SessionConfig, SessionInfo } from '../../../shared/protocol';
-import { fmtInt, fmtPct, fmtCompact, fmtBytes } from '../util/format';
+import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort } from '../util/format';
 import type { TooltipRow } from './Tooltip';
 import { Controls } from './Controls';
 import { Tooltip } from './Tooltip';
@@ -343,10 +343,21 @@ function SessionCard({
 }
 
 function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stats: StatsSnapshot }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!stats.sessionStartTs) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [stats.sessionStartTs]);
+
   const used = stats.contextUsed;
   const limit = stats.contextLimit || 1;
   const pct = Math.min(1, used / limit);
   const band = pct < 0.6 ? 'ok' : pct < 0.85 ? 'warn' : 'crit';
+  const elapsed = stats.sessionStartTs ? now - stats.sessionStartTs : undefined;
+
+  // Aceitação de ferramentas: só mostra se houve decisões na sessão.
+  const toolRows = stats.toolAcceptance?.filter((d) => d.allow + d.allowAlways + d.deny > 0) ?? [];
 
   return (
     <>
@@ -368,6 +379,16 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
       </div>
       {pct >= 0.85 && <div className="alert">{t('alert.contextHigh')}</div>}
 
+      {/* Duração da sessão */}
+      {elapsed != null && (
+        <Tooltip className="tt-block" title={t('stats.session.duration')} text={t('tip.ctx.duration')}>
+          <div className="stat-row stat-row-session">
+            <span className="stat-k">{t('stats.session.duration')}</span>
+            <span className="stat-v">{fmtDuration(elapsed)}</span>
+          </div>
+        </Tooltip>
+      )}
+
       <div className="ctx-info-grid">
         <div>
           <Tooltip className="tt-block" title={t('stats.tokens')} text={t('tip.ctx.tokensSection')}>
@@ -383,8 +404,60 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
           <Row k={t('stats.cache.hitRate')} v={fmtPct(stats.cacheHitRate)} tip={t('tip.ctx.hit')} />
           <Row k={t('stats.cache.read')} v={fmtCompact(stats.cacheReadTokens)} tip={t('tip.ctx.cacheRead')} />
           <Row k={t('stats.cache.write')} v={fmtCompact(stats.cacheCreateTokens)} tip={t('tip.ctx.cacheWrite')} />
+          {stats.cacheSavingsUsd != null && stats.cacheSavingsUsd > 0 && (
+            <Row
+              k={t('stats.cache.savings')}
+              v={fmtUsdShort(stats.cacheSavingsUsd)}
+              tip={t('tip.ctx.savings')}
+            />
+          )}
         </div>
       </div>
+
+      {/* Custo da sessão com badge estimado/real */}
+      <div className="ctx-info-grid">
+        <div>
+          <div className="stats-section-title">{t('stats.cost')}</div>
+          <div className="stat-row">
+            <span className="stat-k">{t('stats.cost.session')}</span>
+            <span className="stat-v">
+              {fmtUsdShort(stats.sessionCostUsd)}
+              {stats.costIsEstimate && (
+                <span className="stat-badge est" title={t('tip.ctx.costEstimate')}>
+                  ~
+                </span>
+              )}
+            </span>
+          </div>
+          {stats.lastTurnCostUsd > 0 && (
+            <Row k={t('stats.cost.lastTurn')} v={fmtUsdShort(stats.lastTurnCostUsd)} />
+          )}
+        </div>
+      </div>
+
+      {/* Aceitação de ferramentas (só exibe se houve decisões) */}
+      {toolRows.length > 0 && (
+        <div className="ctx-tool-acceptance">
+          <Tooltip className="tt-block" title={t('stats.tools.acceptance')} text={t('tip.ctx.toolAcceptance')}>
+            <div className="stats-section-title">{t('stats.tools.acceptance')}</div>
+          </Tooltip>
+          {toolRows.map((d) => {
+            const total = d.allow + d.allowAlways + d.deny;
+            const acceptPct = total > 0 ? Math.round(((d.allow + d.allowAlways) / total) * 100) : 0;
+            return (
+              <div key={d.tool} className="stat-row">
+                <span className="stat-k stat-tool-name">{d.tool}</span>
+                <span className="stat-v">
+                  <span className={`stat-accept-pct ${acceptPct >= 80 ? 'ok' : acceptPct >= 50 ? 'warn' : 'crit'}`}>
+                    {acceptPct}%
+                  </span>
+                  <span className="muted"> ({total})</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }

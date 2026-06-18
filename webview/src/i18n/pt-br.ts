@@ -123,6 +123,12 @@ export const ptBR: Strings = {
     'Taxa de cache hit: fração da entrada servida do cache de prompt em vez de reprocessada. Maior = mais barato e rápido.',
   'tip.ctx.cacheRead': 'Cache lido: tokens reaproveitados do cache de prompt (cobrados por fração do input).',
   'tip.ctx.cacheWrite': 'Cache escrito: tokens gravados no cache de prompt para reuso futuro.',
+  'tip.ctx.savings':
+    'Economia estimada pelo cache de prompt: o que você teria pago se esses tokens fossem cobrados à taxa de entrada normal em vez da taxa de leitura de cache.',
+  'tip.ctx.duration': 'Tempo decorrido desde o início desta sessão (a partir do primeiro evento de init do CLI).',
+  'tip.ctx.costEstimate': 'Estimado — o CLI ainda não reportou um custo confirmado para esta sessão.',
+  'tip.ctx.toolAcceptance':
+    'Proporção de solicitações de permissão de ferramenta que você permitiu vs. negou nesta sessão, por ferramenta.',
 
   'tip.ctrl.model':
     'Modelo desta sessão. "Padrão" segue suas settings; escolha um Opus/Sonnet/Haiku específico ou digite um id custom. Vale na próxima mensagem.',
@@ -269,6 +275,8 @@ export const ptBR: Strings = {
   'stats.tokens': 'Tokens',
   'stats.tokens.input': 'Entrada',
   'stats.tokens.output': 'Saída',
+  'stats.session.duration': 'Duração',
+  'stats.tools.acceptance': 'Aceitação de ferramentas',
 
   'ctxPanel.title': 'Contexto',
   'ctxPanel.contexts': 'Contextos salvos',

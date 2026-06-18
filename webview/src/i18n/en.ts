@@ -121,6 +121,13 @@ export const en = {
     'Cache hit rate: share of input served from the prompt cache instead of being reprocessed. Higher = cheaper and faster.',
   'tip.ctx.cacheRead': 'Cache read: tokens reused from the prompt cache (billed at a fraction of input).',
   'tip.ctx.cacheWrite': 'Cache write: tokens written into the prompt cache for later reuse.',
+  'tip.ctx.savings':
+    'Estimated savings from the prompt cache: what you would have paid if those tokens were billed at the full input rate instead of the cache-read rate.',
+  'tip.ctx.duration': 'Time elapsed since this session started (from the first CLI init event).',
+  'tip.ctx.costEstimate':
+    'Estimated — the CLI has not yet reported a confirmed cost for this session.',
+  'tip.ctx.toolAcceptance':
+    'Share of tool permission requests you allowed vs. denied this session, per tool.',
 
   'tip.ctrl.model':
     'Model running this session. "Default" follows your settings; pick a specific Opus/Sonnet/Haiku or enter a custom id. Applies on next message.',
@@ -267,6 +274,8 @@ export const en = {
   'stats.tokens': 'Tokens',
   'stats.tokens.input': 'Input',
   'stats.tokens.output': 'Output',
+  'stats.session.duration': 'Duration',
+  'stats.tools.acceptance': 'Tool acceptance',
 
   'ctxPanel.title': 'Context',
   'ctxPanel.contexts': 'Saved contexts',

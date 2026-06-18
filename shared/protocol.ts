@@ -14,9 +14,18 @@ export interface ContextSlice {
   tokens: number;
 }
 
+export interface ToolDecision {
+  tool: string;
+  allow: number;
+  allowAlways: number;
+  deny: number;
+}
+
 export interface StatsSnapshot {
   model?: string;
   mode?: string;
+  // Sessão
+  sessionStartTs?: number; // epoch ms — início da sessão (system init)
   // Contexto
   contextUsed: number;
   contextLimit: number;
@@ -27,10 +36,13 @@ export interface StatsSnapshot {
   cacheCreateTokens: number;
   cacheReadTokens: number;
   cacheHitRate: number; // 0..1
+  cacheSavingsUsd?: number; // economia estimada (tokens lidos × delta de preço input→read)
   // Custo
   sessionCostUsd: number;
   lastTurnCostUsd: number;
   costIsEstimate: boolean;
+  // Aceitação de ferramentas (por tool_name, acumulado na sessão)
+  toolAcceptance?: ToolDecision[];
   // Limites de conta
   limits?: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
   // Fonte dos limites: statusline (% real completo) > stream (rate_limit_event:

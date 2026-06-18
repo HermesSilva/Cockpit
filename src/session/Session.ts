@@ -149,6 +149,10 @@ export class Session {
   decide(requestId: string, decision: 'allow' | 'deny' | 'allow_always'): void {
     const pend = this.pendingPerm.get(requestId);
     this.pendingPerm.delete(requestId);
+    if (pend?.tool) {
+      this.stats.recordDecision(pend.tool, decision);
+      this.emit({ kind: 'stats', stats: this.stats.snapshot() });
+    }
     if (decision === 'deny') {
       this.cli?.sendControlResponse(requestId, { behavior: 'deny', message: 'Denied by user' });
       return;

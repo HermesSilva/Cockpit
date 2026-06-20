@@ -987,6 +987,31 @@ body {
 .md-list li {
   margin: 2px 0;
 }
+/* Tabela GFM: alinhada, com bordas e cabeçalho destacado (resolve os pipes
+   crus desalinhados que o texto monoespaçado nunca alinhava). */
+.md-table {
+  border-collapse: collapse;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto; /* tabela larga rola em vez de estourar o balão */
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.28));
+  padding: 4px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th {
+  background: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.12));
+  font-weight: 600;
+}
+.md-table tbody tr:nth-child(even) td {
+  background: rgba(127, 127, 127, 0.06); /* zebra sutil p/ leitura por linha */
+}
 .md-code {
   position: relative;
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
@@ -1454,6 +1479,22 @@ body {
 /* Input travado durante a correção: leve dimming. */
 .composer-input[readonly] {
   opacity: 0.7;
+}
+/* Overlay "conectando ditado": spinner + aviso sobre o input, até o mic ficar
+   realmente vivo (voiceReady). Sinaliza p/ o usuário NÃO falar ainda. */
+.voice-connecting {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-input-background) 86%, transparent);
+  color: var(--vscode-charts-blue, #3794ff);
+  font-size: 12px;
+  pointer-events: none; /* não bloqueia foco/clique do textarea */
 }
 @media (prefers-reduced-motion: reduce) {
   .voice-spinner { animation: none; }
@@ -2398,6 +2439,70 @@ body {
   color: var(--tt-accent);
 }
 
+/* Rodapé de procedência do hint: chips de Origem + Confiança, separados por
+   uma divisória e com fundo levemente destacado p/ "viver" à parte do texto. */
+/* Procedência: NÃO é botão — é texto refinado. Rótulo discreto em versalete +
+   valor colorido precedido de uma marca (pontinho na cor). Divisória fina
+   separando origem de confiança. Leve, elegante, sem caixa/preenchimento. */
+.tt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--tt-accent-faint, rgba(127, 127, 127, 0.22));
+}
+.tt-fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tt-fact-k {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 8.5px;
+  font-weight: 600;
+  opacity: 0.5;
+}
+.tt-fact-v {
+  position: relative;
+  font-size: 11px;
+  font-weight: 600;
+  padding-left: 11px; /* espaço p/ a marca (pontinho) */
+}
+.tt-fact-v::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor; /* leve brilho na cor do valor */
+}
+/* Divisória fina entre os dois fatos. */
+.tt-fact-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 1px 0;
+  background: var(--tt-accent-faint, rgba(127, 127, 127, 0.3));
+}
+.tt-fact-origin .tt-fact-v {
+  color: var(--vscode-charts-blue, #4aa3ff);
+}
+.tt-fact-conf.high .tt-fact-v {
+  color: var(--vscode-charts-green, #3fb950);
+}
+.tt-fact-conf.medium .tt-fact-v {
+  color: var(--vscode-charts-yellow, #d29922);
+}
+.tt-fact-conf.low .tt-fact-v {
+  color: var(--vscode-charts-red, #f85149);
+}
+
 /* Confirm dialog */
 .modal.confirm {
   width: 340px;
@@ -3003,6 +3108,29 @@ body {
 }
 .ctx-info-pct.crit {
   color: var(--vscode-charts-red, #f85149);
+}
+/* Vida do cache: cor do tempo restante + checkbox de keep-alive */
+.stat-v.ok {
+  color: var(--vscode-charts-green, #3fb950);
+}
+.stat-v.warn {
+  color: var(--vscode-charts-yellow, #d29922);
+}
+.stat-v.crit {
+  color: var(--vscode-charts-red, #f85149);
+}
+.ctx-keepalive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.ctx-keepalive input {
+  cursor: pointer;
+  margin: 0;
 }
 .ctx-info-nums {
   font-size: 11px;

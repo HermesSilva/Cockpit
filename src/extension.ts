@@ -2,9 +2,11 @@
 import * as vscode from 'vscode';
 import { ChatViewProvider } from './panel/ChatViewProvider';
 import { enableUsageTracking, disableUsageTracking, isEnabled } from './cli/StatuslineInstaller';
-import { log } from './util/logger';
+import { flushStats } from './stats/StatsStore';
+import { log, setDebugLogging } from './util/logger';
 
 export function activate(context: vscode.ExtensionContext): void {
+  setDebugLogging(vscode.workspace.getConfiguration('tootega').get<boolean>('debugLog', false));
   log('Tootega Cockpit activating…');
 
   // Reinício/reload: o VSCode tenta restaurar as abas-webview dos contextos, mas
@@ -15,6 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(statusBar);
 
   const provider = new ChatViewProvider(context.extensionUri, context.globalState, statusBar);
+  context.subscriptions.push({ dispose: () => provider.dispose() }); // para o CacheKeeper
 
   // O Cockpit vive como aba no editor (WebviewPanel). Sem view de sidebar.
   // O item da status bar (criado pelo provider) e o comando/atalho abrem o editor.
@@ -111,6 +114,9 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('tootega.language')) provider.pushLocale();
       if (e.affectsConfiguration('tootega.apiKey')) provider.refreshModels();
       if (e.affectsConfiguration('tootega.internalModel')) provider.applyInternalModel();
+      if (e.affectsConfiguration('tootega.debugLog')) {
+        setDebugLogging(vscode.workspace.getConfiguration('tootega').get<boolean>('debugLog', false));
+      }
       // Mudança de model/effort/permission: reinicia overrides + reflete nos combos.
       if (
         e.affectsConfiguration('tootega.model') ||
@@ -146,6 +152,7 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
+  flushStats(); // grava as estatísticas pendentes de cada sessão antes de sair
   log('Tootega Cockpit deactivated.');
 }
 

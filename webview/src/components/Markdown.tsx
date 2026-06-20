@@ -82,8 +82,47 @@ function renderText(text: string, nextKey: () => number): ReactNode[] {
     }
   };
 
-  for (const raw of lines) {
-    const line = raw;
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+
+    // Tabela GFM: linha com pipes seguida de separador |---|---|. Consome o
+    // cabeçalho + separador + linhas de corpo (até linha em branco/não-tabela).
+    if (isTableRow(line) && li + 1 < lines.length && isTableSep(lines[li + 1])) {
+      flushPara();
+      flushList();
+      const aligns = parseAligns(lines[li + 1]);
+      const header = splitRow(line);
+      const body: string[][] = [];
+      let j = li + 2;
+      for (; j < lines.length && isTableRow(lines[j]); j++) body.push(splitRow(lines[j]));
+      out.push(
+        <table key={nextKey()} className="md-table">
+          <thead>
+            <tr>
+              {header.map((c, ci) => (
+                <th key={ci} style={alignStyle(aligns[ci])}>
+                  {renderInline(c)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, ri) => (
+              <tr key={ri}>
+                {row.map((c, ci) => (
+                  <td key={ci} style={alignStyle(aligns[ci])}>
+                    {renderInline(c)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>,
+      );
+      li = j - 1; // o for incrementa
+      continue;
+    }
+
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
     const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
     const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
@@ -123,6 +162,46 @@ function renderText(text: string, nextKey: () => number): ReactNode[] {
   flushPara();
   flushList();
   return out;
+}
+
+// --- Tabela GFM ---
+type Align = 'left' | 'center' | 'right' | undefined;
+
+/** Linha de tabela: tem ao menos um `|` "de verdade" (não só no fim de prosa). */
+function isTableRow(line: string): boolean {
+  const t = line.trim();
+  if (!t.includes('|')) return false;
+  // Exige pipe interno (não apenas borda) p/ não confundir prosa com `texto |`.
+  return /\|/.test(t.replace(/^\|/, '').replace(/\|$/, ''));
+}
+
+/** Separador de tabela: células só com - e : opcionais (ex.: |:--|--:|:-:|). */
+function isTableSep(line: string): boolean {
+  const t = line.trim();
+  if (!t.includes('-') || !t.includes('|')) return false;
+  return /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?$/.test(t);
+}
+
+/** Alinhamentos por coluna a partir do separador (:--, --:, :-:). */
+function parseAligns(sep: string): Align[] {
+  return splitRow(sep).map((c) => {
+    const s = c.trim();
+    const l = s.startsWith(':');
+    const r = s.endsWith(':');
+    return l && r ? 'center' : r ? 'right' : l ? 'left' : undefined;
+  });
+}
+
+function alignStyle(a: Align): { textAlign: Align } | undefined {
+  return a ? { textAlign: a } : undefined;
+}
+
+/** Divide uma linha em células: tira bordas e separa por `|` (respeita \|). */
+function splitRow(line: string): string[] {
+  const t = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return t
+    .split(/(?<!\\)\|/)
+    .map((c) => c.replace(/\\\|/g, '|').trim());
 }
 
 // Inline: links -> código -> ênfase (bold/itálico).

@@ -297,6 +297,8 @@ type HostMsg =
   | { kind: 'effortGate'; selected: string; min: string } // effort < mínimo do CLAUDE.md da pasta: confirmar antes
   | { kind: 'voiceCorrected'; text: string } // ditado: texto corrigido (libera o input)
   | { kind: 'voiceCorrectError' } // ditado: correção falhou (mantém o original, libera)
+  | { kind: 'draftRestore'; text: string } // restaura rascunho/ditado após reload/crash do renderer
+  | { kind: 'voiceDict'; data: VoiceDictData } // dicionário de ditado da conta (resposta ao modal)
   | { kind: 'voiceReady' } // ditado: WS aberto + mic capturando de fato (pode falar)
   | { kind: 'voiceTranscript'; text: string; isFinal: boolean } // ditado: transcrição parcial/final
   | { kind: 'voiceError'; message: string } // ditado: falha (sem token, ws, etc.)
@@ -315,6 +317,17 @@ export interface SlashCmdMeta {
   hint: string;
   detail?: string;
   group?: string; // nome do plugin/ferramenta de terceiro (grupo próprio)
+}
+
+// Dicionário de ditado (por login): termos a reconhecer/preservar + substituições.
+export interface VoiceReplacement {
+  from: string; // como costuma ser ouvido/transcrito
+  to: string; // como deve ficar escrito
+}
+export interface VoiceDictData {
+  terms: string[];
+  replacements: VoiceReplacement[];
+  account?: string; // conta a que pertence (rótulo informativo)
 }
 
 // Imagem anexada (base64 sem prefixo data:).
@@ -359,6 +372,12 @@ export type WebviewToHost =
   | { kind: 'logoutCli' }
   | { kind: 'clearContext' }
   | { kind: 'compactContext' }
+  | { kind: 'draftChanged'; text: string } // espelha o rascunho/ditado no host (anti-perda)
+  // Exporta a conversa p/ um .md na raiz do projeto. mode 'direct' = mecânico (o
+  // markdown já vem pronto); 'ai' = reescreve via CLI (mesmo modelo/effort, gasta tokens).
+  | { kind: 'exportMd'; markdown: string; fileName?: string; mode: 'direct' | 'ai' }
+  | { kind: 'voiceDictGet' } // modal: carrega o dicionário de ditado da conta
+  | { kind: 'voiceDictSave'; data: VoiceDictData } // modal: salva o dicionário de ditado
   | { kind: 'setKeepCacheAlive'; value: boolean } // liga/desliga o keep-alive do cache desta aba
   | { kind: 'openEditor' }
   | { kind: 'openFolder'; path: string }

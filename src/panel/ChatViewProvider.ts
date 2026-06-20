@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
 import { CacheKeeper } from '../cli/CacheKeeper';
 import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
@@ -19,6 +19,16 @@ import { resolveMinEffort, EFFORT_RANK } from '../session/RepoDirectives';
 import { VoiceSession } from '../cli/VoiceStream';
 import { AudioCapture } from '../cli/AudioCapture';
 import { correctText } from '../cli/TextCorrector';
+import {
+  loadDictionary,
+  saveDictionary,
+  buildKeyterms,
+  applyReplacements,
+  correctorHints,
+  resolveAccountKey,
+  resetAccountKey,
+  type VoiceDict,
+} from '../cli/VoiceDictionary';
 import { setInternalModel } from '../cli/AiClient';
 import { listPlugins, pluginAction } from '../cli/PluginManager';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
@@ -29,12 +39,12 @@ import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
 import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/StatuslineInstaller';
 import { fetchAccountUsage } from '../cli/UsageApi';
-import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket } from '../../shared/protocol';
+import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
-import { log } from '../util/logger';
+import { log, dlog } from '../util/logger';
 
 // Aliases sempre válidos (resolvem para o mais recente da conta). 'default' = sem flag.
 // O CLI não expõe lista de modelos; a UI complementa com o modelo ativo descoberto
@@ -92,6 +102,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     pingOpen: (id) => this.pingOpenSession(id),
   });
   private tabMeta = new Map<string, { title: string; status: 'idle' | 'busy' | 'error' }>();
+  // Rascunho/ditado espelhado por aba (anti-perda): vive no HOST, que sobrevive à
+  // morte do renderer (tela branca). Re-injetado no webview ao (re)montar.
+  private draftByTab = new Map<string, string>();
   private tabOrder: string[] = [];
   private activeTab = '';
   private tabSeq = 0;
@@ -113,6 +126,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // Sessão de ditado por voz ativa (uma de cada vez; o mic é um só).
   private voice?: VoiceSession;
   private voiceCapture?: AudioCapture;
+  private voiceDict: VoiceDict = { terms: [], replacements: [] }; // dicionário ativo do ditado
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -124,7 +138,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.statusBar = statusBar;
     this.updateStatusBar(false);
     setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
-    this.cacheKeeper.start(); // renova caches marcados (cobre reabertura do VSCode)
+    void resolveAccountKey(this.claudePath()); // resolve a conta cedo (chave do dicionário de ditado)
+    // Ping automático de keep-alive DESLIGADO: qualquer refresh via --resume grava
+    // um turno real no .jsonl (polui a conversa, gasta tokens e chega ao agente).
+    // O medidor de vida do cache no painel continua (independe do keeper).
+    void this.cacheKeeper; // mantido p/ futura reimplementação limpa (sem poluir o transcript)
   }
 
   /** Encerra recursos de background (chamado no deactivate da extensão). */
@@ -859,14 +877,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * HOST (via ffmpeg — o webview bloqueia getUserMedia) e roteia as transcrições
    * de volta à superfície. Encerra uma sessão anterior, se houver.
    */
-  private startVoice(tabId: string, language?: string): void {
+  private async startVoice(tabId: string, language?: string): Promise<void> {
     this.stopVoice();
     // Idioma: setting explícito (tootega.voiceLanguage) tem prioridade; senão o
     // locale do webview; senão o locale do Cockpit. Normaliza p/ curto (pt-BR->pt).
     const forced = this.cfg().get<string>('voiceLanguage', '').trim();
     const lang = ((forced || language || this.voiceLanguage()).split('-')[0] || 'en').toLowerCase();
-    // Termos de reconhecimento: nome do projeto (melhora vocabulário).
-    const keyterms = path.basename(this.workspaceCwd());
+    // Dicionário da conta: termos viesam o STT (keyterms) + substituições aplicadas
+    // ao texto. Chave resolvida (cacheada) p/ casar com o que o modal salvou.
+    // Recarrega do disco a cada ditado (reflete edições do modal na hora).
+    const key = await resolveAccountKey(this.claudePath());
+    this.voiceDict = loadDictionary(key);
+    // Keyterms = dicionário do usuário + nome do projeto (melhora vocabulário).
+    const keyterms = buildKeyterms(this.voiceDict, path.basename(this.workspaceCwd()));
+    dlog(
+      'voice',
+      `dict conta=${key}: ${this.voiceDict.terms.length} termos, ${this.voiceDict.replacements.length} substituições | keyterms="${keyterms.slice(0, 240)}"`,
+    );
     const capture = new AudioCapture({
       ffmpegPath: this.cfg().get<string>('ffmpegPath', '') || undefined,
     });
@@ -895,7 +922,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           },
         );
       },
-      onTranscript: (text, isFinal) => this.post({ kind: 'voiceTranscript', text, isFinal }, tabId),
+      onTranscript: (text, isFinal) => {
+        const fixed = applyReplacements(text, this.voiceDict);
+        if (isFinal && fixed !== text) dlog('voice', `substituição aplicada: "${text}" → "${fixed}"`);
+        this.post({ kind: 'voiceTranscript', text: fixed, isFinal }, tabId);
+      },
       onError: (message) => this.post({ kind: 'voiceError', message }, tabId),
       onClose: () => {
         this.voiceCapture?.stop();
@@ -921,9 +952,111 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ kind: 'voiceCorrectError' }, tabId);
       return;
     }
-    const corrected = await correctText(t);
+    // Aplica as substituições do dicionário ANTES e orienta o Haiku a preservar
+    // os termos da conta (não "corrigir" nomes próprios/jargão).
+    const dict = loadDictionary(await resolveAccountKey(this.claudePath()));
+    const pre = applyReplacements(t, dict);
+    const corrected = await correctText(pre, correctorHints(dict));
     if (corrected) this.post({ kind: 'voiceCorrected', text: corrected }, tabId);
-    else this.post({ kind: 'voiceCorrectError' }, tabId);
+    else this.post({ kind: 'voiceCorrected', text: pre }, tabId); // falha do Haiku: ao menos as substituições
+  }
+
+  /**
+   * Exporta a conversa p/ um .md na RAIZ do projeto. mode 'direct' grava o
+   * markdown mecânico; 'ai' reescreve via CLI (mesmo modelo/effort da aba, gasta
+   * tokens). Nome único (evita sobrescrever); abre o arquivo ao final.
+   */
+  private async exportConversation(
+    tabId: string,
+    markdown: string,
+    fileName: string | undefined,
+    mode: 'direct' | 'ai',
+  ): Promise<void> {
+    const pt = resolveLocale().startsWith('pt');
+    try {
+      let content = markdown;
+      if (mode === 'ai') {
+        const gen = await this.generateDocAI(tabId, markdown);
+        if (!gen) {
+          void vscode.window.showErrorMessage(
+            pt ? 'Falha ao gerar o documento com IA.' : 'Failed to generate the document with AI.',
+          );
+          return;
+        }
+        content = gen;
+      }
+      const target = uniqueFilePath(path.join(this.workspaceCwd(), fileName || 'conversa.md'));
+      await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(content, 'utf8'));
+      await vscode.window.showTextDocument(vscode.Uri.file(target), { preview: false });
+    } catch (e) {
+      log(`exportConversation: ${String(e)}`);
+      void vscode.window.showErrorMessage(pt ? 'Falha ao exportar a conversa.' : 'Failed to export the conversation.');
+    }
+  }
+
+  /**
+   * Gera o documento via one-shot do CLI (processo separado — NÃO polui a aba),
+   * com o MESMO modelo/effort efetivos da sessão. Gasta tokens da assinatura.
+   * Retorna o Markdown gerado, ou undefined em falha.
+   */
+  private generateDocAI(tabId: string, sourceMd: string): Promise<string | undefined> {
+    const s = this.sessions.get(tabId) ?? this.active();
+    const model = s.model();
+    const effort = s.effort();
+    const prompt = `${DOC_PROMPT}\n\n--- REGISTRO DA CONVERSA ---\n\n${sourceMd}`;
+    // Prompt vai por STDIN (não argv): a conversa pode ser longa e estourar o
+    // limite de linha de comando (Windows ~32k). `claude -p` sem arg lê o stdin.
+    const args = ['-p', '--output-format', 'json'];
+    if (model && model !== 'default') args.push('--model', model);
+    if (effort && effort !== 'default') args.push('--effort', effort);
+    const useShell = process.platform === 'win32';
+    const exe = useShell && /\s/.test(this.claudePath()) ? `"${this.claudePath()}"` : this.claudePath();
+
+    return Promise.resolve(vscode.window.withProgress<string | undefined>(
+      { location: vscode.ProgressLocation.Notification, title: this.docProgressTitle(model, effort), cancellable: true },
+      (_p, token) =>
+        new Promise((resolve) => {
+          let out = '';
+          const proc = spawn(exe, args, { cwd: this.workspaceCwd(), env: process.env, shell: useShell });
+          const killer = setTimeout(() => { try { proc.kill(); } catch { /* noop */ } }, 180_000);
+          token.onCancellationRequested(() => { try { proc.kill(); } catch { /* noop */ } });
+          try {
+            proc.stdin?.write(prompt);
+            proc.stdin?.end();
+          } catch { /* pipe fechou: o close devolve o que houver */ }
+          proc.stdout?.setEncoding('utf8');
+          proc.stdout?.on('data', (c: string) => (out += c));
+          proc.on('error', (e) => { clearTimeout(killer); log(`generateDocAI spawn: ${String(e)}`); resolve(undefined); });
+          proc.on('close', () => {
+            clearTimeout(killer);
+            resolve(extractCliResult(out));
+          });
+        }),
+    ));
+  }
+
+  private docProgressTitle(model: string, effort: string): string {
+    const pt = resolveLocale().startsWith('pt');
+    const m = model && model !== 'default' ? model : pt ? 'padrão' : 'default';
+    const e = effort && effort !== 'default' ? effort : pt ? 'padrão' : 'default';
+    return pt
+      ? `Gerando documento com IA (modelo ${m}, effort ${e})…`
+      : `Generating document with AI (model ${m}, effort ${e})…`;
+  }
+
+  /** Carrega o dicionário da conta resolvida e envia ao modal. */
+  private async sendVoiceDict(tabId: string): Promise<void> {
+    const key = await resolveAccountKey(this.claudePath());
+    const d = loadDictionary(key);
+    this.post({ kind: 'voiceDict', data: { ...d, account: key } }, tabId);
+  }
+
+  /** Salva o dicionário sob a conta resolvida e reflete no ditado em curso. */
+  private async saveVoiceDict(tabId: string, terms: string[], replacements: VoiceReplacement[]): Promise<void> {
+    const key = await resolveAccountKey(this.claudePath());
+    saveDictionary(key, { terms, replacements });
+    this.voiceDict = loadDictionary(key); // aplica já às próximas transcrições
+    this.post({ kind: 'voiceDict', data: { ...this.voiceDict, account: key } }, tabId);
   }
 
   /** Idioma do ditado: locale do Cockpit -> código BCP47 curto (pt-BR -> pt). */
@@ -1148,6 +1281,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // Painel recriado pelo watchdog (render morto): força replay mesmo se busy.
         this.replayTab(bound ?? this.activeTab, this.justRecreated.delete(bound ?? this.activeTab));
         if (bound) this.primeCommands(bound); // carrega slash commands sem esperar o 1º envio
+        // Recupera o rascunho/ditado espelhado (ex.: tela branca durante o ditado).
+        {
+          const draft = this.draftByTab.get(bound ?? this.activeTab);
+          if (draft) this.post({ kind: 'draftRestore', text: draft }, bound ?? this.activeTab);
+        }
         break;
       case 'sendMessage': {
         // Gate de effort mínimo: resolvido AGORA do CLAUDE.md aplicável à pasta de
@@ -1176,6 +1314,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.sendConfig();
         }
         s.send(m.text, m.images);
+        this.draftByTab.delete(srcTab); // enviado: descarta o rascunho espelhado
         break;
       }
       case 'resolvePaths':
@@ -1293,6 +1432,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // Liga/desliga o keep-alive de cache do contexto de origem (persistido).
         srcSession().setKeepCacheAlive(m.value);
         break;
+      case 'draftChanged':
+        // Espelha o rascunho/ditado no host (sobrevive à morte do renderer).
+        if (m.text) this.draftByTab.set(srcTab, m.text);
+        else this.draftByTab.delete(srcTab);
+        break;
       case 'setLocale':
         this.post({ kind: 'locale', locale: m.locale });
         break;
@@ -1319,7 +1463,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'voiceStart':
         log('[voice] start requested by webview');
-        this.startVoice(srcTab, m.language);
+        void this.startVoice(srcTab, m.language);
         break;
       case 'voiceStop':
         log('[voice] webview requested stop');
@@ -1327,6 +1471,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'voiceCorrect':
         void this.correctVoice(srcTab, m.text);
+        break;
+      case 'exportMd':
+        void this.exportConversation(srcTab, m.markdown, m.fileName, m.mode);
+        break;
+      case 'voiceDictGet':
+        void this.sendVoiceDict(srcTab);
+        break;
+      case 'voiceDictSave':
+        void this.saveVoiceDict(srcTab, m.data.terms, m.data.replacements);
         break;
       case 'pluginsRefresh':
         void this.sendPlugins(m.force);
@@ -1541,9 +1694,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Busca o estado de login e empurra ao webview (mostra Sign in OU Sign out). */
   reportAuth(): void {
-    void fetchAuthStatus(this.claudePath()).then((a) =>
-      this.post({ kind: 'auth', loggedIn: a.loggedIn }),
-    );
+    resetAccountKey(); // login/logout pode ter mudado a conta → re-resolve o dicionário
+    void resolveAccountKey(this.claudePath());
+    void fetchAuthStatus(this.claudePath()).then((a) => this.post({ kind: 'auth', loggedIn: a.loggedIn }));
   }
 
   /** Re-checa o login algumas vezes (o fluxo de login/logout roda no terminal). */
@@ -1637,6 +1790,62 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 function dedupe(arr: string[]): string[] {
   return Array.from(new Set(arr.filter(Boolean)));
+}
+
+// Instrução p/ a opção "Gerar com IA": produz um documento organizado e coerente
+// a partir do registro da conversa. Foca no raciocínio/decisões e no resultado;
+// omite ruído técnico. Mantém o idioma da conversa.
+const DOC_PROMPT = [
+  'Você é um editor técnico. A partir do registro de conversa abaixo (entre um desenvolvedor e um assistente de IA),',
+  'escreva um DOCUMENTO em Markdown — organizado, de alto nível e coerente — que conte a história do trabalho:',
+  'o que foi pedido, o que foi pensado e decidido, o que foi feito, POR QUE e COMO, e o resultado final.',
+  'Priorize o raciocínio, as decisões e a motivação. OMITA ruído técnico (comandos, saídas de ferramentas, diffs crus).',
+  'Estruture com títulos, seções e listas quando ajudar a leitura. Seja fiel ao conteúdo — não invente.',
+  'Escreva no MESMO idioma predominante da conversa.',
+  'Responda SOMENTE com o Markdown do documento — sem comentários, sem cercas de código ao redor do todo.',
+].join(' ');
+
+/** Caminho único: se o arquivo já existe, insere -2, -3… antes da extensão. */
+function uniqueFilePath(full: string): string {
+  if (!safeExistsSync(full)) return full;
+  const dir = path.dirname(full);
+  const ext = path.extname(full);
+  const base = path.basename(full, ext);
+  for (let i = 2; i < 1000; i++) {
+    const cand = path.join(dir, `${base}-${i}${ext}`);
+    if (!safeExistsSync(cand)) return cand;
+  }
+  return full;
+}
+
+function safeExistsSync(p: string): boolean {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
+
+/** Extrai o texto do resultado do `claude -p --output-format json`. Tolerante. */
+function extractCliResult(out: string): string | undefined {
+  const trimmed = out.trim();
+  if (!trimmed) return undefined;
+  try {
+    const j = JSON.parse(trimmed);
+    const arr = Array.isArray(j) ? j : [j];
+    for (const o of arr) {
+      if (typeof o?.result === 'string' && o.result.trim()) return stripWrappingFence(o.result.trim());
+    }
+  } catch {
+    /* não-JSON: usa o texto cru como fallback */
+  }
+  return stripWrappingFence(trimmed);
+}
+
+/** Remove uma cerca de código que envolva o documento inteiro (```markdown … ```). */
+function stripWrappingFence(s: string): string {
+  const m = s.match(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/);
+  return m ? m[1] : s;
 }
 
 /** LimitWindow (interno) -> UsageBucket (protocolo do modal Usage). */

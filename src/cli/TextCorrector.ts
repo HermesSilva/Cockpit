@@ -7,10 +7,14 @@ const SYSTEM =
   'Mantenha exatamente a mesma língua, sentido e tom. ' +
   'Responda SOMENTE com o texto corrigido — sem comentários, sem aspas, sem prefixos.';
 
-/** Corrige o texto. Retorna o corrigido, ou undefined em falha (mantém original). */
-export function correctText(text: string): Promise<string | undefined> {
+/**
+ * Corrige o texto. `hints` (do dicionário de ditado) orienta o modelo a preservar
+ * termos/jargão e aplicar substituições. Retorna o corrigido, ou undefined em
+ * falha (mantém original).
+ */
+export function correctText(text: string, hints?: string): Promise<string | undefined> {
   return ask({
-    system: SYSTEM,
+    system: hints ? `${SYSTEM} ${hints}` : SYSTEM,
     prompt: text,
     maxTokens: Math.min(4096, Math.max(256, Math.ceil(text.length / 2) + 256)),
   });

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type KeyboardEvent, type ClipboardEvent } from 'react';
 import type { Translator } from '../i18n';
 import type { ImageAttachment, SlashCmdMeta } from '../../../shared/protocol';
-import { send } from '../vscodeApi';
+import { send, saveState, readState } from '../vscodeApi';
 import { richHighlight } from '../util/highlight';
 import { useImageViewer } from './ImageViewer';
 import { Tooltip } from './Tooltip';
@@ -23,6 +23,7 @@ interface Props {
   onToggleExpandAll: () => void;
   onSend: (text: string, images: ImageAttachment[]) => void;
   onStop: () => void;
+  onVoiceDict?: () => void; // abre o modal do dicionário de ditado
 }
 
 interface PendingImage {
@@ -50,6 +51,7 @@ export function Composer({
   onToggleExpandAll,
   onSend,
   onStop,
+  onVoiceDict,
 }: Props) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -254,7 +256,36 @@ export function Composer({
     send({ kind: 'readClipboardFiles', requestId });
   };
 
-  // Restaura um draft (ex.: cancelou o gate de effort: o texto havia sido limpo).
+  // Anti-perda do rascunho/ditado: na montagem, restaura do estado local do
+  // webview (sobrevive a reload/crash do renderer e a reinício do VSCode).
+  useEffect(() => {
+    const saved = readState<{ draft?: string }>()?.draft;
+    if (saved && !text) {
+      voiceBaseRef.current = saved;
+      setText(saved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Espelha o texto atual no estado local (setState) e no HOST (sobrevive à morte
+  // do renderer — tela branca). Debounce p/ não floodar. Restaurado no reload.
+  const draftTimer = useRef<number | undefined>(undefined);
+  const mirroredOnce = useRef(false);
+  useEffect(() => {
+    // Não apaga o rascunho do host na montagem com texto vazio (corrida com o
+    // restore que ainda vai chegar). Só passa a espelhar após o 1º conteúdo.
+    if (!mirroredOnce.current && !text) return;
+    mirroredOnce.current = true;
+    window.clearTimeout(draftTimer.current);
+    draftTimer.current = window.setTimeout(() => {
+      saveState({ draft: text });
+      send({ kind: 'draftChanged', text });
+    }, 350);
+    return () => window.clearTimeout(draftTimer.current);
+  }, [text]);
+
+  // Restaura um draft (ex.: cancelou o gate de effort: o texto havia sido limpo;
+  // ou recuperação pós-crash vinda do host).
   useEffect(() => {
     if (!injectDraft) return;
     setText(injectDraft.text);
@@ -291,6 +322,9 @@ export function Composer({
     );
     setText('');
     setImages([]);
+    // Enviado: zera o rascunho espelhado (local + host) p/ não restaurar texto velho.
+    saveState({ draft: '' });
+    send({ kind: 'draftChanged', text: '' });
     requestAnimationFrame(() => ref.current?.focus());
   };
 
@@ -457,6 +491,32 @@ export function Composer({
               )}
             </button>
           </Tooltip>
+          {onVoiceDict && (
+            <Tooltip text={t('voicedict.open')}>
+              <button
+                type="button"
+                className="composer-side-btn voicedict-btn"
+                onClick={onVoiceDict}
+                aria-label={t('voicedict.open')}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z" />
+                  <line x1="9" y1="7" x2="15" y2="7" />
+                  <line x1="9" y1="11" x2="15" y2="11" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
           <SlashMenu t={t} commands={slashCommands} meta={slashMeta} busy={slashBusy} onPick={pickSlash} />
           <Tooltip text={allExpanded ? t('composer.collapseAll') : t('composer.expandAll')}>
             <button

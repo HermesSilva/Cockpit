@@ -13,6 +13,7 @@ import type {
   PluginsData,
   SessionInfo,
   UsageData,
+  VoiceDictData,
 } from '../../shared/protocol';
 import { send } from './vscodeApi';
 import { createTranslator } from './i18n';
@@ -22,11 +23,13 @@ import { Composer } from './components/Composer';
 import { HubView } from './components/HubView';
 import { UsageModal } from './components/UsageModal';
 import { PluginsModal } from './components/PluginsModal';
+import { VoiceDictModal } from './components/VoiceDictModal';
 import { PermissionModal } from './components/PermissionModal';
 import { AskQuestionModal } from './components/AskQuestionModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ScrollMarkers } from './components/ScrollMarkers';
 import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
+import { buildConversationMd, suggestedFileName } from './util/exportMd';
 
 export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: string }) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -42,6 +45,9 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [showPlugins, setShowPlugins] = useState(false);
   const [plugins, setPlugins] = useState<PluginsData | null>(null);
+  const [showVoiceDict, setShowVoiceDict] = useState(false);
+  const [voiceDict, setVoiceDict] = useState<VoiceDictData | null>(null);
+  const [exportMenu, setExportMenu] = useState(false); // link de export expandido (direto/IA)
   const [pluginsBusy, setPluginsBusy] = useState(false);
   const [pluginsBusyLabel, setPluginsBusyLabel] = useState<string | undefined>(undefined);
   const [pluginsError, setPluginsError] = useState<string | undefined>(undefined);
@@ -76,6 +82,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       if (data?.kind === 'taskTimings') seedTaskTimings(data.timings); // médias do host p/ o gauge
       if (data?.kind === 'usageData') setUsage(data.data); // resposta do botão Usage (dado quente)
       if (data?.kind === 'effortGate') setConfirmEffort({ selected: data.selected, min: data.min });
+      if (data?.kind === 'draftRestore' && data.text) setDraftRestore({ text: data.text, images: [] });
+      if (data?.kind === 'voiceDict') setVoiceDict(data.data);
       if (data?.kind === 'pluginsData') setPlugins(data.data);
       if (data?.kind === 'pluginsBusy') {
         setPluginsBusy(data.busy);
@@ -139,6 +147,20 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const onPlugins = () => {
     setShowPlugins(true);
     send({ kind: 'pluginsRefresh' }); // carrega ao abrir
+  };
+  const onVoiceDict = () => {
+    setVoiceDict(null); // mostra carregando até o host responder
+    setShowVoiceDict(true);
+    send({ kind: 'voiceDictGet' });
+  };
+  const onExportMd = (mode: 'direct' | 'ai') => {
+    const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
+    send({
+      kind: 'exportMd',
+      markdown: buildConversationMd(items, t, title),
+      fileName: suggestedFileName(title),
+      mode,
+    });
   };
   const onEnableTracking = () => {
     setUsage(null); // mostra carregando; host instala wrapper e reenvia usageData
@@ -268,6 +290,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onClose={() => setShowPlugins(false)}
           />
         )}
+        {showVoiceDict && (
+          <VoiceDictModal
+            t={t}
+            data={voiceDict}
+            onSave={(d) => send({ kind: 'voiceDictSave', data: d })}
+            onClose={() => setShowVoiceDict(false)}
+          />
+        )}
       </>
     );
   }
@@ -303,6 +333,50 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onRewind={tab?.status === 'busy' ? undefined : (idx) => setConfirmRewind(idx)}
             verbosity={state.config?.verbosity}
           />
+          {/* Link de exportação: SÓ no fim e quando ocioso. Some ao recomeçar um
+              turno (busy) e reaparece no novo fim ao concluir. */}
+          {tab?.status !== 'busy' && items.length > 0 && (
+            <div className="timeline-export">
+              {!exportMenu ? (
+                <button type="button" className="timeline-export-link" onClick={() => setExportMenu(true)}>
+                  {t('export.link')}
+                </button>
+              ) : (
+                <div className="export-menu">
+                  <button
+                    type="button"
+                    className="timeline-export-link"
+                    onClick={() => {
+                      onExportMd('direct');
+                      setExportMenu(false);
+                    }}
+                  >
+                    {t('export.direct')}
+                  </button>
+                  <button
+                    type="button"
+                    className="timeline-export-link ai"
+                    onClick={() => {
+                      onExportMd('ai');
+                      setExportMenu(false);
+                    }}
+                  >
+                    {t('export.ai')}
+                  </button>
+                  <div className="export-note">
+                    {t(
+                      'export.ai.note',
+                      tab?.stats?.model || state.config?.model || 'default',
+                      state.config?.effort || 'default',
+                    )}
+                  </div>
+                  <button type="button" className="export-cancel" onClick={() => setExportMenu(false)}>
+                    {t('confirm.cancel')}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <ScrollMarkers scrollRef={scrollRef} items={items} />
         {!atBottom && (
@@ -332,6 +406,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         onToggleExpandAll={() => setAllExpanded((a) => !(a ?? false))}
         onSend={onSend}
         onStop={onStop}
+        onVoiceDict={onVoiceDict}
       />
 
       {tab?.permission && <PermissionModal t={t} req={tab.permission} onDecision={onPermission} />}

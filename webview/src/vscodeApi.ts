@@ -19,3 +19,14 @@ export function getVsCodeApi(): VsCodeApi {
 export function send(msg: WebviewToHost): void {
   getVsCodeApi().postMessage(msg);
 }
+
+// Estado leve persistido pelo VSCode (sobrevive a reload/crash do renderer e a
+// reinício do VSCode). Usado p/ não perder o rascunho/ditado do composer.
+export function saveState(patch: Record<string, unknown>): void {
+  const api = getVsCodeApi();
+  api.setState({ ...(api.getState() ?? {}), ...patch });
+}
+
+export function readState<T = Record<string, unknown>>(): T | undefined {
+  return getVsCodeApi().getState<T>();
+}

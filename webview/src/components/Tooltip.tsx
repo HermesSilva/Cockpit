@@ -9,10 +9,20 @@ export interface TooltipRow {
   accent?: boolean; // realça o valor em laranja (ex.: custo, erro)
 }
 
+// Rodapé de procedência: origem do dado + nível de confiança (cor por nível).
+export interface TooltipMeta {
+  originLabel: string; // ex.: "Origem"
+  origin: string; // ex.: "Servidor (via CLI)"
+  confidenceLabel: string; // ex.: "Confiança"
+  confidence: 'high' | 'medium' | 'low'; // cor do chip
+  confidenceText: string; // ex.: "Alta"
+}
+
 interface Props {
   title?: string; // cabeçalho colorido
   text?: string; // corpo simples (variante "simple")
   rows?: TooltipRow[]; // grade chave/valor (variante "rich")
+  meta?: TooltipMeta; // rodapé origem/confiança (chips coloridos)
   children: ReactNode;
   className?: string;
   focusable?: boolean; // adiciona tabIndex quando o filho não é focável (ex.: texto)
@@ -32,7 +42,7 @@ interface Coord {
 // Hint reusável: popover via portal (não sofre clip de overflow/scroll), abre em
 // hover E foco (a11y). Mede o popover e empurra p/ o lado contrário à borda que
 // estourou (horizontal) e abre abaixo quando falta espaço acima (vertical).
-export function Tooltip({ title, text, rows, children, className, focusable }: Props) {
+export function Tooltip({ title, text, rows, meta, children, className, focusable }: Props) {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [coord, setCoord] = useState<Coord | null>(null);
   const wrapRef = useRef<HTMLSpanElement>(null);
@@ -73,9 +83,9 @@ export function Tooltip({ title, text, rows, children, className, focusable }: P
     if (left - half < pad) left = pad + half; // estourou à esquerda → empurra p/ direita
     else if (left + half > vw - pad) left = vw - pad - half; // estourou à direita → esquerda
     setCoord({ left, top, below });
-  }, [anchor, title, text, rows]);
+  }, [anchor, title, text, rows, meta]);
 
-  const hasBody = !!title || !!text || (rows && rows.length > 0);
+  const hasBody = !!title || !!text || (rows && rows.length > 0) || !!meta;
 
   return (
     <span
@@ -111,6 +121,19 @@ export function Tooltip({ title, text, rows, children, className, focusable }: P
                     <span className={`tt-v ${r.accent ? 'accent' : ''}`}>{r.value}</span>
                   </div>
                 ))}
+              </div>
+            )}
+            {meta && (
+              <div className="tt-meta">
+                <span className="tt-fact tt-fact-origin">
+                  <span className="tt-fact-k">{meta.originLabel}</span>
+                  <span className="tt-fact-v">{meta.origin}</span>
+                </span>
+                <span className="tt-fact-sep" aria-hidden="true" />
+                <span className={`tt-fact tt-fact-conf ${meta.confidence}`}>
+                  <span className="tt-fact-k">{meta.confidenceLabel}</span>
+                  <span className="tt-fact-v">{meta.confidenceText}</span>
+                </span>
               </div>
             )}
           </div>,

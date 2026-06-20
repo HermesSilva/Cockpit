@@ -91,6 +91,17 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     return () => window.removeEventListener('message', onMsg);
   }, [view]);
 
+  // Heartbeat de renderização: prova ao host que o processo do webview está vivo.
+  // Se o renderer cair (bug GPU do VSCode → tela branca), os pulsos param e o host
+  // força um reload do HTML (remonta o React → replay do transcript). Fora do ciclo
+  // do React de propósito: um render pesado de timeline atrasa o tick, mas ele
+  // dispara assim que a stack limpa — só renderer realmente morto fica sem bater.
+  useEffect(() => {
+    send({ kind: 'heartbeat' });
+    const id = setInterval(() => send({ kind: 'heartbeat' }), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Conteúdo novo: só fixa no fim se o usuário JÁ estava no fim (respeita scroll manual).
   useEffect(() => {
     const el = scrollRef.current;

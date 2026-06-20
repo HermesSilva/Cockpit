@@ -21,6 +21,35 @@ export interface ToolDecision {
   deny: number;
 }
 
+/** Uso acumulado segmentado por modelo (a sessão pode trocar de modelo). */
+export interface ModelUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreateTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
+  turns: number;
+}
+
+/** Uma amostra da timeline (um ponto por turno) — base dos gráficos de consumo (S10). */
+export interface TimelineSample {
+  ts: number; // epoch ms
+  contextUsed: number; // tamanho do prompt (input + cache_*) no turno
+  cacheReadPct: number; // 0..1 — fração lida do cache neste turno (eficiência)
+  costUsd: number; // custo acumulado da sessão até aqui
+  reset?: boolean; // este turno foi um cache reset (TTL frio)
+  compaction?: boolean; // este turno reduziu o contexto (compactação)
+}
+
+/** Evento de compactação detectado (contexto encolheu entre turnos) (S11). */
+export interface CompactionEvent {
+  ts: number;
+  before: number;
+  after: number;
+  saved: number; // before - after
+}
+
 export interface StatsSnapshot {
   model?: string;
   mode?: string;
@@ -43,6 +72,26 @@ export interface StatsSnapshot {
   costIsEstimate: boolean;
   // Aceitação de ferramentas (por tool_name, acumulado na sessão)
   toolAcceptance?: ToolDecision[];
+  // --- Persistência/coerência entre reaberturas do contexto ---
+  turnCount?: number; // turnos consolidados na sessão
+  reopenCount?: number; // quantas vezes o contexto foi reaberto/retomado
+  // Cache reset (TTL frio): turno ocioso que perdeu o prefixo e re-escreveu o cache
+  cacheResetCount?: number;
+  cacheRecacheCostUsd?: number; // $ re-pago em cacheWrite por causa dos resets
+  // Compactação (contexto condensado entre turnos) — S11
+  compactionCount?: number;
+  peakContextUsed?: number; // maior contexto já atingido na sessão
+  // Tempo de execução REAL da sessão (soma do tempo de cada prompt; exclui ociosidade)
+  activeMs?: number;
+  // --- Vida do cache (TTL de 1h) e keep-alive ---
+  cacheLifeMs?: number; // janela total do cache (1h)
+  cacheAgeMs?: number; // idade desde a última atividade (requisição)
+  cacheExpiresInMs?: number; // quanto falta p/ o cache expirar
+  cacheExpiresAt?: number; // epoch ms do vencimento — p/ contagem regressiva ao vivo
+  cacheAlive?: boolean; // o cache ainda está vivo (idade < 1h)
+  keepCacheAlive?: boolean; // checkbox: reenviar p/ o cache não morrer
+  // Detalhamento por modelo (S5 estendido)
+  perModel?: ModelUsage[];
   // Limites de conta
   limits?: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
   // Fonte dos limites: statusline (% real completo) > stream (rate_limit_event:
@@ -231,6 +280,8 @@ type HostMsg =
   | { kind: 'askRequest'; requestId: string; questions: AskQuestion[] }
   | { kind: 'authRequired' }
   | { kind: 'stats'; stats: StatsSnapshot }
+  // Timeline/compactações da sessão (pesado): enviado por turno, não por token.
+  | { kind: 'statsTimeline'; timeline: TimelineSample[]; compactions: CompactionEvent[] }
   | { kind: 'turnComplete'; costUsd?: number; usage?: Usage }
   | { kind: 'busy'; busy: boolean }
   | { kind: 'error'; message: string }
@@ -246,6 +297,7 @@ type HostMsg =
   | { kind: 'effortGate'; selected: string; min: string } // effort < mínimo do CLAUDE.md da pasta: confirmar antes
   | { kind: 'voiceCorrected'; text: string } // ditado: texto corrigido (libera o input)
   | { kind: 'voiceCorrectError' } // ditado: correção falhou (mantém o original, libera)
+  | { kind: 'voiceReady' } // ditado: WS aberto + mic capturando de fato (pode falar)
   | { kind: 'voiceTranscript'; text: string; isFinal: boolean } // ditado: transcrição parcial/final
   | { kind: 'voiceError'; message: string } // ditado: falha (sem token, ws, etc.)
   | { kind: 'voiceClosed' } // ditado: sessão encerrada
@@ -274,6 +326,7 @@ export interface ImageAttachment {
 // webview -> host
 export type WebviewToHost =
   | { kind: 'init' }
+  | { kind: 'heartbeat' } // pulso de vida do render: silêncio prolongado = renderer morto (tela branca)
   | { kind: 'sendMessage'; text: string; images?: ImageAttachment[]; force?: boolean }
   | { kind: 'resolvePaths'; requestId: string; absPaths: string[] }
   | { kind: 'readClipboardFiles'; requestId: string }
@@ -306,6 +359,7 @@ export type WebviewToHost =
   | { kind: 'logoutCli' }
   | { kind: 'clearContext' }
   | { kind: 'compactContext' }
+  | { kind: 'setKeepCacheAlive'; value: boolean } // liga/desliga o keep-alive do cache desta aba
   | { kind: 'openEditor' }
   | { kind: 'openFolder'; path: string }
   | { kind: 'taskDuration'; type: string; ms: number } // amostra de duração de tarefa (gauge)

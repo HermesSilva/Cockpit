@@ -4,7 +4,21 @@ import type { StatsSnapshot, SessionConfig, SessionInfo } from '../../../shared/
 import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort } from '../util/format';
 import type { TooltipRow } from './Tooltip';
 import { Controls } from './Controls';
-import { Tooltip } from './Tooltip';
+import { Tooltip, type TooltipMeta } from './Tooltip';
+import { send } from '../vscodeApi';
+
+// Procedência de um dado: origem + nível de confiança, já localizados, p/ o
+// rodapé do hint (chips coloridos). Mantém as descrições i18n limpas.
+type Origin = 'server' | 'local' | 'computed' | 'estimate' | 'cli';
+function meta(t: Translator, origin: Origin, confidence: 'high' | 'medium' | 'low'): TooltipMeta {
+  return {
+    originLabel: t('meta.origin.label'),
+    origin: t(`meta.origin.${origin}`),
+    confidenceLabel: t('meta.conf.label'),
+    confidence,
+    confidenceText: t(`meta.conf.${confidence}`),
+  };
+}
 
 interface Props {
   t: Translator;
@@ -342,6 +356,39 @@ function SessionCard({
   );
 }
 
+// Vida do cache (TTL de 1h): barra do tempo restante + checkbox de keep-alive.
+// `now` vem do tick de 1s do pai (contagem regressiva ao vivo).
+function CacheLife({ t, stats, now }: { t: Translator; stats: StatsSnapshot; now: number }) {
+  const expiresAt = stats.cacheExpiresAt ?? 0;
+  const lifeMs = stats.cacheLifeMs || 3_600_000;
+  const remaining = Math.max(0, expiresAt - now);
+  const alive = remaining > 0;
+  const pct = Math.min(1, remaining / lifeMs); // fração de vida RESTANTE
+  const band = !alive ? 'crit' : pct > 0.25 ? 'ok' : pct > 0.08 ? 'warn' : 'crit';
+  const keep = !!stats.keepCacheAlive;
+  return (
+    <Tooltip className="tt-block" title={t('stats.cache.life')} text={t('tip.ctx.cacheLife')} meta={meta(t, 'computed', 'low')}>
+      <div className="stat-row stat-row-session">
+        <span className="stat-k">{t('stats.cache.life')}</span>
+        <span className={`stat-v ${band}`}>
+          {alive ? t('stats.cache.life.left', fmtDuration(remaining)) : t('stats.cache.life.expired')}
+        </span>
+      </div>
+      <div className="meter">
+        <div className={`meter-fill ${band}`} style={{ width: `${pct * 100}%` }} />
+      </div>
+      <label className="ctx-keepalive">
+        <input
+          type="checkbox"
+          checked={keep}
+          onChange={(e) => send({ kind: 'setKeepCacheAlive', value: e.target.checked })}
+        />
+        <span>{t('stats.cache.keepAlive')}</span>
+      </label>
+    </Tooltip>
+  );
+}
+
 function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stats: StatsSnapshot }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -361,7 +408,7 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
 
   return (
     <>
-      <Tooltip className="tt-block" title={t('stats.context')} text={t('tip.ctx.context')}>
+      <Tooltip className="tt-block" title={t('stats.context')} text={t('tip.ctx.context')} meta={meta(t, 'server', 'high')}>
         <div className="ctx-info-head">
           <span className="col-title">{t('stats.context')}</span>
           <span className={`ctx-info-pct ${band}`}>{fmtPct(pct)}</span>
@@ -381,7 +428,7 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
 
       {/* Duração da sessão */}
       {elapsed != null && (
-        <Tooltip className="tt-block" title={t('stats.session.duration')} text={t('tip.ctx.duration')}>
+        <Tooltip className="tt-block" title={t('stats.session.duration')} text={t('tip.ctx.duration')} meta={meta(t, 'local', 'high')}>
           <div className="stat-row stat-row-session">
             <span className="stat-k">{t('stats.session.duration')}</span>
             <span className="stat-v">{fmtDuration(elapsed)}</span>
@@ -389,26 +436,32 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
         </Tooltip>
       )}
 
+      {/* Vida do cache (TTL de 1h) + keep-alive */}
+      {stats.cacheExpiresAt != null && (
+        <CacheLife t={t} stats={stats} now={now} />
+      )}
+
       <div className="ctx-info-grid">
         <div>
-          <Tooltip className="tt-block" title={t('stats.tokens')} text={t('tip.ctx.tokensSection')}>
+          <Tooltip className="tt-block" title={t('stats.tokens')} text={t('tip.ctx.tokensSection')} meta={meta(t, 'server', 'high')}>
             <div className="stats-section-title">{t('stats.tokens')}</div>
           </Tooltip>
-          <Row k={t('stats.tokens.input')} v={fmtInt(stats.inputTokens, locale)} tip={t('tip.ctx.input')} />
-          <Row k={t('stats.tokens.output')} v={fmtInt(stats.outputTokens, locale)} tip={t('tip.ctx.output')} />
+          <Row k={t('stats.tokens.input')} v={fmtInt(stats.inputTokens, locale)} tip={t('tip.ctx.input')} tipMeta={meta(t, 'server', 'high')} />
+          <Row k={t('stats.tokens.output')} v={fmtInt(stats.outputTokens, locale)} tip={t('tip.ctx.output')} tipMeta={meta(t, 'server', 'high')} />
         </div>
         <div>
-          <Tooltip className="tt-block" title={t('stats.cache')} text={t('tip.ctx.cacheSection')}>
+          <Tooltip className="tt-block" title={t('stats.cache')} text={t('tip.ctx.cacheSection')} meta={meta(t, 'server', 'high')}>
             <div className="stats-section-title">{t('stats.cache')}</div>
           </Tooltip>
-          <Row k={t('stats.cache.hitRate')} v={fmtPct(stats.cacheHitRate)} tip={t('tip.ctx.hit')} />
-          <Row k={t('stats.cache.read')} v={fmtCompact(stats.cacheReadTokens)} tip={t('tip.ctx.cacheRead')} />
-          <Row k={t('stats.cache.write')} v={fmtCompact(stats.cacheCreateTokens)} tip={t('tip.ctx.cacheWrite')} />
+          <Row k={t('stats.cache.hitRate')} v={fmtPct(stats.cacheHitRate)} tip={t('tip.ctx.hit')} tipMeta={meta(t, 'computed', 'high')} />
+          <Row k={t('stats.cache.read')} v={fmtCompact(stats.cacheReadTokens)} tip={t('tip.ctx.cacheRead')} tipMeta={meta(t, 'server', 'high')} />
+          <Row k={t('stats.cache.write')} v={fmtCompact(stats.cacheCreateTokens)} tip={t('tip.ctx.cacheWrite')} tipMeta={meta(t, 'server', 'high')} />
           {stats.cacheSavingsUsd != null && stats.cacheSavingsUsd > 0 && (
             <Row
               k={t('stats.cache.savings')}
               v={fmtUsdShort(stats.cacheSavingsUsd)}
               tip={t('tip.ctx.savings')}
+              tipMeta={meta(t, 'estimate', 'medium')}
             />
           )}
         </div>
@@ -438,7 +491,7 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
       {/* Aceitação de ferramentas (só exibe se houve decisões) */}
       {toolRows.length > 0 && (
         <div className="ctx-tool-acceptance">
-          <Tooltip className="tt-block" title={t('stats.tools.acceptance')} text={t('tip.ctx.toolAcceptance')}>
+          <Tooltip className="tt-block" title={t('stats.tools.acceptance')} text={t('tip.ctx.toolAcceptance')} meta={meta(t, 'local', 'high')}>
             <div className="stats-section-title">{t('stats.tools.acceptance')}</div>
           </Tooltip>
           {toolRows.map((d) => {
@@ -462,7 +515,7 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
   );
 }
 
-function Row({ k, v, tip }: { k: string; v: string; tip?: string }) {
+function Row({ k, v, tip, tipMeta }: { k: string; v: string; tip?: string; tipMeta?: TooltipMeta }) {
   const row = (
     <div className="stat-row">
       <span className="stat-k">{k}</span>
@@ -470,7 +523,7 @@ function Row({ k, v, tip }: { k: string; v: string; tip?: string }) {
     </div>
   );
   return tip ? (
-    <Tooltip className="tt-block" title={k} text={tip}>
+    <Tooltip className="tt-block" title={k} text={tip} meta={tipMeta}>
       {row}
     </Tooltip>
   ) : (

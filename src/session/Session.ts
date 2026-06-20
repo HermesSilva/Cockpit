@@ -4,7 +4,8 @@
 // em paralelo — uma por aba.
 import { CliProcessManager } from '../cli/CliProcessManager';
 import { StatsAggregator } from '../stats/StatsAggregator';
-import { log } from '../util/logger';
+import { loadStats, saveStats } from '../stats/StatsStore';
+import { log, dlog } from '../util/logger';
 import type {
   ClaudeEvent,
   AssistantEvent,
@@ -107,18 +108,40 @@ export class Session {
   send(text: string, images?: { mediaType: string; data: string }[]): void {
     this.ensureCli();
     this.setBusy(true);
+    this.stats.beginTurn(); // cronômetro do tempo de execução ativo (sem ociosidade)
+    // Estado ANTES do turno: principalmente o cache (idade/vida), p/ entender o
+    // que cada prompt encontra (cache quente vs. frio = re-pagar cacheWrite).
+    const s = this.stats.snapshot();
+    const cacheState =
+      s.cacheExpiresInMs == null
+        ? 'frio (sem turno anterior)'
+        : s.cacheAlive
+          ? `quente, expira em ${(s.cacheExpiresInMs / 60_000).toFixed(1)}m (idade ${((s.cacheAgeMs ?? 0) / 60_000).toFixed(1)}m)`
+          : `VENCIDO há ${((-(s.cacheExpiresAt ?? 0) + Date.now()) / 60_000).toFixed(1)}m → re-cache neste turno`;
+    log(
+      `[session] send (${this.sessionId ?? this.resumeId ?? 'nova'}): ${text.length} chars, ${images?.length ?? 0} img | ` +
+        `ctx=${s.contextUsed}/${s.contextLimit} | cache: ${cacheState} | ` +
+        `hit=${(s.cacheHitRate * 100).toFixed(0)}% read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0} | ` +
+        `custo=$${s.sessionCostUsd.toFixed(4)}${s.costIsEstimate ? '~' : ''} turnos=${s.turnCount ?? 0}`,
+    );
     this.cli!.sendUserMessage(text, images);
   }
 
   interrupt(): void {
     this.cli?.interrupt();
+    this.stats.endTurn();
+    this.persist();
     this.setBusy(false);
+    dlog('session', `interrupt (${this.sessionId ?? '?'})`);
   }
 
   /** Encerra o processo; mantém as estatísticas. A próxima mensagem respawna. */
   stop(): void {
     this.resetStreamingState();
     this.pendingPerm.clear();
+    this.stats.endTurn(); // fecha o turno em voo (não conta ocioso depois)
+    this.persist();
+    if (this.cli) dlog('session', `stop (${this.sessionId ?? this.resumeId ?? '?'})`);
     this.cli?.stop();
     this.cli = undefined;
     this.setBusy(false);
@@ -134,6 +157,54 @@ export class Session {
   resume(sessionId: string): void {
     this.clearConversation();
     this.resumeId = sessionId;
+    // Hidrata os acumuladores persistidos: a sessão CONTINUA coerente (o CLI não
+    // re-emite o usage dos turnos antigos no --resume).
+    const persisted = loadStats(sessionId);
+    if (persisted) this.stats.hydrate(persisted);
+    this.stats.markReopen(); // contador de reaberturas do contexto
+    const snap = this.stats.snapshot();
+    dlog(
+      'session',
+      `resume ${sessionId}: ${persisted ? 'hidratado' : 'sem stats salvos'}, reopen=${snap.reopenCount}, ctx=${snap.contextUsed}, turnos=${snap.turnCount}, cacheAlive=${snap.cacheAlive ?? false}`,
+    );
+    this.emit({ kind: 'stats', stats: this.stats.snapshot() }); // restaura a barra de imediato
+    this.emitTimeline();
+  }
+
+  /** Persiste as estatísticas desta sessão (debounced/atômico). Requer sessionId. */
+  private persist(): void {
+    const id = this.sessionId ?? this.resumeId;
+    if (id) saveStats(this.stats.serialize(id, this.hooks.cwd()));
+  }
+
+  /**
+   * Ping de keep-alive pelo CLI VIVO desta sessão (não por --resume paralelo, que
+   * conflitaria com o processo aberto). Reutiliza o fluxo normal de turno: o
+   * `result` fecha o cronômetro e persiste o lastTurnTs → reinicia a vida do cache.
+   * Devolve false se ocupado (turno em andamento já mantém o cache quente).
+   */
+  keepAlivePing(): boolean {
+    if (this.busy) return false;
+    this.ensureCli();
+    this.setBusy(true);
+    this.stats.beginTurn();
+    dlog('session', `keep-alive ping (${this.sessionId ?? this.resumeId ?? '?'})`);
+    this.cli!.sendUserMessage('keep-alive: responda apenas "ok". Não use ferramentas nem altere arquivos.');
+    return true;
+  }
+
+  /** Liga/desliga o keep-alive de cache deste contexto e persiste o estado. */
+  setKeepCacheAlive(value: boolean): void {
+    this.stats.setKeepCacheAlive(value);
+    this.persist();
+    this.emit({ kind: 'stats', stats: this.stats.snapshot() });
+    dlog('session', `keepCacheAlive=${value} (${this.sessionId ?? this.resumeId ?? '?'})`);
+  }
+
+  /** Envia a timeline/compactações (pesado) — por turno, não por token. */
+  private emitTimeline(): void {
+    const { timeline, compactions } = this.stats.timelineSnapshot();
+    this.emit({ kind: 'statsTimeline', timeline, compactions });
   }
 
   applyLimits(limits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow }, source: 'real' | 'estimate'): void {
@@ -142,6 +213,11 @@ export class Session {
 
   snapshot() {
     return this.stats.snapshot();
+  }
+
+  /** Reenvia a timeline/compactações desta sessão (ao trocar/abrir a aba). */
+  sendTimeline(): void {
+    this.emitTimeline();
   }
 
   // ---- protocolo de controle (permissão / AskUserQuestion) ----
@@ -195,7 +271,11 @@ export class Session {
         if (s.subtype === 'init') {
           if (Array.isArray(s.slash_commands)) this.slashCommands = s.slash_commands;
           this.sessionId = s.session_id;
-          if (s.session_id) this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão
+          if (s.session_id) {
+            this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão
+            this.persist(); // sessionId conhecido: cria/atualiza o arquivo de stats
+            dlog('session', `init: sessionId=${s.session_id} model=${s.model ?? '?'} mode=${s.permissionMode ?? '?'}`);
+          }
 
           this.emit({
             kind: 'sessionInit',
@@ -263,7 +343,19 @@ export class Session {
       case 'result': {
         const r = ev as any;
         if (r.is_error && isAuthError(r.result ?? r.error ?? '')) this.hooks.onAuthRequired();
+        this.stats.endTurn(); // fecha o cronômetro do prompt (tempo de execução real)
+        {
+          const s = this.stats.snapshot();
+          log(
+            `[session] result (${this.sessionId ?? '?'}): turnos=${s.turnCount}, ctx=${s.contextUsed}/${s.contextLimit}, ` +
+              `custo=$${s.sessionCostUsd.toFixed(4)}${s.costIsEstimate ? '~' : ''}, activeMs=${s.activeMs ?? 0}, ` +
+              `hit=${(s.cacheHitRate * 100).toFixed(0)}% read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0}`,
+          );
+        }
         this.emit({ kind: 'turnComplete', costUsd: r.total_cost_usd, usage: r.usage });
+        this.emit({ kind: 'stats', stats: this.stats.snapshot() }); // activeMs consolidado
+        this.emitTimeline(); // nova amostra de timeline (1x por turno)
+        this.persist(); // salva o estado da sessão (continua coerente ao reabrir)
         this.setBusy(false);
         this.hooks.onResult();
         this.resetStreamingState();

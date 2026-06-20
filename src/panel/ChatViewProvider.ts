@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
+import { CacheKeeper } from '../cli/CacheKeeper';
 import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
 import {
   listSessions,
@@ -58,6 +59,13 @@ const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', '
 // Cache da statusline mais velho que isto não é confiável como % "real" (engana).
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
+// --- Watchdog de renderização ---
+const HEARTBEAT_DEAD_MS = 30_000; // sem pulso por isto = render presumido morto
+const WATCHDOG_TICK_MS = 10_000; // frequência de checagem das superfícies visíveis
+const RELOAD_COOLDOWN_MS = 60_000; // não recarrega a mesma superfície antes disto
+const RELOAD_MAX_TRIES = 2; // tentativas antes de desistir (evita loop de reload)
+const HUB_SURFACE = '__hub__'; // chave da superfície do hub no mapa de pulsos
+
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   // O Cockpit vive como aba no editor (WebviewPanel) + hub na Activity Bar
   // (WebviewView). `surfaces` guarda os webviews ativos (broadcast) — o estado
@@ -67,8 +75,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private webviewSession = new Map<vscode.Webview, string>();
   private hubView?: vscode.WebviewView;
 
+  // Watchdog de render: o processo do webview (renderer) pode cair (bug GPU do
+  // VSCode) — a tela fica branca mas o host segue vivo (stream/stats/timeline
+  // continuam). Cada superfície bate um pulso periódico; se uma VISÍVEL para de
+  // bater além do limite, força reload do HTML. NUNCA toca no CLI/contexto.
+  private lastBeat = new Map<string, number>(); // surfaceKey -> epoch ms do último pulso
+  private reloadGuard = new Map<string, { at: number; count: number }>(); // cooldown/cap por superfície
+  private justRecreated = new Set<string>(); // tabIds recriados pelo watchdog: replay forçado no init
+  private watchdog?: ReturnType<typeof setInterval>;
+
   // Abas: cada uma é uma Session (runtime de CLI + stats + streaming) paralela.
   private sessions = new Map<string, Session>();
+  // Keep-alive de cache: renova em background os contextos marcados (até fechados).
+  private cacheKeeper = new CacheKeeper({
+    claudePath: () => this.claudePath(),
+    pingOpen: (id) => this.pingOpenSession(id),
+  });
   private tabMeta = new Map<string, { title: string; status: 'idle' | 'busy' | 'error' }>();
   private tabOrder: string[] = [];
   private activeTab = '';
@@ -102,6 +124,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.statusBar = statusBar;
     this.updateStatusBar(false);
     setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
+    this.cacheKeeper.start(); // renova caches marcados (cobre reabertura do VSCode)
+  }
+
+  /** Encerra recursos de background (chamado no deactivate da extensão). */
+  dispose(): void {
+    this.cacheKeeper.stop();
+  }
+
+  /**
+   * Keep-alive de um contexto que está ABERTO numa aba: pinga pelo CLI vivo da
+   * sessão (sem --resume paralelo, que conflita). 'busy' = turno em andamento já
+   * mantém quente; 'pinged' = ping enviado; 'none' = não há sessão aberta (o
+   * keeper então usa o spawn efêmero p/ contexto fechado).
+   */
+  private pingOpenSession(sessionId: string): 'busy' | 'pinged' | 'none' {
+    for (const s of this.sessions.values()) {
+      if (s.sessionId === sessionId || s.resumeId === sessionId) {
+        if (s.busy) return 'busy';
+        return s.keepAlivePing() ? 'pinged' : 'busy';
+      }
+    }
+    return 'none';
   }
 
   // ---- Abas / sessões paralelas ----
@@ -157,6 +201,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Combos (model/effort/permission) e stats refletem a aba ativa.
     this.sendConfig();
     this.post({ kind: 'stats', stats: this.sessions.get(tabId)!.snapshot() }, tabId);
+    this.sessions.get(tabId)!.sendTimeline(); // timeline/compactações da aba ativa
     this.replayTab(tabId); // garante o histórico em todas as superfícies
   }
 
@@ -380,13 +425,113 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
     const vs = panel.onDidChangeViewState(() => {
       if (panel.active) this.setActive(tabId);
+      // Reexibido: timers ficaram throttled enquanto oculto — rearma o relógio p/
+      // o watchdog não confundir o gap com render morto.
+      if (panel.visible) this.lastBeat.set(tabId, Date.now());
     });
+    this.lastBeat.set(tabId, Date.now()); // arma já: painel recém-criado ainda não bateu
     panel.onDidDispose(() => {
       this.panels.delete(tabId);
       this.webviewSession.delete(panel.webview);
+      this.lastBeat.delete(tabId);
+      this.reloadGuard.delete(tabId);
       sub.dispose();
       vs.dispose();
     });
+  }
+
+  /** Chave de superfície p/ o watchdog: tabId do painel, ou HUB_SURFACE do hub. */
+  private surfaceKey(webview?: vscode.Webview): string | undefined {
+    if (!webview) return undefined;
+    const tab = this.webviewSession.get(webview);
+    if (tab) return tab;
+    if (webview === this.hubView?.webview) return HUB_SURFACE;
+    return undefined;
+  }
+
+  /** Liga o checador periódico de render (idempotente). */
+  private startWatchdog(): void {
+    if (this.watchdog) return;
+    this.watchdog = setInterval(() => this.checkSurfaces(), WATCHDOG_TICK_MS);
+  }
+
+  /** Varre superfícies VISÍVEIS; oculta é throttled/descartada, não conta. */
+  private checkSurfaces(): void {
+    const now = Date.now();
+    for (const [tabId, panel] of this.panels) {
+      if (panel.visible) this.maybeReload(tabId, panel.webview, now);
+    }
+    if (this.hubView?.visible) this.maybeReload(HUB_SURFACE, this.hubView.webview, now);
+  }
+
+  /**
+   * Render presumido morto (pulso parado além do limite) → força reload do HTML:
+   * remonta o React, que reenvia 'init' e o host repinta via replayTab. O custo do
+   * replay (timeline grande) só é pago AQUI, no recovery — jamais no caminho são.
+   * Cooldown + cap evitam loop caso o reload não reviva (ambiente quebrado).
+   */
+  private maybeReload(key: string, webview: vscode.Webview, now: number): void {
+    const beat = this.lastBeat.get(key);
+    if (beat === undefined) {
+      this.lastBeat.set(key, now); // 1ª observação: arma o relógio, não age
+      return;
+    }
+    if (now - beat < HEARTBEAT_DEAD_MS) return; // vivo
+    const g = this.reloadGuard.get(key) ?? { at: 0, count: 0 };
+    if (now - g.at < RELOAD_COOLDOWN_MS) return; // cooldown ativo
+    if (g.count >= RELOAD_MAX_TRIES) return; // já tentou demais: desiste (sem loop)
+    try {
+      // Renderer crashado IGNORA reatribuir webview.html — só recriar o painel
+      // respawna o processo. Hub é WebviewView (VSCode dono): só resta o html.
+      if (key === HUB_SURFACE) {
+        webview.html = this.getHtml(webview, 'hub');
+      } else if (!this.recreatePanel(key)) {
+        webview.html = this.getHtml(webview, 'chat', key); // fallback se recriar falhar
+      }
+    } catch {
+      return;
+    }
+    this.reloadGuard.set(key, { at: now, count: g.count + 1 }); // depois do recreate (sobrevive ao dispose)
+    this.lastBeat.set(key, now); // janela de graça p/ remontar e voltar a bater
+    log(`Webview render dead (${key}) — recovered (try ${g.count + 1})`);
+  }
+
+  /**
+   * Recria o WebviewPanel de uma aba: dispose do velho + createWebviewPanel novo,
+   * mantendo o MESMO tabId/sessão (CLI e contexto intactos). Único caminho que
+   * respawna um renderer morto. O painel novo manda 'init' → replayTab repinta.
+   */
+  private recreatePanel(tabId: string): boolean {
+    const old = this.panels.get(tabId);
+    if (!old) return false;
+    const col = old.viewColumn ?? vscode.ViewColumn.Active;
+    const title = this.tabMeta.get(tabId)?.title || 'Tootega Cockpit';
+    // Desvincula antes de descartar: o onDidDispose do velho apagaria os registros
+    // do tabId que passarão a pertencer ao painel novo.
+    this.panels.delete(tabId);
+    this.webviewSession.delete(old.webview);
+    try {
+      old.dispose();
+    } catch {
+      /* já morto */
+    }
+    let panel: vscode.WebviewPanel;
+    try {
+      panel = vscode.window.createWebviewPanel('tootega.cockpit.editor', title, col, {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+          vscode.Uri.joinPath(this.extensionUri, 'media'),
+        ],
+      });
+    } catch {
+      return false;
+    }
+    panel.iconPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'icon-color.svg');
+    this.justRecreated.add(tabId); // o init do painel novo deve forçar replay mesmo se busy
+    this.bindPanel(panel, tabId);
+    return true;
   }
 
   /** Painel restaurado pelo serializer não tem vínculo de sessão: descarta. */
@@ -620,9 +765,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * popular um painel recém-aberto ou ao trocar de aba. Pula se a aba está
    * ocupada (streaming ao vivo) para não sobrescrever o turno em andamento.
    */
-  private replayTab(tabId: string): void {
+  private replayTab(tabId: string, force = false): void {
     const s = this.sessions.get(tabId);
-    if (!s || s.busy) return;
+    // Normal: pula se busy (não sobrescreve o turno ao vivo). Recovery (force):
+    // o painel acabou de remontar em branco — repinta o histórico persistido; os
+    // deltas em voo continuam chegando e se anexam.
+    if (!s || (s.busy && !force)) return;
     const id = s.sessionId ?? s.resumeId;
     if (!id) return;
     const items = loadTranscript(this.workspaceCwd(), id);
@@ -723,11 +871,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       ffmpegPath: this.cfg().get<string>('ffmpegPath', '') || undefined,
     });
     this.voiceCapture = capture;
+    let firstFrame = false; // sinaliza 'pronto' no 1º PCM real (mic vivo + WS aberto)
     this.voice = new VoiceSession(lang, keyterms, {
       onOpen: () => {
         // WS pronto: começa a capturar e empurrar PCM.
         void capture.start(
-          (buf) => this.voice?.pushAudio(buf),
+          (buf) => {
+            if (!firstFrame) {
+              firstFrame = true;
+              // Só agora o ditado está REALMENTE válido (WS + áudio fluindo):
+              // o webview tira o spinner e libera o "pode falar". Evita perder
+              // as 1ªs palavras faladas durante o setup do WS/ffmpeg.
+              this.post({ kind: 'voiceReady' }, tabId);
+            }
+            this.voice?.pushAudio(buf);
+          },
           (message) => {
             this.post({ kind: 'voiceError', message }, tabId);
             this.stopVoice();
@@ -960,13 +1118,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // ---- Mensagens vindas do webview ----
 
   private onWebviewMessage(m: WebviewToHost, webview?: vscode.Webview): void {
+    // Qualquer mensagem prova que o render está vivo: arma o relógio do watchdog.
+    const sk = this.surfaceKey(webview);
+    if (sk) {
+      this.lastBeat.set(sk, Date.now());
+      const g = this.reloadGuard.get(sk);
+      if (g && Date.now() - g.at > RELOAD_COOLDOWN_MS) this.reloadGuard.delete(sk); // recuperou: zera o cap
+    }
     // Sessão de origem: painel de chat -> sua sessão; hub/sem vínculo -> ativa.
     const bound = webview ? this.webviewSession.get(webview) : undefined;
     const srcTab = bound && this.sessions.has(bound) ? bound : this.activeTab;
     const srcSession = (): Session => this.sessions.get(srcTab) ?? this.active();
     switch (m.kind) {
+      case 'heartbeat':
+        this.startWatchdog(); // idempotente: garante o checador rodando
+        break;
       case 'init':
         if (this.tabOrder.length === 0) this.createTab();
+        this.startWatchdog();
         this.post({ kind: 'ready', locale: resolveLocale() });
         this.sendConfig();
         this.reportCliStatus();
@@ -976,7 +1145,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.postTaskTimings(bound ?? this.activeTab); // médias do escopo p/ calibrar o gauge
         this.autoResumeLast();
         this.postTabs();
-        this.replayTab(bound ?? this.activeTab); // popula a superfície com sua conversa
+        // Painel recriado pelo watchdog (render morto): força replay mesmo se busy.
+        this.replayTab(bound ?? this.activeTab, this.justRecreated.delete(bound ?? this.activeTab));
         if (bound) this.primeCommands(bound); // carrega slash commands sem esperar o 1º envio
         break;
       case 'sendMessage': {
@@ -1118,6 +1288,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'compactContext':
         // Compacta o contexto via slash command do CLI.
         srcSession().send('/compact');
+        break;
+      case 'setKeepCacheAlive':
+        // Liga/desliga o keep-alive de cache do contexto de origem (persistido).
+        srcSession().setKeepCacheAlive(m.value);
         break;
       case 'setLocale':
         this.post({ kind: 'locale', locale: m.locale });
@@ -1444,11 +1618,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     };
     view.webview.html = this.getHtml(view.webview, 'hub');
     this.hubView = view;
+    this.lastBeat.set(HUB_SURFACE, Date.now());
     const sub = view.webview.onDidReceiveMessage((m: WebviewToHost) =>
       this.onWebviewMessage(m, view.webview),
     );
+    const visSub = view.onDidChangeVisibility(() => {
+      if (view.visible) this.lastBeat.set(HUB_SURFACE, Date.now()); // reexibido: rearma o relógio
+    });
     view.onDidDispose(() => {
       sub.dispose();
+      visSub.dispose();
+      this.lastBeat.delete(HUB_SURFACE);
+      this.reloadGuard.delete(HUB_SURFACE);
       if (this.hubView === view) this.hubView = undefined;
     });
   }

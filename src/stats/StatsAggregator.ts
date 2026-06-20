@@ -1,7 +1,28 @@
 // Agrega usage dos eventos em um StatsSnapshot para a UI.
 // Cobre contexto, cache, custo e (quando disponível) limites da conta.
 import type { ClaudeEvent, Usage } from '../../shared/events';
-import type { StatsSnapshot, LimitWindow, ToolDecision } from '../../shared/protocol';
+import type {
+  StatsSnapshot,
+  LimitWindow,
+  ToolDecision,
+  ModelUsage,
+  TimelineSample,
+  CompactionEvent,
+} from '../../shared/protocol';
+import { STATS_VERSION, capTimeline, type PersistedStats } from './StatsStore';
+import { dlog } from '../util/logger';
+
+// Vida do prompt cache (TTL estendido de 1h do Claude Code): após este tempo
+// ocioso o prefixo cacheado expira e o turno seguinte re-escreve tudo (reset
+// frio). Cada requisição que acerta o prefixo REINICIA esta janela — é a base do
+// keep-alive (reenvio antes de completar 1h). Exportado p/ o CacheKeeper.
+export const CACHE_LIFE_MS = 60 * 60_000;
+// Turno é reset por TTL se: não é o 1º, ficou ocioso > vida do cache, leu quase
+// nada do cache e re-escreveu prefixo. Conservador p/ não contar falso-positivo.
+const COLD_READ_FRAC = 0.1;
+// Compactação: o contexto TOTAL encolheu abaixo desta fração do turno anterior.
+// (Reset frio NÃO encolhe o total — só desloca read→create — então não colide.)
+const COMPACT_FRAC = 0.6;
 
 // Preços por 1M tokens (USD). Estimativa — rotulada como tal na Ui.
 interface Price {
@@ -64,6 +85,30 @@ export class StatsAggregator {
 
   private sessionStartTs?: number;
   private toolDecisions = new Map<string, { allow: number; allowAlways: number; deny: number }>();
+
+  // --- Contadores que sobrevivem ao reopen do contexto ---
+  private turnCount = 0;
+  private reopenCount = 0;
+  private cacheResetCount = 0;
+  private cacheRecacheCostUsd = 0;
+  private compactionCount = 0;
+  private peakContextUsed = 0;
+  private peakContextTs?: number;
+  // Tempo de execução REAL: soma do tempo de cada prompt (send → result/stop).
+  // NÃO inclui ociosidade (agente parado). turnStartTs marca o turno em voo.
+  private activeMs = 0;
+  private turnStartTs?: number;
+  // Keep-alive: se marcado, o CacheKeeper reenvia este contexto antes do cache
+  // de 1h expirar (mesmo com a aba/contexto fechado). Estado persistido.
+  private keepCacheAlive = false;
+  // Estado p/ detecção entre turnos.
+  private prevContextUsed = 0;
+  private prevCacheRead = 0;
+  private lastTurnTs = 0;
+  // Detalhamento por modelo e séries históricas.
+  private perModel = new Map<string, ModelUsage>();
+  private timeline: TimelineSample[] = [];
+  private compactions: CompactionEvent[] = [];
 
   private limits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow } = {};
   private limitsSource: 'real' | 'estimate' = 'estimate';
@@ -201,13 +246,15 @@ export class StatsAggregator {
       this.outputTokens += out;
       this.curInput = this.curCreate = this.curRead = this.curOutput = 0;
 
+      const p = priceFor(this.model);
+      const turnCost =
+        (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
       if (this.costIsEstimate) {
-        const p = priceFor(this.model);
-        const turn =
-          (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
-        this.lastTurnCostUsd = turn;
-        this.sessionCostUsd += turn;
+        this.lastTurnCostUsd = turnCost;
+        this.sessionCostUsd += turnCost;
       }
+
+      this.consolidateTurn(inp, out, cw, cr, turnCost, p);
     } else {
       // message_start (parcial): reflete o turno atual no display de imediato.
       this.curInput = inp;
@@ -215,6 +262,220 @@ export class StatsAggregator {
       this.curRead = cr;
       this.curOutput = out;
     }
+  }
+
+  /**
+   * Pós-consolidação de um turno: detecta cache reset (TTL frio) e compactação,
+   * atualiza contadores, pico, breakdown por modelo e a amostra de timeline.
+   */
+  private consolidateTurn(inp: number, out: number, cw: number, cr: number, turnCost: number, p: Price): void {
+    const now = Date.now();
+    const total = inp + cw + cr; // = contextUsed do turno
+    const readFrac = total > 0 ? cr / total : 0;
+    const gap = this.lastTurnTs > 0 ? now - this.lastTurnTs : 0;
+
+    // Cache reset (TTL frio): turno não-inicial, ocioso > TTL, leu ~0 do cache e
+    // re-escreveu o prefixo. Re-paga o cacheWrite — perda contabilizada.
+    const isReset = this.turnCount > 0 && gap > CACHE_LIFE_MS && readFrac < COLD_READ_FRAC && cw > 0;
+    if (isReset) {
+      this.cacheResetCount++;
+      const cost = (cw * p.cacheWrite) / 1_000_000;
+      this.cacheRecacheCostUsd += cost;
+      dlog(
+        'stats',
+        `cache reset #${this.cacheResetCount} (${this.model ?? '?'}): ocioso ${(gap / 60_000).toFixed(1)}m, readFrac=${readFrac.toFixed(3)}, re-cache ${cw} tok = $${cost.toFixed(4)}`,
+      );
+    }
+
+    // Compactação: o contexto TOTAL encolheu vs. o turno anterior (e não foi reset).
+    let isCompaction = false;
+    if (
+      this.turnCount > 0 &&
+      !isReset &&
+      this.prevContextUsed > 0 &&
+      total < this.prevContextUsed * COMPACT_FRAC
+    ) {
+      isCompaction = true;
+      this.compactionCount++;
+      this.compactions.push({
+        ts: now,
+        before: this.prevContextUsed,
+        after: total,
+        saved: this.prevContextUsed - total,
+      });
+      dlog(
+        'stats',
+        `compactação #${this.compactionCount}: ${this.prevContextUsed} → ${total} tok (−${this.prevContextUsed - total})`,
+      );
+    }
+
+    this.turnCount++;
+    if (total > this.peakContextUsed) {
+      this.peakContextUsed = total;
+      this.peakContextTs = now;
+    }
+
+    // Acúmulo por modelo (custo por modelo é sempre estimativa de tabela).
+    const key = this.model ?? 'unknown';
+    const m =
+      this.perModel.get(key) ??
+      ({
+        model: key,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreateTokens: 0,
+        cacheReadTokens: 0,
+        costUsd: 0,
+        turns: 0,
+      } satisfies ModelUsage);
+    m.inputTokens += inp;
+    m.outputTokens += out;
+    m.cacheCreateTokens += cw;
+    m.cacheReadTokens += cr;
+    m.costUsd += turnCost;
+    m.turns++;
+    this.perModel.set(key, m);
+
+    this.timeline.push({
+      ts: now,
+      contextUsed: total,
+      cacheReadPct: readFrac,
+      costUsd: this.sessionCostUsd,
+      reset: isReset || undefined,
+      compaction: isCompaction || undefined,
+    });
+    this.timeline = capTimeline(this.timeline);
+
+    this.prevContextUsed = total;
+    this.prevCacheRead = cr;
+    this.lastTurnTs = now;
+  }
+
+  /** Registra uma reabertura/retomada deste contexto (incrementa reopenCount). */
+  markReopen(): void {
+    this.reopenCount++;
+  }
+
+  /** Liga/desliga o keep-alive de cache deste contexto (persistido). */
+  setKeepCacheAlive(v: boolean): void {
+    this.keepCacheAlive = v;
+  }
+
+  /** Início de um prompt (send): arma o cronômetro do tempo de execução ativo. */
+  beginTurn(): void {
+    if (this.turnStartTs == null) this.turnStartTs = Date.now();
+  }
+
+  /** Fim do prompt (result/interrupt/stop): soma o tempo trabalhado, ignora ocioso. */
+  endTurn(): void {
+    if (this.turnStartTs != null) {
+      this.activeMs += Math.max(0, Date.now() - this.turnStartTs);
+      this.turnStartTs = undefined;
+    }
+  }
+
+  /** Tempo do turno em voo (p/ o display somar ao activeMs sem fechar o turno). */
+  private liveTurnMs(): number {
+    return this.turnStartTs != null ? Math.max(0, Date.now() - this.turnStartTs) : 0;
+  }
+
+  /**
+   * Vida do cache: idade desde a última requisição (lastTurnTs) e quanto falta
+   * p/ expirar a janela de 1h. Indefinido enquanto não houve nenhum turno.
+   */
+  private cacheLife(): {
+    cacheLifeMs: number;
+    cacheAgeMs?: number;
+    cacheExpiresInMs?: number;
+    cacheExpiresAt?: number;
+    cacheAlive?: boolean;
+  } {
+    if (this.lastTurnTs <= 0) return { cacheLifeMs: CACHE_LIFE_MS };
+    const age = Math.max(0, Date.now() - this.lastTurnTs);
+    return {
+      cacheLifeMs: CACHE_LIFE_MS,
+      cacheAgeMs: age,
+      cacheExpiresInMs: Math.max(0, CACHE_LIFE_MS - age),
+      cacheExpiresAt: this.lastTurnTs + CACHE_LIFE_MS, // epoch ms — p/ contagem ao vivo na UI
+      cacheAlive: age < CACHE_LIFE_MS,
+    };
+  }
+
+  /** Timeline + compactações p/ a mensagem `statsTimeline` (enviada por turno). */
+  timelineSnapshot(): { timeline: TimelineSample[]; compactions: CompactionEvent[] } {
+    return { timeline: this.timeline, compactions: this.compactions };
+  }
+
+  /** Restaura os acumuladores de um estado persistido (continuação coerente). */
+  hydrate(p: PersistedStats): void {
+    this.model = p.model ?? this.model;
+    this.mode = p.mode ?? this.mode;
+    if (p.contextLimit > 0) {
+      this.contextLimit = p.contextLimit;
+      this.autoLimit = p.autoLimit;
+    }
+    this.sessionStartTs = p.sessionStartTs ?? this.sessionStartTs;
+    this.inputTokens = p.inputTokens;
+    this.outputTokens = p.outputTokens;
+    this.cacheCreateTokens = p.cacheCreateTokens;
+    this.cacheReadTokens = p.cacheReadTokens;
+    this.sessionCostUsd = p.sessionCostUsd;
+    this.costIsEstimate = p.costIsEstimate;
+    this.turnCount = p.turnCount;
+    this.reopenCount = p.reopenCount;
+    this.cacheResetCount = p.cacheResetCount;
+    this.cacheRecacheCostUsd = p.cacheRecacheCostUsd;
+    this.compactionCount = p.compactionCount;
+    this.peakContextUsed = p.peakContextUsed;
+    this.peakContextTs = p.peakContextTs;
+    this.activeMs = p.activeMs ?? 0;
+    this.keepCacheAlive = p.keepCacheAlive ?? false;
+    this.prevContextUsed = p.lastContextUsed;
+    this.contextUsed = p.lastContextUsed; // restaura a barra de contexto de imediato
+    this.prevCacheRead = p.lastCacheRead;
+    this.lastTurnTs = p.lastTurnTs;
+    this.perModel = new Map(Object.entries(p.perModel ?? {}));
+    this.toolDecisions = new Map(Object.entries(p.toolDecisions ?? {}));
+    this.timeline = Array.isArray(p.timeline) ? p.timeline : [];
+    this.compactions = Array.isArray(p.compactions) ? p.compactions : [];
+  }
+
+  /** Serializa o estado para persistir por sessão. `cwd` permite ao CacheKeeper
+   *  retomar o contexto (claude --resume na pasta certa) com a aba fechada. */
+  serialize(sessionId: string, cwd?: string): PersistedStats {
+    return {
+      version: STATS_VERSION,
+      sessionId,
+      cwd,
+      keepCacheAlive: this.keepCacheAlive,
+      model: this.model,
+      mode: this.mode,
+      contextLimit: this.contextLimit,
+      autoLimit: this.autoLimit,
+      sessionStartTs: this.sessionStartTs,
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
+      cacheCreateTokens: this.cacheCreateTokens,
+      cacheReadTokens: this.cacheReadTokens,
+      sessionCostUsd: this.sessionCostUsd,
+      costIsEstimate: this.costIsEstimate,
+      turnCount: this.turnCount,
+      cacheResetCount: this.cacheResetCount,
+      cacheRecacheCostUsd: this.cacheRecacheCostUsd,
+      compactionCount: this.compactionCount,
+      reopenCount: this.reopenCount,
+      peakContextUsed: this.peakContextUsed,
+      peakContextTs: this.peakContextTs,
+      activeMs: this.activeMs + this.liveTurnMs(),
+      lastContextUsed: this.prevContextUsed,
+      lastCacheRead: this.prevCacheRead,
+      lastTurnTs: this.lastTurnTs,
+      perModel: Object.fromEntries(this.perModel),
+      toolDecisions: Object.fromEntries(this.toolDecisions),
+      timeline: this.timeline,
+      compactions: this.compactions,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   snapshot(): StatsSnapshot {
@@ -255,6 +516,17 @@ export class StatsAggregator {
       lastTurnCostUsd: this.lastTurnCostUsd,
       costIsEstimate: this.costIsEstimate,
       toolAcceptance,
+      turnCount: this.turnCount,
+      reopenCount: this.reopenCount,
+      cacheResetCount: this.cacheResetCount,
+      cacheRecacheCostUsd: this.cacheRecacheCostUsd || undefined,
+      compactionCount: this.compactionCount,
+      peakContextUsed: this.peakContextUsed || undefined,
+      activeMs: this.activeMs + this.liveTurnMs(),
+      perModel: this.perModel.size > 0 ? [...this.perModel.values()] : undefined,
+      // Vida do cache (TTL de 1h): idade desde a última atividade e quanto falta.
+      ...this.cacheLife(),
+      keepCacheAlive: this.keepCacheAlive,
       limits: {
         fiveHour: mergeWindow(this.limits.fiveHour, this.streamLimits.fiveHour),
         sevenDay: mergeWindow(this.limits.sevenDay, this.streamLimits.sevenDay),

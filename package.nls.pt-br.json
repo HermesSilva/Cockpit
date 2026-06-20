@@ -22,6 +22,7 @@
   "cfg.ffmpegPath": "Caminho do executável ffmpeg usado na captura do ditado por voz. Vazio = usa 'ffmpeg' do PATH.",
   "cfg.voiceLanguage": "Idioma do ditado por voz (fala para texto). Vazio = segue o idioma da UI do Cockpit.",
   "cfg.voiceCorrect": "Ao parar o ditado, envia o texto para o modelo interno corrigir ortografia/gramática. Chamada limpa e isolada (só instrução + texto; sem tools/MCP/contexto).",
+  "cfg.debugLog": "Grava logs de diagnóstico detalhados no canal de saída \"Tootega Cockpit\" (keep-alive de cache, persistência de stats, reset/compactação de cache, ciclo de vida da sessão). Desligado por padrão para evitar ruído.",
   "cfg.internalModel": "Modelo usado nas chamadas internas de IA do Cockpit (correção do ditado, ajuda dos comandos '/'). São chamadas limpas e isoladas (sem tools/MCP/contexto). O Haiku é o mais rápido/barato.",
   "cfg.verbosity": "Quanto do timeline mostrar (só exibição — não muda o agente). Verbose = tudo; Necessary = edições + explicações finais; Dialogo = edições + o que está fazendo; Quiet = só explicações finais.",
   "cfg.model": "Modelo default para novas sessões. 'Account default' deixa o CLI escolher. Reflete (pré-seleciona) no combo Model do painel; mude lá para sobrepor só a sessão atual.",

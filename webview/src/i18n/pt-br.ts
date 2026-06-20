@@ -14,6 +14,7 @@ export const ptBR: Strings = {
   'voice.start': 'Ditar (voz para texto)',
   'voice.stop': 'Parar ditado',
   'voice.correcting': 'Corrigindo…',
+  'voice.connecting': 'Conectando o ditado… aguarde para falar',
   'plugins.title': 'Plugins',
   'plugins.desc': 'Pesquisar, instalar e remover plugins do Claude Code',
   'plugins.searchPlaceholder': 'Pesquisar plugins…',
@@ -114,11 +115,12 @@ export const ptBR: Strings = {
   'tip.cost': 'Custo do turno',
 
   'tip.ctx.context':
-    'Janela de contexto: tokens carregados agora vs. o limite do modelo. Ao encher, turnos antigos são compactados.',
+    'Janela de contexto: tokens carregados agora vs. o limite do modelo. Ao encher, turnos antigos são compactados. Tokens vêm do servidor; o limite é derivado do modelo ([1m]→1M, senão 200K).',
   'tip.ctx.tokensSection': 'Tokens trocados com o modelo nesta sessão.',
   'tip.ctx.input': 'Tokens de entrada enviados ao modelo nesta sessão (mensagens, arquivos, resultados de tools).',
   'tip.ctx.output': 'Tokens de saída gerados pelo modelo nesta sessão (respostas + raciocínio).',
   'tip.ctx.cacheSection': 'Reuso do cache de prompt — principal fator de custo e latência.',
+  'tip.ctx.cacheLife': 'Tempo até o cache de prompt (1h) expirar. Cada requisição reinicia a janela. Com "manter vivo" marcado, o Cockpit reenvia antes de expirar — mesmo com o contexto fechado — para não re-pagar a escrita do cache. Não revive cache já vencido. A idade vem do relógio local; o TTL de 1h é uma suposição (o CLI não reporta o vencimento real).',
   'tip.ctx.hit':
     'Taxa de cache hit: fração da entrada servida do cache de prompt em vez de reprocessada. Maior = mais barato e rápido.',
   'tip.ctx.cacheRead': 'Cache lido: tokens reaproveitados do cache de prompt (cobrados por fração do input).',
@@ -126,9 +128,20 @@ export const ptBR: Strings = {
   'tip.ctx.savings':
     'Economia estimada pelo cache de prompt: o que você teria pago se esses tokens fossem cobrados à taxa de entrada normal em vez da taxa de leitura de cache.',
   'tip.ctx.duration': 'Tempo decorrido desde o início desta sessão (a partir do primeiro evento de init do CLI).',
-  'tip.ctx.costEstimate': 'Estimado — o CLI ainda não reportou um custo confirmado para esta sessão.',
+  'tip.ctx.costEstimate': 'Estimado — o CLI ainda não reportou um custo confirmado para esta sessão. Com "~" é estimativa da tabela de preço; sem "~" é o custo real do CLI (bate com /cost).',
   'tip.ctx.toolAcceptance':
     'Proporção de solicitações de permissão de ferramenta que você permitiu vs. negou nesta sessão, por ferramenta.',
+  // Rodapé de procedência dos hints (chips coloridos).
+  'meta.origin.label': 'Origem',
+  'meta.origin.server': 'Servidor (via CLI)',
+  'meta.origin.local': 'Local',
+  'meta.origin.computed': 'Calculado',
+  'meta.origin.estimate': 'Estimado',
+  'meta.origin.cli': 'CLI',
+  'meta.conf.label': 'Confiança',
+  'meta.conf.high': 'Alta',
+  'meta.conf.medium': 'Média',
+  'meta.conf.low': 'Baixa',
 
   'tip.ctrl.model':
     'Modelo desta sessão. "Padrão" segue suas settings; escolha um Opus/Sonnet/Haiku específico ou digite um id custom. Vale na próxima mensagem.',
@@ -268,6 +281,10 @@ export const ptBR: Strings = {
   'stats.cache.read': 'Leitura',
   'stats.cache.write': 'Escrita',
   'stats.cache.savings': 'Economia est.',
+  'stats.cache.life': 'Vida do cache',
+  'stats.cache.life.left': '{0} restante',
+  'stats.cache.life.expired': 'expirado',
+  'stats.cache.keepAlive': 'Manter cache vivo (renova antes de 1h)',
   'stats.cost': 'Custo',
   'stats.cost.session': 'Sessão',
   'stats.cost.lastTurn': 'Último turno',

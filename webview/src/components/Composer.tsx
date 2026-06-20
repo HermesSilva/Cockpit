@@ -62,6 +62,7 @@ export function Composer({
   // Ditado por voz: estado do botão + base do texto ao começar. A captura do mic
   // acontece NO HOST (webview do VSCode bloqueia getUserMedia); aqui só sinaliza.
   const [recording, setRecording] = useState(false);
+  const [connecting, setConnecting] = useState(false); // clicou no mic, aguardando WS+áudio (spinner)
   const [correcting, setCorrecting] = useState(false); // corrigindo texto (input readonly)
   const recordingRef = useRef(false); // espelho síncrono p/ os listeners (sem stale closure)
   const voiceBaseRef = useRef('');
@@ -129,7 +130,9 @@ export function Composer({
   useEffect(() => {
     const h = (e: MessageEvent) => {
       const m = e.data;
-      if (m?.kind === 'voiceTranscript') {
+      if (m?.kind === 'voiceReady') {
+        setConnecting(false); // WS + áudio fluindo: tira o spinner, pode falar
+      } else if (m?.kind === 'voiceTranscript') {
         if (!recordingRef.current) return; // ignora transcrições tardias (parou/digitou)
         if (m.isFinal) {
           voiceBaseRef.current = joinText(voiceBaseRef.current, m.text);
@@ -161,6 +164,7 @@ export function Composer({
     if (recordingRef.current) send({ kind: 'voiceStop' });
     recordingRef.current = false;
     setRecording(false);
+    setConnecting(false);
   };
 
   const toggleVoice = () => {
@@ -176,6 +180,7 @@ export function Composer({
       voiceBaseRef.current = text;
       recordingRef.current = true;
       setRecording(true);
+      setConnecting(true); // spinner até o host sinalizar voiceReady (mic vivo)
       send({ kind: 'voiceStart', language: locale }); // host abre o WS e captura o mic (ffmpeg)
       requestAnimationFrame(() => ref.current?.focus()); // foco no input ao ligar
     }
@@ -267,6 +272,17 @@ export function Composer({
   }, [injectDraft]);
 
   const submit = () => {
+    // Enviar durante o ditado: encerra a captura JÁ (sem correção) e cancela uma
+    // correção pendente — senão o botão segue gravando e transcrições tardias
+    // repopulam a área após o clear. recordingRef=false ANTES p/ o listener de
+    // voiceTranscript ignorar o que ainda chegar.
+    if (recordingRef.current) {
+      recordingRef.current = false;
+      setRecording(false);
+      setConnecting(false);
+      send({ kind: 'voiceStop' });
+    }
+    if (correcting) setCorrecting(false); // cancela correção em curso, envia o que tem
     const v = text.trim();
     if ((!v && images.length === 0) || disabled) return;
     onSend(
@@ -303,14 +319,7 @@ export function Composer({
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Enter durante o ditado: encerra a captura SEM correção e envia já.
-      if (recordingRef.current) {
-        recordingRef.current = false;
-        setRecording(false);
-        send({ kind: 'voiceStop' });
-      }
-      if (correcting) setCorrecting(false); // cancela correção em curso, envia o que tem
-      submit();
+      submit(); // submit() já encerra ditado/correção em curso e envia
     }
   };
 
@@ -376,10 +385,18 @@ export function Composer({
           }}
         >
           <pre className="composer-highlight hljs" ref={hlRef} aria-hidden="true" />
+          {connecting && (
+            <div className="voice-connecting" role="status">
+              <span className="voice-spinner" aria-hidden="true" />
+              <span>{t('voice.connecting')}</span>
+            </div>
+          )}
           <textarea
             ref={ref}
             className="composer-input"
-            placeholder={correcting ? t('voice.correcting') : t('composer.placeholder')}
+            placeholder={
+              correcting ? t('voice.correcting') : connecting ? t('voice.connecting') : t('composer.placeholder')
+            }
             value={text}
             disabled={disabled}
             readOnly={correcting}
@@ -396,15 +413,25 @@ export function Composer({
           />
         </div>
         <div className="composer-side">
-          <Tooltip text={correcting ? t('voice.correcting') : recording ? t('voice.stop') : t('voice.start')}>
+          <Tooltip
+            text={
+              correcting
+                ? t('voice.correcting')
+                : connecting
+                  ? t('voice.connecting')
+                  : recording
+                    ? t('voice.stop')
+                    : t('voice.start')
+            }
+          >
             <button
               type="button"
-              className={`composer-side-btn voice ${recording ? 'recording' : ''} ${correcting ? 'correcting' : ''}`}
+              className={`composer-side-btn voice ${recording ? 'recording' : ''} ${correcting ? 'correcting' : ''} ${connecting ? 'connecting' : ''}`}
               onClick={toggleVoice}
               disabled={disabled || correcting}
               aria-pressed={recording}
             >
-              {correcting ? (
+              {correcting || connecting ? (
                 <span className="voice-spinner" aria-hidden="true" />
               ) : recording ? (
                 <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">

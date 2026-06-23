@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.158",
+  "version": "1.0.161",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -49,7 +49,8 @@
       {
         "command": "tootega.open",
         "title": "%cmd.open%",
-        "category": "Tootega"
+        "category": "Tootega",
+        "icon": "$(sparkle)"
       },
       {
         "command": "tootega.newSession",
@@ -88,6 +89,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "tootega.reopenClosed",
+        "title": "%cmd.reopenClosed%",
+        "category": "Tootega"
+      },
+      {
         "command": "tootega.login",
         "title": "%cmd.login%",
         "category": "Tootega"
@@ -115,6 +121,11 @@
     ],
     "menus": {
       "editor/title": [
+        {
+          "command": "tootega.open",
+          "group": "navigation@0",
+          "when": "!tootega.cockpitActive"
+        },
         {
           "command": "tootega.reloadView",
           "group": "navigation@1"
@@ -150,6 +161,12 @@
         "key": "ctrl+alt+n",
         "mac": "cmd+alt+n",
         "when": "activeWebviewPanelId == tootega.cockpit.editor"
+      },
+      {
+        "command": "tootega.reopenClosed",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "tootega.cockpitActive"
       },
       {
         "command": "tootega.interrupt",
@@ -232,6 +249,11 @@
           "type": "boolean",
           "default": true,
           "description": "%cfg.autoResumeLastSession%"
+        },
+        "tootega.autosave": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.autosave%"
         },
         "tootega.permissionMode": {
           "type": "string",

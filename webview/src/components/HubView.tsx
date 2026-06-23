@@ -5,7 +5,7 @@ import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort } from '
 import type { TooltipRow } from './Tooltip';
 import { Controls } from './Controls';
 import { Tooltip, type TooltipMeta } from './Tooltip';
-import { send } from '../vscodeApi';
+import { send, readState, saveState } from '../vscodeApi';
 
 // Procedência de um dado: origem + nível de confiança, já localizados, p/ o
 // rodapé do hint (chips coloridos). Mantém as descrições i18n limpas.
@@ -51,6 +51,7 @@ interface Props {
   onPermission: (mode: string) => void;
   onResume: (id: string) => void;
   onReload: (id: string) => void;
+  onRemote: (id: string) => void;
   onDelete: (session: SessionInfo) => void;
   onRename: (session: SessionInfo, name: string) => void;
   onDeleteAll: () => void;
@@ -90,6 +91,7 @@ export function HubView({
   onPermission,
   onResume,
   onReload,
+  onRemote,
   onDelete,
   onRename,
   onDeleteAll,
@@ -181,6 +183,8 @@ export function HubView({
         </Tooltip>
       </div>
 
+      <Onboarding t={t} cliMissing={cliMissing} loggedIn={loggedIn} hasSessions={sessions.length > 0} />
+
       <div className="ctx-panel-body">
         {/* Painel de informações do contexto ativo */}
         <section className="ctx-panel-info">
@@ -236,19 +240,27 @@ export function HubView({
           {sessions.length === 0 ? (
             <div className="muted sessions-empty">{t('sessions.empty')}</div>
           ) : (
-            <div className="ctx-grid">
-              {sessions.map((s) => (
-                <SessionCard
-                  key={s.id}
-                  s={s}
-                  t={t}
-                  active={s.id === activeSessionId}
-                  running={busySessions?.has(s.id) ?? false}
-                  onResume={onResume}
-                  onReload={onReload}
-                  onDelete={onDelete}
-                  onRename={onRename}
-                />
+            <div className="ctx-groups">
+              {groupSessions(sessions).map((g) => (
+                <div className="ctx-group" key={g.key}>
+                  <div className="ctx-group-head">{t(g.key as Parameters<typeof t>[0])}</div>
+                  <div className="ctx-grid">
+                    {g.items.map((s) => (
+                      <SessionCard
+                        key={s.id}
+                        s={s}
+                        t={t}
+                        active={s.id === activeSessionId}
+                        running={busySessions?.has(s.id) ?? false}
+                        onResume={onResume}
+                        onReload={onReload}
+                        onRemote={onRemote}
+                        onDelete={onDelete}
+                        onRename={onRename}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -268,6 +280,7 @@ function SessionCard({
   running,
   onResume,
   onReload,
+  onRemote,
   onDelete,
   onRename,
 }: {
@@ -277,6 +290,7 @@ function SessionCard({
   running: boolean;
   onResume: (id: string) => void;
   onReload: (id: string) => void;
+  onRemote: (id: string) => void;
   onDelete: (session: SessionInfo) => void;
   onRename: (session: SessionInfo, name: string) => void;
 }) {
@@ -350,6 +364,17 @@ function SessionCard({
           {fmtDate(s.updatedAt)} · {s.messageCount} {t('sessions.messages')}
         </span>
         <span className="ctx-card-actions">
+          <span
+            className="ctx-card-remote"
+            title={t('sessions.remote')}
+            role="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemote(s.id);
+            }}
+          >
+            📱
+          </span>
           <span
             className="ctx-card-reload"
             title={t('sessions.reload')}
@@ -633,6 +658,75 @@ function prettyChip(id: string): string {
 
 // Data/hora no formato da REGIÃO do PC (injetado pelo host via Node Intl),
 // independente do idioma da UI. Fallback: locale do webview.
+// Checklist de onboarding (dispensável, persiste no estado do webview). Os passos
+// de CLI e login se marcam sozinhos pelo estado; abrir contexto e ditado são dicas.
+function Onboarding({
+  t,
+  cliMissing,
+  loggedIn,
+  hasSessions,
+}: {
+  t: Translator;
+  cliMissing: boolean;
+  loggedIn: boolean;
+  hasSessions: boolean;
+}) {
+  const [dismissed, setDismissed] = useState(
+    () => readState<{ onboardingDone?: boolean }>()?.onboardingDone === true,
+  );
+  if (dismissed) return null;
+  const steps: { done: boolean; label: string }[] = [
+    { done: !cliMissing, label: t('onboarding.cli') },
+    { done: loggedIn, label: t('onboarding.signin') },
+    { done: hasSessions, label: t('onboarding.session') },
+    { done: false, label: t('onboarding.voice') },
+  ];
+  const dismiss = () => {
+    saveState({ onboardingDone: true });
+    setDismissed(true);
+  };
+  return (
+    <div className="onboarding">
+      <div className="onboarding-head">
+        <span className="onboarding-title">🎓 {t('onboarding.title')}</span>
+        <button type="button" className="onboarding-x" title={t('onboarding.dismiss')} onClick={dismiss}>
+          ✕
+        </button>
+      </div>
+      <ul className="onboarding-list">
+        {steps.map((s) => (
+          <li key={s.label} className={s.done ? 'done' : ''}>
+            <span className="onboarding-check">{s.done ? '✓' : '○'}</span>
+            {s.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Agrupa as sessões por faixa de tempo (updatedAt) p/ a grade do hub. A lista já
+// vem ordenada por mais recente; preserva essa ordem dentro de cada faixa.
+function groupSessions(sessions: SessionInfo[]): { key: string; items: SessionInfo[] }[] {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 86_400_000;
+  const buckets: Record<string, SessionInfo[]> = { today: [], yesterday: [], week: [], older: [] };
+  for (const s of sessions) {
+    const ts = Date.parse(s.updatedAt) || 0;
+    if (ts >= startToday) buckets.today.push(s);
+    else if (ts >= startToday - dayMs) buckets.yesterday.push(s);
+    else if (ts >= startToday - 7 * dayMs) buckets.week.push(s);
+    else buckets.older.push(s);
+  }
+  return [
+    { key: 'sessions.today', items: buckets.today },
+    { key: 'sessions.yesterday', items: buckets.yesterday },
+    { key: 'sessions.week', items: buckets.week },
+    { key: 'sessions.older', items: buckets.older },
+  ].filter((g) => g.items.length > 0);
+}
+
 function fmtDate(iso: string): string {
   const region = window.__TOOTEGA_REGION__ || navigator.language || undefined;
   try {

@@ -8,6 +8,7 @@
   "cmd.settings": "Settings",
   "cmd.openInEditor": "Open in editor (resizable)",
   "cmd.reloadView": "Reload view (fix gray/blank panel)",
+  "cmd.reopenClosed": "Reopen closed session",
   "cmd.login": "Sign in to Claude (CLI)",
   "cmd.logout": "Sign out from Claude (CLI)",
   "cmd.toggleLanguage": "Toggle language (pt-BR / English)",
@@ -29,5 +30,6 @@
   "cfg.model": "Default model for new sessions. 'Account default' lets the CLI choose. This is reflected (pre-selected) in the Model dropdown in the panel; change it there to override just the current session.",
   "cfg.effort": "Default reasoning effort for new sessions. 'CLI default' uses your ~/.claude/settings.json effortLevel. Reflected (pre-selected) in the Effort dropdown in the panel; change it there to override just the current session.",
   "cfg.apiKey": "Optional Anthropic API key, used **only** to list available models via `/v1/models`. Leave empty if Claude Code is authenticated by subscription — the model selector falls back to aliases, the active model and a custom field. The key is not used for chat (that always goes through the CLI).",
-  "cfg.autoResumeLastSession": "When opening a folder, automatically resume the most recent session for that folder (loads its history). Turn off to always start empty."
+  "cfg.autoResumeLastSession": "When opening a folder, automatically resume the most recent session for that folder (loads its history). Turn off to always start empty.",
+  "cfg.autosave": "Auto-save an open file before Claude reads or writes it, so the agent works on the latest content."
 }

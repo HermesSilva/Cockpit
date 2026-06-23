@@ -15,6 +15,28 @@ export interface CliOptions {
   effort?: string;
   permissionMode?: string;
   resumeSessionId?: string;
+  // Código curto do idioma (pt, en…) p/ as perguntas do AskUserQuestion. Quando
+  // setado, injeta um append-system-prompt que força o idioma SÓ das perguntas.
+  askLanguage?: string;
+}
+
+// Código BCP47 curto -> nome do idioma p/ a instrução do prompt.
+const LANG_NAME: Record<string, string> = {
+  pt: 'Brazilian Portuguese (pt-BR)',
+  en: 'international English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  it: 'Italian',
+};
+
+function askLanguagePrompt(code: string): string {
+  const name = LANG_NAME[code] ?? code;
+  return (
+    `When you use the AskUserQuestion tool, write every question, header text, and ` +
+    `option label/description in ${name}. This language rule applies ONLY to ` +
+    `AskUserQuestion content, not to your other replies.`
+  );
 }
 
 export interface CliEvents {
@@ -108,6 +130,9 @@ export class CliProcessManager extends EventEmitter {
       args.push('--permission-mode', this.opts.permissionMode);
     }
     if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
+    if (this.opts.askLanguage) {
+      args.push('--append-system-prompt', askLanguagePrompt(this.opts.askLanguage));
+    }
 
     const useShell = process.platform === 'win32';
     const proc = spawn(shellSafe(this.opts.claudePath, useShell), args, {

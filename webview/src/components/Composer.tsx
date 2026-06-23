@@ -3,7 +3,18 @@ import type { Translator } from '../i18n';
 import type { ImageAttachment, SlashCmdMeta } from '../../../shared/protocol';
 import { send, saveState, readState } from '../vscodeApi';
 import { richHighlight } from '../util/highlight';
+import {
+  ensureSpell,
+  spellReady,
+  suggest,
+  autoCorrection,
+  addUserWord,
+  ignoreWord,
+  onSpellUpdate,
+  type Suggestions,
+} from '../spell/spell';
 import { useImageViewer } from './ImageViewer';
+import { SpellDropdown } from './SpellDropdown';
 import { Tooltip } from './Tooltip';
 import { SlashMenu } from './SlashMenu';
 
@@ -68,6 +79,25 @@ export function Composer({
   const [correcting, setCorrecting] = useState(false); // corrigindo texto (input readonly)
   const recordingRef = useRef(false); // espelho síncrono p/ os listeners (sem stale closure)
   const voiceBaseRef = useRef('');
+  // Corretor ortográfico: tick força re-render do overlay quando os dicionários
+  // terminam de carregar; spellMenu controla o dropdown de correção aberto.
+  const [spellTick, setSpellTick] = useState(0);
+  const [spellMenu, setSpellMenu] = useState<{
+    word: string;
+    start: number;
+    left: number;
+    top: number; // y abaixo da palavra (posição preferida)
+    anchorTop: number; // y do topo da palavra (p/ inverter o menu pra cima)
+    sug: Suggestions | null; // null = carregando sugestões do host
+  } | null>(null);
+
+  // Cliente do corretor: liga o listener e re-renderiza o overlay sempre que
+  // chega veredito novo do host (palavras marcadas/desmarcadas).
+  useEffect(() => {
+    void ensureSpell();
+    const off = onSpellUpdate(() => setSpellTick((n) => n + 1));
+    return off;
+  }, []);
 
   // Auto-expande a altura (até 4x) e atualiza o espelho de highlight.
   useEffect(() => {
@@ -80,8 +110,9 @@ export function Composer({
     el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
     const hl = hlRef.current;
     // \n final garante que a última linha (e quebras finais) tenham altura no espelho.
-    if (hl) hl.innerHTML = `${richHighlight(text)}\n`;
-  }, [text]);
+    // spell=true marca palavras erradas (após os dicionários carregarem; spellTick).
+    if (hl) hl.innerHTML = `${richHighlight(text, spellReady())}\n`;
+  }, [text, spellTick]);
 
   const syncScroll = () => {
     const el = ref.current;
@@ -357,6 +388,85 @@ export function Composer({
     }
   };
 
+  // Clique no textarea: se o caret cair sobre uma palavra marcada (.spell-error no
+  // overlay), abre o dropdown ancorado no span correspondente.
+  const openSpellAt = (caret: number) => {
+    const hl = hlRef.current;
+    if (!hl) return setSpellMenu(null);
+    for (const sp of Array.from(hl.querySelectorAll<HTMLElement>('.spell-error'))) {
+      const start = Number(sp.dataset.ss);
+      const word = sp.dataset.sw ?? sp.textContent ?? '';
+      if (caret >= start && caret <= start + word.length) {
+        const r = sp.getBoundingClientRect();
+        setSpellMenu({ word, start, left: r.left, top: r.bottom + 2, anchorTop: r.top, sug: null });
+        // Sugestões vêm do host (assíncrono); preenche quando chegarem.
+        void suggest(word).then((s) =>
+          setSpellMenu((cur) => (cur && cur.word === word && cur.start === start ? { ...cur, sug: s } : cur)),
+        );
+        return;
+      }
+    }
+    setSpellMenu(null);
+  };
+
+  const applySpell = (replacement: string) => {
+    if (!spellMenu) return;
+    const { start, word } = spellMenu;
+    setText((prev) => prev.slice(0, start) + replacement + prev.slice(start + word.length));
+    setSpellMenu(null);
+    const pos = start + replacement.length;
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = pos;
+      }
+    });
+  };
+
+  const addSpell = () => {
+    if (!spellMenu) return;
+    addUserWord(spellMenu.word);
+    setSpellMenu(null);
+    setSpellTick((n) => n + 1);
+  };
+  const ignoreSpell = () => {
+    if (!spellMenu) return;
+    ignoreWord(spellMenu.word);
+    setSpellMenu(null);
+    setSpellTick((n) => n + 1);
+  };
+
+  // Autocorreção ao teclar um delimitador (espaço, pontuação, Enter): se a palavra
+  // recém-terminada tem erro e há correção de alta confiança, troca sozinho.
+  const WORD_TAIL = /[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*$/;
+  const tryAutocorrect = (value: string, caret: number) => {
+    if (!spellReady() || caret < 2) return;
+    const delim = value[caret - 1];
+    if (!delim || /[A-Za-zÀ-ÖØ-öø-ÿ0-9]/.test(delim)) return; // só dispara em delimitador
+    const m = WORD_TAIL.exec(value.slice(0, caret - 1));
+    if (!m) return;
+    const word = m[0];
+    const wStart = caret - 1 - word.length;
+    void autoCorrection(word).then((fix) => {
+      if (!fix) return;
+      setText((cur) => {
+        // Só troca se a palavra ainda estiver no mesmo lugar (usuário não mexeu).
+        if (cur.slice(wStart, wStart + word.length) !== word) return cur;
+        const next = cur.slice(0, wStart) + fix + cur.slice(wStart + word.length);
+        const delta = fix.length - word.length;
+        const el = ref.current;
+        if (el) {
+          const pos = (el.selectionStart ?? wStart) + delta;
+          requestAnimationFrame(() => {
+            el.selectionStart = el.selectionEnd = Math.max(0, pos);
+          });
+        }
+        return next;
+      });
+    });
+  };
+
   const canSend = !disabled && !correcting && (!!text.trim() || images.length > 0);
 
   return (
@@ -437,13 +547,21 @@ export function Composer({
             rows={2}
             onChange={(e) => {
               if (recordingRef.current) stopVoice(); // digitou: encerra o ditado na hora
-              setText(e.target.value);
+              const val = e.target.value;
+              const caret = e.target.selectionStart ?? val.length;
+              setText(val);
               setSlashDismissed(false);
               setSlashIdx(0);
+              if (spellMenu) setSpellMenu(null);
+              tryAutocorrect(val, caret);
             }}
+            onClick={(e) => openSpellAt(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={onKey}
             onPaste={onPaste}
-            onScroll={syncScroll}
+            onScroll={() => {
+              syncScroll();
+              if (spellMenu) setSpellMenu(null);
+            }}
           />
         </div>
         <div className="composer-side">
@@ -538,6 +656,21 @@ export function Composer({
           )}
         </div>
       </div>
+      {spellMenu && (
+        <SpellDropdown
+          t={t}
+          word={spellMenu.word}
+          sug={spellMenu.sug ?? { pt: [], en: [] }}
+          loading={spellMenu.sug === null}
+          left={spellMenu.left}
+          top={spellMenu.top}
+          anchorTop={spellMenu.anchorTop}
+          onPick={applySpell}
+          onAdd={addSpell}
+          onIgnore={ignoreSpell}
+          onClose={() => setSpellMenu(null)}
+        />
+      )}
     </div>
   );
 }

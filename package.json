@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.121",
+  "version": "1.0.158",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -82,6 +82,12 @@
         "icon": "$(split-horizontal)"
       },
       {
+        "command": "tootega.reloadView",
+        "title": "%cmd.reloadView%",
+        "category": "Tootega",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "tootega.login",
         "title": "%cmd.login%",
         "category": "Tootega"
@@ -107,6 +113,14 @@
         "category": "Tootega"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "tootega.reloadView",
+          "group": "navigation@1"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -342,8 +356,9 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit",
     "vscode:prepublish": "node esbuild.mjs --production",
-    "package": "npm version patch --no-git-tag-version && npm run build && vsce package",
-    "vsix": "npm run typecheck && npm version patch --no-git-tag-version && npm run build && vsce package"
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "package": "npm run clean && npm version patch --no-git-tag-version && vsce package",
+    "vsix": "npm run typecheck && npm run clean && npm version patch --no-git-tag-version && vsce package"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
@@ -358,7 +373,12 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "dictionary-en": "^4.0.0",
+    "dictionary-pt": "^4.0.0",
+    "dictionary-pt-br": "^2.0.1",
     "highlight.js": "^11.9.0",
+    "hunspell-asm": "^4.0.2",
+    "nspell": "^2.1.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.21.0"

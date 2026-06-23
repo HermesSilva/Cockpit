@@ -1,4 +1,5 @@
 // Syntax highlight via highlight.js com um conjunto curado de linguagens.
+import { isMisspelled, isIgnored } from '../spell/spell';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -141,17 +142,20 @@ export function escapeHtml(s: string): string {
 // Relevância mínima do hljs p/ tratar um trecho SEM cerca como código (e não prosa).
 const CODE_RELEVANCE = 6;
 
-export function richHighlight(text: string): string {
+// `spell`: marca palavras com erro ortográfico na PROSA (nunca em código). O
+// offset global de cada trecho é repassado p/ o data-ss dos spans (o composer
+// usa p/ ancorar o dropdown e localizar a palavra no texto).
+export function richHighlight(text: string, spell = false): string {
   if (!text) return '';
   // Sem cercas: decide por relevância — código colore, prosa fica plana.
-  if (!text.includes('```')) return autoOrPlain(text);
+  if (!text.includes('```')) return autoOrPlain(text, spell, 0);
 
   const fence = /```([\w+#.-]*)([ \t]*\n)([\s\S]*?)```/g;
   let out = '';
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = fence.exec(text))) {
-    out += autoOrPlain(text.slice(last, m.index));
+    out += autoOrPlain(text.slice(last, m.index), spell, last);
     const lang = m[1];
     const sep = m[2]; // espaços + \n após a linguagem
     const code = m[3];
@@ -162,13 +166,13 @@ export function richHighlight(text: string): string {
       `<span class="rt-fence">\`\`\`</span>`;
     last = fence.lastIndex;
   }
-  out += autoOrPlain(text.slice(last));
+  out += autoOrPlain(text.slice(last), spell, last);
   return out;
 }
 
 // Auto-detecta: se o trecho "parece código" (relevância alta), destaca; senão
 // trata como prosa (plano + código inline `assim`). Mantém o texto idêntico.
-function autoOrPlain(s: string): string {
+function autoOrPlain(s: string, spell: boolean, base: number): string {
   if (!s) return '';
   if (s.length <= MAX && /\S/.test(s)) {
     try {
@@ -178,19 +182,68 @@ function autoOrPlain(s: string): string {
       /* cai p/ prosa */
     }
   }
-  return inlineRich(s);
+  return inlineRich(s, spell, base);
 }
 
-function inlineRich(s: string): string {
+function inlineRich(s: string, spell: boolean, base: number): string {
   let out = '';
   let last = 0;
   const re = /`([^`\n]+)`/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(s))) {
-    out += escapeHtml(s.slice(last, m.index));
+    out += emitProse(s.slice(last, m.index), spell, base + last);
     out += `<span class="rt-inline">\`${escapeHtml(m[1])}\`</span>`;
     last = re.lastIndex;
   }
+  out += emitProse(s.slice(last), spell, base + last);
+  return out;
+}
+
+// Prosa pura: escapa e, se spell ligado, envolve palavras erradas em spans.
+function emitProse(s: string, spell: boolean, base: number): string {
+  if (!spell || !s) return escapeHtml(s);
+  return spellWrap(s, base);
+}
+
+// Palavra: letras (com acento) + apóstrofo/hífen internos. Sem dígitos.
+const WORD_RE = /[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*/g;
+
+/**
+ * Envolve palavras com erro ortográfico em `<span class="spell-error">`, mantendo
+ * o resto do texto escapado e idêntico (alinhamento no overlay). `data-ss` = offset
+ * global da palavra no texto do composer; `data-sw` = a palavra (p/ sugestões).
+ */
+function spellWrap(s: string, base: number): string {
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  WORD_RE.lastIndex = 0;
+  while ((m = WORD_RE.exec(s))) {
+    const word = m[0];
+    const start = m.index;
+    out += escapeHtml(s.slice(last, start));
+    if (spellable(word, s, start) && isMisspelled(word) && !isIgnored(word)) {
+      out += `<span class="spell-error" data-sw="${escapeHtml(word)}" data-ss="${base + start}">${escapeHtml(word)}</span>`;
+    } else {
+      out += escapeHtml(word);
+    }
+    last = start + word.length;
+  }
   out += escapeHtml(s.slice(last));
   return out;
+}
+
+// Filtra tokens que NÃO devem ser checados: muito curtos, identificadores de
+// código (camelCase), siglas, e tokens dentro de URL/caminho/@menção/comando.
+function spellable(word: string, ctx: string, start: number): boolean {
+  if (word.length < 2) return false;
+  if (/[a-zà-ÿ][A-ZÀ-Ö]/.test(word)) return false; // camelCase → identificador
+  if (word.length <= 6 && word === word.toUpperCase()) return false; // sigla
+  const prev = start > 0 ? ctx[start - 1] : ' ';
+  const next = ctx[start + word.length] ?? ' ';
+  // Coladas a @ / \ : . → menção, caminho, url, namespace, código.
+  if ('@/\\:.'.includes(prev)) return false;
+  if ('@/\\:'.includes(next)) return false;
+  if (next === '.' && /[A-Za-zÀ-ÿ]/.test(ctx[start + word.length + 1] ?? '')) return false; // foo.bar
+  return true;
 }

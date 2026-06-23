@@ -28,6 +28,8 @@ export interface SessionHooks {
   cwd: () => string;
   // Defaults vindos das settings (o que 'default' resolve quando não há override).
   settings: () => { model: string; effort: string; permission: string };
+  // Idioma (código curto: pt, en…) p/ as perguntas do agente (AskUserQuestion).
+  askLanguage: () => string;
 }
 
 export class Session {
@@ -92,6 +94,7 @@ export class Session {
       effort: effort && effort !== 'default' ? effort : undefined,
       permissionMode: this.permission(),
       resumeSessionId: this.resumeId,
+      askLanguage: this.hooks.askLanguage(),
     });
     this.cli.on('event', (e: ClaudeEvent) => this.onCliEvent(e));
     this.cli.on('stderr', (t: string) => {
@@ -121,7 +124,7 @@ export class Session {
     log(
       `[session] send (${this.sessionId ?? this.resumeId ?? 'nova'}): ${text.length} chars, ${images?.length ?? 0} img | ` +
         `ctx=${s.contextUsed}/${s.contextLimit} | cache: ${cacheState} | ` +
-        `hit=${(s.cacheHitRate * 100).toFixed(0)}% read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0} | ` +
+        `hit=${(s.cacheHitRate * 100).toFixed(0)}%${s.lastTurnHitRate != null ? ` (últ. ${(s.lastTurnHitRate * 100).toFixed(0)}%)` : ''} read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0} | ` +
         `custo=$${s.sessionCostUsd.toFixed(4)}${s.costIsEstimate ? '~' : ''} turnos=${s.turnCount ?? 0}`,
     );
     this.cli!.sendUserMessage(text, images);
@@ -342,6 +345,13 @@ export class Session {
       }
       case 'result': {
         const r = ev as any;
+        // Só conta o que NÓS iniciamos: send()/keepAlivePing() setam busy=true. Um
+        // `result` com busy=false é stray/replay (ex.: o CLI re-emite turnos ao
+        // `--resume`) — processá-lo inflaria turnos/custo local e poluiria a UI.
+        if (!this.busy) {
+          dlog('session', `result ignorado (busy=false): stray/replay do CLI`);
+          break;
+        }
         if (r.is_error && isAuthError(r.result ?? r.error ?? '')) this.hooks.onAuthRequired();
         this.stats.endTurn(); // fecha o cronômetro do prompt (tempo de execução real)
         {
@@ -349,7 +359,7 @@ export class Session {
           log(
             `[session] result (${this.sessionId ?? '?'}): turnos=${s.turnCount}, ctx=${s.contextUsed}/${s.contextLimit}, ` +
               `custo=$${s.sessionCostUsd.toFixed(4)}${s.costIsEstimate ? '~' : ''}, activeMs=${s.activeMs ?? 0}, ` +
-              `hit=${(s.cacheHitRate * 100).toFixed(0)}% read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0}`,
+              `hit=${(s.cacheHitRate * 100).toFixed(0)}%${s.lastTurnHitRate != null ? ` (últ. ${(s.lastTurnHitRate * 100).toFixed(0)}%)` : ''} read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0}`,
           );
         }
         this.emit({ kind: 'turnComplete', costUsd: r.total_cost_usd, usage: r.usage });

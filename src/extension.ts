@@ -54,6 +54,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('tootega.openInEditor', () => {
       provider.openInEditor();
     }),
+    vscode.commands.registerCommand('tootega.reloadView', () => {
+      provider.reloadActivePanel();
+    }),
     vscode.commands.registerCommand('tootega.login', () => {
       provider.loginCli();
     }),

@@ -13,8 +13,17 @@ function fmtTs(ts?: number): string {
   }
 }
 
-/** Monta o Markdown da conversa a partir dos itens da timeline. */
-export function buildConversationMd(items: TimelineItem[], t: Translator, title?: string): string {
+/** Monta o Markdown da conversa a partir dos itens da timeline. Os nomes dos
+ *  interlocutores espelham a webview: usuário = `userName` (ou role.user) e
+ *  assistente = role.assistant ("Claude"). */
+export function buildConversationMd(
+  items: TimelineItem[],
+  t: Translator,
+  title?: string,
+  userName?: string,
+): string {
+  const userLabel = userName?.trim() || t('role.user');
+  const assistantLabel = t('role.assistant');
   const out: string[] = [];
   out.push(`# ${title?.trim() || t('export.docTitle')}`);
   out.push('');
@@ -25,12 +34,12 @@ export function buildConversationMd(items: TimelineItem[], t: Translator, title?
     if (it.kind === 'user') {
       const text = it.text?.trim();
       if (!text) continue;
-      out.push('---', '', `### 🧑 ${t('export.you')}`, '', text, '');
+      out.push('---', '', `### 🧑 ${userLabel}`, '', text, '');
     } else if (it.kind === 'assistant') {
       const think = it.thinking?.trim();
       const text = it.text?.trim();
       if (!think && !text) continue;
-      out.push(`### 🤖 ${t('export.assistant')}`, '');
+      out.push(`### 🤖 ${assistantLabel}`, '');
       if (think) {
         // Raciocínio recolhível (não polui a leitura, mas preserva "o que se pensou").
         out.push('<details>', `<summary>💭 ${t('export.thinking')}</summary>`, '', think, '', '</details>', '');

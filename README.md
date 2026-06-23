@@ -11,12 +11,202 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.99` |
+| **Extension version** | `1.0.157` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (screenshots show `2.1.177`) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.186`) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
+
+## Features at a glance
+
+### Feature grid — Cockpit × official Claude Code GUI
+
+A serious, side-by-side comparison against the **official** *Claude Code for VS Code*
+extension by Anthropic. The official column was checked against the official docs and
+Marketplace listing (see [Sources](#sources)); `📅 2026-06` reflects what those pages
+documented at the time of writing — Anthropic ships fast, so verify before quoting.
+
+Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
+
+**Conversation & rendering**
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Token-by-token streaming chat | ✅ | ✅ | partial-messages + fallback |
+| Thinking blocks (toggle / expand-all) | ✅ | ✅ | official adds `Ctrl+O` expand-all |
+| Tool-call timeline (per-tool cards) | ✅ | ✅ | Cockpit: emoji per tool, Bash split, Read gutter |
+| Markdown + syntax highlight | ✅ | ✅ | highlight.js + line-number gutter |
+| **Find in conversation (Ctrl+F)** | ✅ | ❌ | scope **Timeline** vs **Prompts only**, 250 ms debounce, highlight + jump |
+| **Export conversation to Markdown** | ✅ | ❌ | direct or AI-polished; keeps speaker names |
+| Timeline verbosity filter (verbose→quiet) | ✅ | ❌ | display-only, doesn't change the agent |
+| Scroll-marker rail (one per prompt) | ✅ | 🟡 | Cockpit minimap rail with numbered hover |
+
+**Editing & human control**
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Permission approval (Allow / Always / Deny) | ✅ | ✅ | per-tool preview; `Ctrl+Enter`/`Esc` |
+| Permission modes (plan/acceptEdits/auto/…) | ✅ | ✅ | dropdown; official cycles via the mode indicator |
+| Plan mode (review & approve) | 🟡 | ✅ | official opens the plan as an **editable** markdown doc with inline comments; Cockpit renders + approves only |
+| Composed questions (AskUserQuestion) | ✅ | ✅ | tabs, multi-select, "Other" |
+| **Questions asked in your language** | ✅ | ❌ | steers AskUserQuestion to the configured voice/UI language |
+| Side-by-side diff | 🟡 | ✅ | Cockpit renders the diff **in the webview**; official uses the **native editor** and lets you edit before accepting |
+| @-mention files/folders + line ranges | ❌ | ✅ | official: fuzzy match, `Alt/Option+K`, active-selection sharing |
+| Checkpoints / rewind (restore files) | 🟡 | ✅ | official: fork / rewind-code / both. Cockpit rewinds the **transcript** only (file restore via Git planned) |
+
+**Spell-checker & dictation** *(Cockpit specialty)*
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| **Inline spell-checker PT-BR + EN** | ✅ | ❌ | Hunspell (WASM) in the host; only flags words wrong in **both** languages |
+| **Spell suggestions dropdown** | ✅ | ❌ | grouped per language; click word → fixes |
+| **High-confidence autocorrect on space/punctuation** | ✅ | ❌ | edit-distance gated; preserves case |
+| **Voice dictation (speech-to-text)** | ✅ | ❌ | Claude STT WebSocket; live partials |
+| **Post-dictation AI correction** | ✅ | ❌ | clean isolated Haiku call |
+| **Editable dictionaries modal (tabs)** | ✅ | ❌ | dictation terms/replacements + spell words; per-machine in `~/.claude/tootega` |
+
+**Statistics, context & consumption** *(the heart of the product)*
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Context-window meter (used/limit, 200K·1M) | ✅ | ✅ | limit auto-derived from the active model |
+| **Cache panel** (hit-rate, read, write, savings) | ✅ | ❌ | per-turn + cumulative; last-turn hit rate |
+| **Local cost estimate** (per turn/session) | ✅ | 🟡 | official shows plan-usage; Cockpit adds a price-table estimate labelled "estimated" |
+| 5h / 7d subscription limits (% + reset) | ✅ | ✅ | Cockpit reads the real OAuth `/usage`; official `/usage` dialog adds attribution by skill/subagent/plugin/MCP |
+| Usage attribution (skill/subagent/MCP) | ❌ | ✅ | official `/usage` breakdown |
+| **Cache keep-alive meter (1h TTL)** | ✅ | ❌ | shows time-to-expiry of the prompt cache |
+| Turn timing by (model, effort, type) | ✅ | ❌ | atomic cross-process merge |
+| Context breakdown via `/context` | ⏳ | ✅ | Cockpit UI ready, data source pending |
+
+**Sessions, panels & recovery**
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| History: list / resume / rename / delete | ✅ | ✅ | both: AI-ish titles, search; official browses by time |
+| Search/filter sessions | ✅ | ✅ | official also sorts by time buckets |
+| Multiple parallel conversations | ✅ | ✅ | per-tab CLI/stats/streaming; status dot idle/busy/error |
+| **Per-session spinner in the hub grid** | ✅ | 🟡 | Cockpit shows a spinner on every running context card |
+| **Close the webview without stopping the run** | ✅ | 🟡 | Cockpit keeps the CLI/session alive in the host; reopening replays the full timeline. Official tab-close behavior is not documented |
+| **Manual reload (fix gray/dead webview)** | ✅ | ➖ | status-bar ↻ + per-session-card ↻ + auto render-watchdog |
+| Reopen closed session | 🟡 | ✅ | official `Ctrl+Shift+T` |
+| Resume **cloud / remote** sessions (claude.ai) | ❌ | ✅ | official Remote tab |
+| Reposition panel (sidebar / editor / window) | 🟡 | ✅ | Cockpit lives in editor + activity-bar hub |
+
+**Extensibility**
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Slash commands with autocomplete | ✅ | ✅ | Cockpit curates descriptions; official `/` menu |
+| Plugins manager + marketplaces | ✅ | ✅ | browse/install/enable/disable/update |
+| MCP servers manage (`/mcp`) | 🟡 | ✅ | both forward to the CLI |
+| Built-in IDE MCP server (getDiagnostics, Jupyter execute) | ❌ | ✅ | official runs a local `ide` MCP |
+| Hooks / skills / subagents UI | 🟡 | ✅ | Cockpit forwards `/hooks` etc.; no dedicated UI |
+| Chrome browser automation (`@browser`) | ❌ | ✅ | official only |
+| Git worktrees (parallel branches) | ❌ | ✅ | official `--worktree` |
+| Dynamic workflows / Artifacts (preview) | ❌ | ✅ | official research preview |
+
+**Platform, input & presentation**
+
+| Feature | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Theme synced with VS Code | ✅ | ✅ | `var(--vscode-*)` |
+| **Bilingual i18n (pt-BR + EN), runtime switch** | ✅ | ❌ | host + webview, no reload |
+| Image paste / screenshot | ✅ | ✅ | Cockpit also pastes **file paths** (Unicode-safe on Windows) |
+| Drag-to-attach (Shift+drag) | ❌ | ✅ | official only |
+| Status-bar entry + spinner | ✅ | ✅ | Cockpit: idle/busy dot + model chip |
+| Editor-toolbar / Spark entry points | 🟡 | ✅ | official Spark icon in editor toolbar |
+| Keyboard shortcuts | ✅ | ✅ | open / new / interrupt / **Ctrl+F** |
+| URI handler (`vscode://…/open`) | ✅ | ✅ | both |
+| **Release-notes link for the active CLI** | ✅ | ❌ | clicking the CLI version opens GitHub releases |
+| **Live model discovery (`/v1/models`)** | ✅ | 🟡 | Cockpit lists discovered models + grouped picker |
+| **Tolerant stream-json parser** | ✅ | ➖ | unknown events ignored, survives CLI upgrades |
+| Sign-in / onboarding checklist | ❌ | ✅ | Cockpit relies on the CLI's auth |
+| Terminal mode (`useTerminal`) | ➖ | ✅ | Cockpit is GUI-only by design |
+| Third-party providers (Bedrock/Vertex) | 🟡 | ✅ | via shared `~/.claude/settings.json` |
+
+**Visual design**
+
+| Aspect | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Native VS Code look (theme tokens) | ✅ | ✅ | light / dark / high-contrast |
+| Per-tool cards with emoji + rich render | ✅ | 🟡 | Bash split, Read line-gutter, Write/Edit highlight |
+| Color-banded meters (context / limits) | ✅ | 🟡 | green→amber→red bands |
+| Big centered "Cockpit" loader while loading | ✅ | ❌ | orange ring instead of a gray/blank panel |
+| Orange accent + spinners (busy/running) | ✅ | 🟡 | per-tab + per-session-card spinners |
+| Scroll-marker minimap rail | ✅ | ❌ | one numbered marker per prompt |
+| Wavy underline for misspellings | ✅ | ❌ | from the inline spell-checker |
+| Configurable UI density | ⏳ | — | planned |
+
+**Information on screen**
+
+| Information | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Context used / remaining / limit | ✅ | ✅ | live, color-banded |
+| Cache hit-rate + read/write + savings | ✅ | ❌ | per-turn **and** cumulative |
+| Cost per turn / per session (estimate) | ✅ | 🟡 | labelled "estimated" |
+| Tokens in / out / cache-create / cache-read | ✅ | 🟡 | dedicated block |
+| 5h / 7d limits with reset time | ✅ | ✅ | official adds attribution |
+| Cache TTL countdown (keep-alive) | ✅ | ❌ | time-to-expiry of the 1h cache |
+| Turn timing by model/effort/type | ✅ | ❌ | sample counts |
+| Active model / effort / permission mode | ✅ | ✅ | dropdowns + status bar |
+| Session hint (created/updated/msgs/tools/size) | ✅ | 🟡 | rich tooltip per context card |
+| CLI version + update indicator | ✅ | 🟡 | + release-notes link |
+| Per-turn vs cumulative cache hit in logs | ✅ | ❌ | `hit=95% (last 100%)` |
+
+**Usability**
+
+| Aspect | Cockpit | Official GUI | Notes |
+|---|:--:|:--:|---|
+| Draft anti-loss (survives reload/crash) | ✅ | 🟡 | mirrored in host + webview state |
+| Reopen → full timeline replay | ✅ | 🟡 | even if the run continued in the background |
+| Manual render recovery (no restart) | ✅ | ➖ | status-bar ↻ + card ↻ + auto-watchdog |
+| Find + jump + highlight (Ctrl+F) | ✅ | ❌ | scope Timeline / Prompts |
+| Autocorrect + spell dropdown | ✅ | ❌ | high-confidence on space/punctuation |
+| Voice dictation with live partials | ✅ | ❌ | + post-dictation AI cleanup |
+| Slash autocomplete + curated hints | ✅ | ✅ | ↑/↓/Enter/Esc |
+| One-click export to Markdown | ✅ | ❌ | direct or AI-polished |
+| Elegant confirm dialogs (delete/effort) | ✅ | 🟡 | Esc/overlay, danger styling |
+| Scroll-to-bottom + at-bottom autoscroll | ✅ | ✅ | floating button when scrolled up |
+| Keyboard-first (send/stop/new/find) | ✅ | ✅ | — |
+
+> **Where Cockpit leads:** consumption transparency (cache panel, cost estimate, keep-alive,
+> turn timing), bilingual runtime i18n, in-conversation find, an inline PT/EN spell-checker
+> with autocorrect, voice dictation, Markdown export, and resilient render recovery.
+> **Where the official GUI leads:** native-editor diff with edit-before-accept, editable plan
+> mode, @-mentions, file-restoring checkpoints, sign-in/onboarding, the built-in IDE MCP
+> server (diagnostics/Jupyter), Chrome automation, worktrees, cloud-session resume, and
+> dynamic workflows/Artifacts.
+
+#### Sources
+
+- Official extension docs: <https://code.claude.com/docs/en/vs-code>
+- Marketplace listing: <https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code>
+- Checkpointing: <https://code.claude.com/docs/en/checkpointing>
+- Item-by-item analysis (ours): [`Docs/comparacao-gui-oficial.md`](Docs/comparacao-gui-oficial.md)
+
+### Gaps worth closing (official has it, Cockpit doesn't) — easy→medium effort
+
+Only items rated **🟢 easy** or **🟡 medium** to implement. Hard/heavy items
+(file-restoring checkpoints, built-in IDE MCP server, Chrome automation, git worktrees,
+cloud-session resume, dynamic workflows/Artifacts, terminal mode) are intentionally left
+out of this list.
+
+| Gap | Effort | Sketch of the approach |
+|---|:--:|---|
+| Reopen closed session (`Ctrl+Shift+T`) | 🟢 | track last-closed tabId; command re-opens it (we already have reload/recreate plumbing) |
+| Browse history by time buckets (Today/Yesterday/7d) | 🟢 | group the existing session list by `updatedAt` in the hub |
+| Editor-toolbar (Spark) entry point | 🟢 | add an `editor/title` (or editor toolbar) command to open the panel |
+| Drag-to-attach files (Shift+drag) | 🟢 | handle `drop` on the composer; reuse the existing paste→path resolver |
+| Context breakdown via `/context` | 🟡 | parse `/context` output → fill the already-built `contextBreakdown` UI |
+| Reposition: also live in the sidebar | 🟡 | register a secondary-sidebar `WebviewView` reusing the chat bundle |
+| `@`-mention files/folders (fuzzy autocomplete) | 🟡 | `@` menu in the composer; host does a fuzzy workspace file search and inserts the ref |
+| Active selection / open-file sharing (eye toggle) | 🟡 | host reads `window.activeTextEditor` selection; prepend an `@file#a-b` context line, with a toggle |
+| Editable plan mode | 🟡 | on `ExitPlanMode`, open the plan as a Markdown doc; collect edits/comments and feed them back before approval |
+| Side-by-side diff in the **native** editor + edit-before-accept | 🟡 | use `vscode.diff` / a virtual doc for Edit/Write previews instead of the in-webview diff |
+| Usage attribution (skill/subagent/plugin/MCP) | 🟡 | parse the `/usage` attribution payload into the existing usage panel |
+| Sign-in / sign-out screen + onboarding checklist | 🟡 | detect CLI auth state; show a sign-in panel that runs `/login`, plus a dismissible checklist |
+| Auto-save before read/write (`autosave`) | 🟢 | on Edit/Write permission, save the target doc if dirty before applying |
 
 ## Table of contents
 

@@ -25,6 +25,7 @@ export interface TabState {
   sessionId?: string; // id do transcript (casa com SessionInfo.id); vem do 'tabs'
   session?: { sessionId: string; model?: string; cwd?: string; mode?: string };
   items: TimelineItem[];
+  historyLoaded?: boolean; // 1ª mensagem 'history' já chegou (timeline pronta p/ pintar)
   stats?: StatsSnapshot;
   todos: TodoItem[];
   slashCommands: string[];
@@ -40,6 +41,7 @@ export interface UiState {
   locale: string;
   cli: {
     available: boolean;
+    checked?: boolean; // host já reportou o status (false = ainda carregando)
     version?: string;
     error?: string;
     latest?: string; // última versão do Claude CLI (npm)
@@ -155,6 +157,7 @@ export function reducer(state: UiState, action: Action): UiState {
         ...state,
         cli: {
           available: msg.available,
+          checked: true,
           version: msg.version,
           error: msg.error,
           latest: msg.latest,
@@ -269,6 +272,7 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       return {
         ...tab,
         items,
+        historyLoaded: true,
         permission: undefined,
         ask: undefined,
         authRequired: false,

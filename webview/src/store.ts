@@ -56,6 +56,7 @@ export interface UiState {
   showContext: boolean;
   error?: string;
   loggedIn: boolean; // estado de login (Sign in vs Sign out). Otimista até confirmar.
+  selectionRef?: string; // @file#a-b da seleção ativa do editor (compartilhável)
   tabs: TabState[];
   activeTab: string;
 }
@@ -164,6 +165,8 @@ export function reducer(state: UiState, action: Action): UiState {
           cockpitVersion: msg.cockpitVersion,
         },
       };
+    case 'selection':
+      return { ...state, selectionRef: msg.ref };
     case 'sessions':
       return { ...state, sessions: msg.sessions, sessionsCwd: msg.cwd };
     case 'slashMeta':

@@ -1557,6 +1557,86 @@ body {
   outline: none;
   scrollbar-width: thin; /* menos diferença de largura vs espelho ao rolar */
 }
+/* Menu de @-mention (reusa o visual do slash-menu). */
+.mention-menu .slash-item {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+}
+/* Checklist de onboarding no hub. */
+.onboarding {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-left: 2px solid var(--tt-accent-strong, #ff7a18);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tt-accent-strong, #ff7a18) 8%, transparent);
+}
+.onboarding-head {
+  display: flex;
+  align-items: center;
+}
+.onboarding-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+.onboarding-x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 11px;
+}
+.onboarding-x:hover {
+  opacity: 1;
+}
+.onboarding-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 11.5px;
+}
+.onboarding-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+.onboarding-list li.done {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.onboarding-check {
+  color: var(--tt-accent-strong, #ff7a18);
+  width: 12px;
+}
+/* Chip da seleção ativa do editor (compartilhar com o Claude). */
+.composer-selchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin: 0 0 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--vscode-input-border, #555);
+  background: color-mix(in srgb, var(--tt-accent-strong, #ff7a18) 14%, transparent);
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-selchip.off {
+  opacity: 0.5;
+  background: transparent;
+}
+.composer-selchip-eye {
+  color: var(--tt-accent-strong, #ff7a18);
+}
 /* Palavra com erro ortográfico no overlay: underline ondulado + cor de erro. */
 .spell-error {
   text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
@@ -3242,6 +3322,32 @@ body {
   border: 1px solid var(--vscode-panel-border, #444);
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.08));
 }
+/* Botão "Abrir diff no editor" no modal de permissão. */
+.perm-opendiff {
+  margin-top: 8px;
+  font-size: 11px;
+  padding: 3px 10px;
+  opacity: 0.9;
+}
+/* Botão Editar/Visualizar no cabeçalho do plano. */
+.perm-plan-edit {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 10px;
+}
+/* Textarea de edição do plano (modo editar). */
+.perm-plan-textarea {
+  width: 100%;
+  min-height: 38vh;
+  resize: vertical;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: none;
+  outline: none;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
 .perm-hint {
   font-size: 10.5px;
   opacity: 0.55;
@@ -3675,17 +3781,30 @@ body {
   background: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
 }
+/* Container rolável dos grupos por tempo (único ponto de rolagem). */
+.ctx-groups {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.ctx-group + .ctx-group {
+  margin-top: 10px;
+}
+.ctx-group-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  margin: 6px 0 2px;
+}
 .ctx-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
   margin-top: 6px;
-  /* Único ponto de rolagem: só a grade dos contextos rola. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
   align-content: start;
-  padding-right: 2px;
 }
 /* O card é embrulhado por um .tt-wrap.tt-block (item do grid): deixa encolher. */
 .ctx-grid > .tt-wrap {
@@ -3800,6 +3919,7 @@ body {
 }
 .ctx-card-edit-btn,
 .ctx-card-reload,
+.ctx-card-remote,
 .ctx-card-del {
   font-size: 12px;
   line-height: 1;
@@ -3813,12 +3933,14 @@ body {
 /* Card sob o mouse: ações totalmente opacas, com fundo sólido p/ contraste. */
 .ctx-card:hover .ctx-card-edit-btn,
 .ctx-card:hover .ctx-card-reload,
+.ctx-card:hover .ctx-card-remote,
 .ctx-card:hover .ctx-card-del {
   opacity: 1;
   background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-editorWidget-background));
 }
 .ctx-card:hover .ctx-card-edit-btn:hover,
-.ctx-card:hover .ctx-card-reload:hover {
+.ctx-card:hover .ctx-card-reload:hover,
+.ctx-card:hover .ctx-card-remote:hover {
   background: var(--vscode-focusBorder, #3794ff);
   color: #fff;
 }

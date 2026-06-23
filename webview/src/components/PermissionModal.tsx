@@ -1,14 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { Translator } from '../i18n';
 import type { PermissionRequest } from '../types';
 import { Markdown } from './Markdown';
 import { DiffView } from './DiffView';
 import { Portal } from './Portal';
+import { send } from '../vscodeApi';
 
 interface Props {
   t: Translator;
   req: PermissionRequest;
-  onDecision: (d: 'allow' | 'deny' | 'allow_always') => void;
+  onDecision: (d: 'allow' | 'deny' | 'allow_always', message?: string) => void;
 }
 
 // Ícone por ferramenta (espelha o conjunto da Timeline).
@@ -36,33 +37,7 @@ export function PermissionModal({ t, req, onDecision }: Props) {
 
   // Plan mode: ExitPlanMode chega como permissão; o plano vem em input.plan.
   if (req.tool === 'ExitPlanMode') {
-    const plan = String((req.input as Record<string, unknown>)?.plan ?? '');
-    return (
-      <Portal>
-        <div className="modal-overlay" onClick={() => onDecision('deny')}>
-          <div className="modal perm plan" onClick={(e) => e.stopPropagation()}>
-            <div className="perm-head">
-              <span className="perm-icon">◑</span>
-              <div className="perm-headtext">
-                <div className="modal-title">{t('permission.planTitle')}</div>
-                <div className="perm-tool">{t('permission.planSubtitle')}</div>
-              </div>
-            </div>
-            <div className="perm-plan-body">
-              <Markdown text={plan} />
-            </div>
-            <div className="modal-actions perm-actions">
-              <button type="button" className="btn deny" onClick={() => onDecision('deny')}>
-                {t('permission.keepPlanning')}
-              </button>
-              <button type="button" className="btn send" onClick={() => onDecision('allow')} autoFocus>
-                {t('permission.approvePlan')}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Portal>
-    );
+    return <PlanModal t={t} req={req} onDecision={onDecision} />;
   }
 
   const inp = (req.input ?? {}) as Record<string, unknown>;
@@ -90,6 +65,16 @@ export function PermissionModal({ t, req, onDecision }: Props) {
           {req.description && <div className="perm-desc">{req.description}</div>}
 
           {preview && <PreviewBlock p={preview} />}
+
+          {preview?.kind === 'diff' && (
+            <button
+              type="button"
+              className="btn perm-opendiff"
+              onClick={() => send({ kind: 'openDiff', tool: req.tool, input: req.input })}
+            >
+              {t('permission.openDiff')}
+            </button>
+          )}
 
           <div className="modal-actions perm-actions">
             <button type="button" className="btn deny" onClick={() => onDecision('deny')}>
@@ -203,4 +188,56 @@ function inputPreview(req: PermissionRequest): Preview | null {
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '\n…' : s;
+}
+
+// Plan mode editável: vê o plano (markdown) ou edita; "Aprovar" executa, "Manter
+// planejando" recusa enviando o plano editado / notas como feedback ao agente.
+function PlanModal({ t, req, onDecision }: Props) {
+  const plan = String((req.input as Record<string, unknown>)?.plan ?? '');
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(plan);
+  const edited = draft.trim() !== plan.trim();
+  const keepPlanning = () => onDecision('deny', edited ? draft : undefined);
+  return (
+    <Portal>
+      <div className="modal-overlay" onClick={keepPlanning}>
+        <div className="modal perm plan" onClick={(e) => e.stopPropagation()}>
+          <div className="perm-head">
+            <span className="perm-icon">◑</span>
+            <div className="perm-headtext">
+              <div className="modal-title">{t('permission.planTitle')}</div>
+              <div className="perm-tool">{t('permission.planSubtitle')}</div>
+            </div>
+            <button
+              type="button"
+              className="btn perm-plan-edit"
+              onClick={() => setEditing((v) => !v)}
+            >
+              {editing ? t('permission.planPreview') : t('permission.planEdit')}
+            </button>
+          </div>
+          <div className="perm-plan-body">
+            {editing ? (
+              <textarea
+                className="perm-plan-textarea"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                autoFocus
+              />
+            ) : (
+              <Markdown text={draft} />
+            )}
+          </div>
+          <div className="modal-actions perm-actions">
+            <button type="button" className="btn deny" onClick={keepPlanning}>
+              {edited ? t('permission.planSendNotes') : t('permission.keepPlanning')}
+            </button>
+            <button type="button" className="btn send" onClick={() => onDecision('allow')}>
+              {t('permission.approvePlan')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
 }

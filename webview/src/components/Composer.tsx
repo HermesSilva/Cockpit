@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type KeyboardEvent, type ClipboardEvent } from 'react';
+import { useState, useRef, useEffect, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
 import type { Translator } from '../i18n';
 import type { ImageAttachment, SlashCmdMeta } from '../../../shared/protocol';
 import { send, saveState, readState } from '../vscodeApi';
@@ -32,7 +32,8 @@ interface Props {
   injectDraft?: { text: string; images: ImageAttachment[] } | null;
   onDraftInjected?: () => void;
   onToggleExpandAll: () => void;
-  onSend: (text: string, images: ImageAttachment[]) => void;
+  onSend: (text: string, images: ImageAttachment[], selection?: string) => void;
+  selectionRef?: string; // @file#a-b da seleção ativa do editor
   onStop: () => void;
   onVoiceDict?: () => void; // abre o modal do dicionário de ditado
 }
@@ -63,12 +64,19 @@ export function Composer({
   onSend,
   onStop,
   onVoiceDict,
+  selectionRef,
 }: Props) {
+  const [includeSel, setIncludeSel] = useState(true);
   const [text, setText] = useState('');
   const [images, setImages] = useState<PendingImage[]>([]);
   const openImage = useImageViewer();
   const [slashIdx, setSlashIdx] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
+  // @-mention: token sendo digitado + resultados do host + índice selecionado.
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [mentionItems, setMentionItems] = useState<string[]>([]);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const mentionReq = useRef('');
   const ref = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null); // espelho com syntax highlight atrás do textarea
   const baseH = useRef(0); // altura padrão (rows=2), capturada na 1ª medição
@@ -255,6 +263,31 @@ export function Composer({
     send({ kind: 'resolvePaths', requestId, absPaths });
   };
 
+  // Drag-to-attach: solta arquivos no composer. Usa o path do arquivo (ou o
+  // uri-list) p/ anexar; imagens sem path entram como bitmap.
+  const onDrop = (e: DragEvent<HTMLTextAreaElement>) => {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    const files = Array.from(dt.files || []);
+    const directPaths: string[] = [];
+    const bitmaps: File[] = [];
+    for (const f of files) {
+      const p = (f as unknown as { path?: string }).path;
+      if (p) directPaths.push(p);
+      else if (f.type.startsWith('image/')) bitmaps.push(f);
+    }
+    if (directPaths.length === 0) {
+      const uri = dt.getData('text/uri-list');
+      for (const line of uri.split('\n').map((s) => s.trim())) {
+        if (line.startsWith('file:')) directPaths.push(fileUriToPath(line));
+      }
+    }
+    if (!directPaths.length && !bitmaps.length) return; // nada de arquivo: deixa o default (texto)
+    e.preventDefault();
+    if (directPaths.length) requestPaths(directPaths);
+    bitmaps.forEach(attachImage);
+  };
+
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const cd = e.clipboardData;
     if (!cd) return;
@@ -350,9 +383,11 @@ export function Composer({
     onSend(
       v,
       images.map((i) => ({ mediaType: i.mediaType, data: i.data })),
+      includeSel && selectionRef ? selectionRef : undefined,
     );
     setText('');
     setImages([]);
+    setMention(null);
     // Enviado: zera o rascunho espelhado (local + host) p/ não restaurar texto velho.
     saveState({ draft: '' });
     send({ kind: 'draftChanged', text: '' });
@@ -360,6 +395,28 @@ export function Composer({
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIdx((i) => (i + 1) % mentionItems.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIdx((i) => (i - 1 + mentionItems.length) % mentionItems.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        pickMention(mentionItems[Math.min(mentionIdx, mentionItems.length - 1)]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
     if (slashOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -467,6 +524,60 @@ export function Composer({
     });
   };
 
+  // @-mention: detecta um token "@..." imediatamente antes do caret e pede arquivos.
+  const mentionTimer = useRef<number | undefined>(undefined);
+  const detectMention = (value: string, caret: number) => {
+    const m = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, caret));
+    if (!m) {
+      if (mention) setMention(null);
+      return;
+    }
+    const query = m[2];
+    const start = caret - query.length - 1; // posição do '@'
+    setMention({ start, query });
+    setMentionIdx(0);
+    window.clearTimeout(mentionTimer.current);
+    const requestId = rid();
+    mentionReq.current = requestId;
+    mentionTimer.current = window.setTimeout(() => {
+      send({ kind: 'mentionSearch', requestId, query });
+    }, 150);
+  };
+
+  const pickMention = (relPath: string) => {
+    if (!mention) return;
+    const el = ref.current;
+    setText((prev) => {
+      const end = mention.start + 1 + mention.query.length;
+      const next = `${prev.slice(0, mention.start)}@${relPath} ${prev.slice(end)}`;
+      const pos = mention.start + 1 + relPath.length + 1;
+      requestAnimationFrame(() => {
+        if (el) {
+          el.focus();
+          el.selectionStart = el.selectionEnd = pos;
+        }
+      });
+      return next;
+    });
+    setMention(null);
+    setMentionItems([]);
+  };
+
+  // Resultados do host p/ a @-mention (só aplica o pedido mais recente).
+  useEffect(() => {
+    const h = (e: MessageEvent) => {
+      const m = e.data;
+      if (m?.kind === 'mentionResults' && m.requestId === mentionReq.current) {
+        setMentionItems(m.items ?? []);
+        setMentionIdx(0);
+      }
+    };
+    window.addEventListener('message', h);
+    return () => window.removeEventListener('message', h);
+  }, []);
+
+  const mentionOpen = mention !== null && mentionItems.length > 0;
+
   const canSend = !disabled && !correcting && (!!text.trim() || images.length > 0);
 
   return (
@@ -495,6 +606,23 @@ export function Composer({
           ))}
         </div>
       )}
+      {mentionOpen && (
+        <div className="slash-menu mention-menu">
+          {mentionItems.map((it, i) => (
+            <button
+              type="button"
+              key={it}
+              className={`slash-item ${i === mentionIdx ? 'active' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pickMention(it);
+              }}
+            >
+              @{it}
+            </button>
+          ))}
+        </div>
+      )}
       {slashOpen && (
         <div className="slash-menu">
           {slashMatches.map((c, i) => (
@@ -511,6 +639,17 @@ export function Composer({
             </button>
           ))}
         </div>
+      )}
+      {selectionRef && (
+        <button
+          type="button"
+          className={`composer-selchip ${includeSel ? 'on' : 'off'}`}
+          title={includeSel ? t('selection.included') : t('selection.excluded')}
+          onClick={() => setIncludeSel((v) => !v)}
+        >
+          <span className="composer-selchip-eye">{includeSel ? '◉' : '◌'}</span>
+          ⧉ {selectionRef}
+        </button>
       )}
       <div className="composer-row">
         <div
@@ -553,11 +692,14 @@ export function Composer({
               setSlashDismissed(false);
               setSlashIdx(0);
               if (spellMenu) setSpellMenu(null);
+              detectMention(val, caret);
               tryAutocorrect(val, caret);
             }}
             onClick={(e) => openSpellAt(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={onKey}
             onPaste={onPaste}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDrop}
             onScroll={() => {
               syncScroll();
               if (spellMenu) setSpellMenu(null);

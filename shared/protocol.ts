@@ -312,7 +312,11 @@ type HostMsg =
   // Corretor ortográfico (host via hunspell-asm): resultado de checagem (palavras
   // erradas) e de sugestões (por idioma).
   | { kind: 'spellResult'; bad: string[] }
-  | { kind: 'spellSuggestResult'; requestId: string; word: string; pt: string[]; en: string[] };
+  | { kind: 'spellSuggestResult'; requestId: string; word: string; pt: string[]; en: string[] }
+  // Seleção/arquivo ativo do editor p/ compartilhar como @file#a-b (toggle no composer).
+  | { kind: 'selection'; ref?: string }
+  // Autocomplete de @-mention: resultados de arquivos p/ a query digitada.
+  | { kind: 'mentionResults'; requestId: string; items: string[] };
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
 // `category` é uma chave enum (session|context|config|tools|account|info|plugin|other);
@@ -346,7 +350,7 @@ export interface ImageAttachment {
 export type WebviewToHost =
   | { kind: 'init' }
   | { kind: 'heartbeat' } // pulso de vida do render: silêncio prolongado = renderer morto (tela branca)
-  | { kind: 'sendMessage'; text: string; images?: ImageAttachment[]; force?: boolean }
+  | { kind: 'sendMessage'; text: string; images?: ImageAttachment[]; force?: boolean; selection?: string }
   | { kind: 'resolvePaths'; requestId: string; absPaths: string[] }
   | { kind: 'readClipboardFiles'; requestId: string }
   | { kind: 'openLink'; href: string; preview?: boolean }
@@ -356,6 +360,7 @@ export type WebviewToHost =
       kind: 'permissionDecision';
       requestId: string;
       decision: 'allow' | 'deny' | 'allow_always';
+      message?: string; // feedback (plan mode editável: notas ao "manter planejando")
     }
   | { kind: 'askResponse'; requestId: string; answers: Record<string, string> }
   | { kind: 'setModel'; model: string }
@@ -366,6 +371,7 @@ export type WebviewToHost =
   | { kind: 'listSessions' }
   | { kind: 'resumeSession'; sessionId: string }
   | { kind: 'reloadSession'; sessionId: string }
+  | { kind: 'remoteControl'; sessionId: string } // publica a sessão p/ controle remoto (celular)
   | { kind: 'deleteSession'; sessionId: string }
   | { kind: 'deleteAllSessions' }
   | { kind: 'setLocale'; locale: string }
@@ -379,6 +385,8 @@ export type WebviewToHost =
   | { kind: 'logoutCli' }
   | { kind: 'clearContext' }
   | { kind: 'compactContext' }
+  | { kind: 'mentionSearch'; requestId: string; query: string } // @-mention: busca arquivos
+  | { kind: 'openDiff'; tool: string; input: unknown } // abre o diff proposto no editor nativo
   | { kind: 'draftChanged'; text: string } // espelha o rascunho/ditado no host (anti-perda)
   // Exporta a conversa p/ um .md na raiz do projeto. mode 'direct' = mecânico (o
   // markdown já vem pronto); 'ai' = reescreve via CLI (mesmo modelo/effort, gasta tokens).

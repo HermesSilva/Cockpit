@@ -144,11 +144,11 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // Envia otimista (bolha local + manda ao host). O gate de effort é decidido NO
   // HOST (lê o CLAUDE.md da pasta): se bloquear, manda 'effortGate' e não roda;
   // confirmando, reenviamos o último com force=true.
-  const onSend = (text: string, images: ImageAttachment[]) => {
+  const onSend = (text: string, images: ImageAttachment[], selection?: string) => {
     lastSendRef.current = { text, images };
     const previews = images.map((i) => `data:${i.mediaType};base64,${i.data}`);
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
-    send({ kind: 'sendMessage', text, images: images.length ? images : undefined });
+    send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
   };
   const onStop = () => {
     send({ kind: 'interrupt' });
@@ -207,9 +207,9 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     send({ kind: 'deleteAllSessions' });
     setConfirmDeleteAll(false);
   };
-  const onPermission = (d: 'allow' | 'deny' | 'allow_always') => {
+  const onPermission = (d: 'allow' | 'deny' | 'allow_always', message?: string) => {
     if (tab?.permission) {
-      send({ kind: 'permissionDecision', requestId: tab.permission.requestId, decision: d });
+      send({ kind: 'permissionDecision', requestId: tab.permission.requestId, decision: d, message });
       dispatch({ type: 'clearPermission' });
     }
   };
@@ -272,6 +272,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             send({ kind: 'openEditor' });
           }}
           onReload={(id) => send({ kind: 'reloadSession', sessionId: id })}
+          onRemote={(id) => send({ kind: 'remoteControl', sessionId: id })}
           onDelete={onAskDelete}
           onRename={(s, name) => send({ kind: 'renameSession', sessionId: s.id, name })}
           onDeleteAll={() => setConfirmDeleteAll(true)}
@@ -446,6 +447,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         onDraftInjected={() => setDraftRestore(null)}
         onToggleExpandAll={() => setAllExpanded((a) => !(a ?? false))}
         onSend={onSend}
+        selectionRef={state.selectionRef}
         onStop={onStop}
         onVoiceDict={onVoiceDict}
       />

@@ -108,6 +108,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private draftByTab = new Map<string, string>();
   private tabOrder: string[] = [];
   private activeTab = '';
+  // Última sessão cujo painel foi fechado pelo usuário (p/ "reabrir fechada").
+  private lastClosed?: { tabId: string; sessionId?: string };
+  // Ref da seleção ativa do editor (@file#a-b) p/ compartilhar via composer.
+  private lastSelRef?: string;
+  private selListener?: vscode.Disposable;
   private tabSeq = 0;
 
   // Overrides de sessão (em memória — não alteram as settings globais do usuário).
@@ -153,6 +158,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.updateReloadBar();
     setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
     void resolveAccountKey(this.claudePath()); // resolve a conta cedo (chave do dicionário de ditado)
+    // Seleção ativa do editor → ref @file#a-b compartilhável no composer.
+    this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
     // Ping automático de keep-alive DESLIGADO: qualquer refresh via --resume grava
     // um turno real no .jsonl (polui a conversa, gasta tokens e chega ao agente).
     // O medidor de vida do cache no painel continua (independe do keeper).
@@ -163,6 +170,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   dispose(): void {
     this.cacheKeeper.stop();
     this.reloadBar?.dispose();
+    this.selListener?.dispose();
+    this.diffProviderReg?.dispose();
+  }
+
+  /** Atualiza o ref da seleção (@rel#a-b) e avisa o composer. Vazio = sem seleção. */
+  private onSelectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
+    const ed = e.textEditor;
+    const sel = ed.selection;
+    let ref: string | undefined;
+    if (ed.document.uri.scheme === 'file' && !sel.isEmpty) {
+      const rel = vscode.workspace.asRelativePath(ed.document.uri, false);
+      ref = `@${rel}#${sel.start.line + 1}-${sel.end.line + 1}`;
+    }
+    if (ref === this.lastSelRef) return;
+    this.lastSelRef = ref;
+    this.post({ kind: 'selection', ref });
   }
 
   /** Mostra o botão de reload enquanto houver ao menos um painel do Cockpit aberto. */
@@ -212,6 +235,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       onInit: (model, cmds) => this.onSessionInit(model, cmds, tabId),
       onAuthRequired: () => this.post({ kind: 'authRequired' }, tabId),
       fileText: (tool, input) => this.currentFileText(tool, input),
+      onToolUse: (tool, input) => this.autoSaveForTool(tool, input),
       claudePath: () => this.claudePath(),
       cwd: () => this.workspaceCwd(),
       settings: () => ({
@@ -478,6 +502,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', true);
     this.lastBeat.set(tabId, Date.now()); // arma já: painel recém-criado ainda não bateu
     panel.onDidDispose(() => {
+      // Fechamento genuíno pelo usuário (não recreate do watchdog): o mapa ainda
+      // aponta p/ ESTE painel. Guarda p/ "reabrir sessão fechada".
+      if (this.panels.get(tabId) === panel) {
+        const s = this.sessions.get(tabId);
+        this.lastClosed = { tabId, sessionId: s?.sessionId ?? s?.resumeId };
+      }
       this.panels.delete(tabId);
       this.webviewSession.delete(panel.webview);
       this.lastBeat.delete(tabId);
@@ -896,6 +926,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.openSession(sessionId); // não estava carregada: abre do zero
   }
 
+  /**
+   * Publica a sessão p/ controle remoto (acompanhar/interagir pelo celular): abre
+   * o contexto e roda /remote-control no CLI dele — o CLI devolve o link/QR de
+   * pareamento na conversa.
+   */
+  private remoteControl(sessionId: string): void {
+    this.openSession(sessionId); // garante a sessão aberta/carregada
+    for (const [, s] of this.sessions) {
+      if (s.sessionId === sessionId || s.resumeId === sessionId) {
+        s.send('/remote-control');
+        return;
+      }
+    }
+  }
+
+  /** Reabre a última sessão fechada pelo usuário (Ctrl+Shift+T). */
+  reopenClosed(): void {
+    const lc = this.lastClosed;
+    if (!lc) return;
+    this.lastClosed = undefined;
+    // Sessão ainda viva em memória (fechou só o painel): reabre o painel dela.
+    if (this.sessions.has(lc.tabId)) {
+      this.openSessionPanel(lc.tabId);
+    } else if (lc.sessionId) {
+      this.openSession(lc.sessionId); // recarrega do transcript
+    }
+  }
+
   /** Carrega o histórico de uma sessão numa aba específica e arma --resume. */
   private resumeInTab(tab: string, sessionId: string): void {
     const s = this.sessions.get(tab);
@@ -1205,6 +1263,81 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  // Auto-save: antes do agente ler/escrever um arquivo, grava o buffer aberto se
+  // estiver sujo (evita o agente operar numa versão velha). Setting tootega.autosave.
+  private autoSaveForTool(tool: string, input: unknown): void {
+    if (!this.cfg().get<boolean>('autosave', true)) return;
+    if (!/^(Edit|Write|MultiEdit|NotebookEdit|Read)$/.test(tool)) return;
+    const fp = (input as { file_path?: unknown })?.file_path;
+    if (typeof fp !== 'string' || !fp) return;
+    const abs = path.isAbsolute(fp) ? fp : path.join(this.workspaceCwd(), fp);
+    for (const doc of vscode.workspace.textDocuments) {
+      if (doc.isDirty && doc.uri.fsPath === abs) {
+        void doc.save();
+        return;
+      }
+    }
+  }
+
+  // Conteúdo virtual (lado "proposto") do diff nativo, por URI.
+  private diffContent = new Map<string, string>();
+  private diffProviderReg?: vscode.Disposable;
+  private diffSeq = 0;
+
+  /** Abre o diff proposto (Edit/Write/MultiEdit) no diff nativo do VS Code. */
+  private async openNativeDiff(tool: string, input: unknown): Promise<void> {
+    const inp = (input ?? {}) as Record<string, unknown>;
+    const fp = typeof inp.file_path === 'string' ? inp.file_path : '';
+    if (!fp) return;
+    const abs = path.isAbsolute(fp) ? fp : path.join(this.workspaceCwd(), fp);
+    let oldText = '';
+    try {
+      oldText = fs.readFileSync(abs, 'utf8');
+    } catch {
+      /* arquivo novo */
+    }
+    const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+    let newText = oldText;
+    if (tool === 'Write') newText = str(inp.content);
+    else if (tool === 'Edit') newText = oldText.split(str(inp.old_string)).join(str(inp.new_string));
+    else if (tool === 'MultiEdit' && Array.isArray(inp.edits)) {
+      for (const e of inp.edits as Record<string, unknown>[]) {
+        newText = newText.split(str(e.old_string)).join(str(e.new_string));
+      }
+    }
+    // Provider lazy do esquema virtual p/ o lado "proposto".
+    if (!this.diffProviderReg) {
+      this.diffProviderReg = vscode.workspace.registerTextDocumentContentProvider('cockpit-diff', {
+        provideTextDocumentContent: (uri) => this.diffContent.get(uri.toString()) ?? '',
+      });
+    }
+    const fileExists = fs.existsSync(abs);
+    const rightUri = vscode.Uri.parse(`cockpit-diff:/${this.diffSeq++}/${path.basename(abs)}`);
+    this.diffContent.set(rightUri.toString(), newText);
+    const leftUri = fileExists
+      ? vscode.Uri.file(abs)
+      : (() => {
+          const u = vscode.Uri.parse(`cockpit-diff:/${this.diffSeq++}/old-${path.basename(abs)}`);
+          this.diffContent.set(u.toString(), oldText);
+          return u;
+        })();
+    const title = `${path.basename(abs)} — proposed (${tool})`;
+    await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
+  }
+
+  /** Busca arquivos do workspace p/ o autocomplete de @-mention (fuzzy por path). */
+  private async searchMentions(tabId: string, requestId: string, query: string): Promise<void> {
+    let items: string[] = [];
+    try {
+      const glob = query ? `**/*${query.replace(/[^\w./-]/g, '')}*` : '**/*';
+      const uris = await vscode.workspace.findFiles(glob, '**/node_modules/**', 30);
+      items = uris.map((u) => vscode.workspace.asRelativePath(u, false)).sort((a, b) => a.length - b.length);
+    } catch {
+      /* sem workspace */
+    }
+    this.post({ kind: 'mentionResults', requestId, items: items.slice(0, 12) }, tabId);
+  }
+
   private notifyComplete(): void {
     if (!this.cfg().get<boolean>('notifyOnComplete', true)) return;
     // Notifica se nenhum painel de chat está visível.
@@ -1435,7 +1568,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.pendingRestart = false;
           this.sendConfig();
         }
-        s.send(m.text, m.images);
+        // Compartilha a seleção do editor como contexto, se o composer pediu.
+        const text = m.selection ? `${m.selection}\n${m.text}` : m.text;
+        s.send(text, m.images);
         this.draftByTab.delete(srcTab); // enviado: descarta o rascunho espelhado
         break;
       }
@@ -1462,7 +1597,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.newSession();
         break;
       case 'permissionDecision':
-        srcSession().decide(m.requestId, m.decision);
+        srcSession().decide(m.requestId, m.decision, m.message);
         break;
       case 'askResponse':
         srcSession().answer(m.requestId, m.answers);
@@ -1497,6 +1632,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'reloadSession':
         this.reloadSession(m.sessionId);
+        break;
+      case 'remoteControl':
+        this.remoteControl(m.sessionId);
         break;
       case 'deleteSession':
         // Confirmação já feita no webview (modal elegante). Apaga direto.
@@ -1556,6 +1694,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'setKeepCacheAlive':
         // Liga/desliga o keep-alive de cache do contexto de origem (persistido).
         srcSession().setKeepCacheAlive(m.value);
+        break;
+      case 'mentionSearch':
+        void this.searchMentions(srcTab, m.requestId, m.query);
+        break;
+      case 'openDiff':
+        void this.openNativeDiff(m.tool, m.input);
         break;
       case 'draftChanged':
         // Espelha o rascunho/ditado no host (sobrevive à morte do renderer).

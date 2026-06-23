@@ -2,6 +2,33 @@
 
 > Gerado por pesquisa multi-agente (doc oficial + superfície CLI + guias + integração IDE) cruzada com inventário do nosso repo.
 > Legenda: ✓ tem · ◑ parcial · ✗ não tem. Importância: **core** / sec (secundária) / min (mínima).
+> Coluna "Oficial" verificada na doc oficial (`code.claude.com/docs/en/vs-code`) + Marketplace.
+
+## ✅ Atualização — 11 lacunas fechadas + extras (2026-06-23, v1.0.160)
+
+Implementadas nesta leva (todas com typecheck host+webview e build de produção):
+
+| Item (era lacuna da oficial) | Antes | Agora | Como |
+|---|:--:|:--:|---|
+| Reabrir sessão fechada | ✗ | ✓ | `Ctrl+Shift+T` + comando; rastreia o último painel fechado (genuíno, distinto de recreate) |
+| Histórico por faixa de tempo | ◑ | ✓ | Hoje / Ontem / Últimos 7 dias / Mais antigas no hub |
+| Entry point na editor-toolbar | ◑ | ✓ | ✦ `tootega.open` no `editor/title` (`when: !cockpitActive`) |
+| Drag-to-attach | ✗ | ✓ | `onDrop` no composer reusa o resolvedor de path do paste |
+| Auto-save antes de read/write | ✗ | ✓ | hook `onToolUse` → salva buffer sujo do arquivo-alvo; setting `tootega.autosave` |
+| `@`-mention de arquivos (fuzzy) | ✗ | ◑ | menu `@` no composer; host `findFiles`; insere `@path` (sem `Alt+K`) |
+| Compartilhar seleção (`@file#a-b`) | ✗ | ✓ | `onDidChangeTextEditorSelection` → chip com olho (incluir/excluir) no composer |
+| Plan mode **editável** | ◑ | ✓ | toggle Editar/Visualizar; "Continuar planejando (enviar notas)" manda as edições como `deny.message` |
+| Diff no editor **nativo** | ◑ | ✓ | botão "Abrir diff no editor" → `vscode.diff` (provider virtual `cockpit-diff:` p/ o lado proposto) |
+| Onboarding (checklist) | ✗ | ✓ | checklist dispensável no hub (CLI/login marcam sozinhos); sign-in já vinha do CLI |
+| **Controle remoto** (celular) | ✗ | ✓ | 📱 no card → abre o contexto e roda `/remote-control` (link/QR no timeline) |
+
+**Ainda em aberto (com motivo):**
+- **Breakdown de contexto** (`/context`) e **atribuição de uso** (`/usage`): bloqueados — não há fonte limpa no `stream-json`; só rodando o slash command (polui transcript, gasta turno) e parseando texto instável. UI pronta, falta fonte estável.
+- **Chat na sidebar**: nosso chat é `WebviewPanel` (área do editor); a sidebar exige um `WebviewView` com streaming/replay próprios — PR dedicado.
+- Heavy/oficial-only: checkpoints com restore de arquivos, IDE MCP server (diagnostics/Jupyter), Chrome (@browser), worktrees, retomar sessão cloud, workflows/Artifacts, terminal mode.
+
+> A tabela item-a-item original (2026-06-13) abaixo fica como histórico; os itens acima
+> sobrepõem os status correspondentes nela.
 
 ## ✅ Atualização — 15 itens simples implementados (2026-06-13)
 Fechadas as 15 lacunas mais simples da lista:
@@ -126,6 +153,18 @@ Cockpit é um cliente webview limpo que dirige o Claude Code CLI. Faz bem o **n�
 ---
 
 ## Nossos extras (só o Cockpit tem)
+
+**Usabilidade / ferramentas visuais (2026-06):**
+- **Busca na conversa (Ctrl+F)** com escopo Timeline/Prompts, debounce 250ms, highlight + jump (CSS Custom Highlight API)
+- **Corretor ortográfico PT+EN inline** (hunspell-asm no host) + dropdown de sugestões + **autocorreção** de alta confiança ao teclar espaço/pontuação
+- **Ditado por voz** (STT) com parciais ao vivo + correção pós-ditado por IA; **modal de dicionários** em abas (termos/substituições/corretor), por máquina
+- **Export da conversa p/ Markdown** (direto ou refinado por IA), preservando os nomes dos interlocutores
+- **Recuperação de render manual** (↻ na status bar + no card + watchdog) e **loader "Cockpit"** no lugar do painel cinza
+- **Anti-perda de rascunho** (espelhado no host) e **replay completo do timeline** ao reabrir, mesmo com a execução seguindo em background
+- **Spinner por contexto** na grade do hub (cada sessão rodando)
+- Chip de **seleção do editor** (`@file#a-b`) com olho incluir/excluir; **link das release notes** do CLI ativo
+
+**Transparência/dados e plumbing:**
 - **i18n bilíngue pt-BR/en** (host + webview) com troca em runtime, sem reload
 - **Trilho de scroll-markers** (minimapa): 1 marcador por prompt do usuário, com hover numerado
 - **Estimativa de custo local** por tabela de preço do modelo, rotulada "estimado" quando não há custo real

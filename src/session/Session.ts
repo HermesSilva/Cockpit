@@ -24,6 +24,8 @@ export interface SessionHooks {
   onInit: (model?: string, slashCommands?: string[]) => void;
   onAuthRequired: () => void;
   fileText: (tool: string, input: unknown) => string | undefined;
+  // Cada tool_use (antes da execução): permite autosave de arquivos read/write.
+  onToolUse?: (tool: string, input: unknown) => void;
   claudePath: () => string;
   cwd: () => string;
   // Defaults vindos das settings (o que 'default' resolve quando não há override).
@@ -225,7 +227,7 @@ export class Session {
 
   // ---- protocolo de controle (permissão / AskUserQuestion) ----
 
-  decide(requestId: string, decision: 'allow' | 'deny' | 'allow_always'): void {
+  decide(requestId: string, decision: 'allow' | 'deny' | 'allow_always', message?: string): void {
     const pend = this.pendingPerm.get(requestId);
     this.pendingPerm.delete(requestId);
     if (pend?.tool) {
@@ -233,7 +235,11 @@ export class Session {
       this.emit({ kind: 'stats', stats: this.stats.snapshot() });
     }
     if (decision === 'deny') {
-      this.cli?.sendControlResponse(requestId, { behavior: 'deny', message: 'Denied by user' });
+      // `message` = feedback do usuário (ex.: notas no plan mode editável).
+      this.cli?.sendControlResponse(requestId, {
+        behavior: 'deny',
+        message: message?.trim() || 'Denied by user',
+      });
       return;
     }
     const resp: Record<string, unknown> = { behavior: 'allow', updatedInput: pend?.input ?? {} };
@@ -450,7 +456,9 @@ export class Session {
         const buf = this.toolBuffers.get(idx);
         if (buf && !this.emittedTools.has(buf.id)) {
           this.emittedTools.add(buf.id);
-          this.emit({ kind: 'toolUse', id: buf.id, name: buf.name, input: safeJson(buf.json) });
+          const input = safeJson(buf.json);
+          this.emit({ kind: 'toolUse', id: buf.id, name: buf.name, input });
+          this.hooks.onToolUse?.(buf.name, input);
         }
         break;
       }
@@ -481,6 +489,7 @@ export class Session {
         if (!this.emittedTools.has(t.id)) {
           this.emittedTools.add(t.id);
           this.emit({ kind: 'toolUse', id: t.id, name: t.name, input: t.input });
+          this.hooks.onToolUse?.(t.name, t.input);
         }
       }
     }

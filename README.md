@@ -11,7 +11,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.157` |
+| **Extension version** | `1.0.160` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.186`) |
 | **Languages** | pt-BR and international English (runtime switching) |
@@ -48,11 +48,12 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 |---|:--:|:--:|---|
 | Permission approval (Allow / Always / Deny) | ✅ | ✅ | per-tool preview; `Ctrl+Enter`/`Esc` |
 | Permission modes (plan/acceptEdits/auto/…) | ✅ | ✅ | dropdown; official cycles via the mode indicator |
-| Plan mode (review & approve) | 🟡 | ✅ | official opens the plan as an **editable** markdown doc with inline comments; Cockpit renders + approves only |
+| Plan mode (review, **edit** & approve) | ✅ | ✅ | Cockpit: Edit/Preview toggle; "Keep planning (send my notes)" feeds edits back to the agent |
 | Composed questions (AskUserQuestion) | ✅ | ✅ | tabs, multi-select, "Other" |
 | **Questions asked in your language** | ✅ | ❌ | steers AskUserQuestion to the configured voice/UI language |
-| Side-by-side diff | 🟡 | ✅ | Cockpit renders the diff **in the webview**; official uses the **native editor** and lets you edit before accepting |
-| @-mention files/folders + line ranges | ❌ | ✅ | official: fuzzy match, `Alt/Option+K`, active-selection sharing |
+| Side-by-side diff | ✅ | ✅ | in-webview diff **plus** "Open diff in editor" → VS Code native `vscode.diff`; official also lets you edit in the diff before accepting |
+| @-mention files/folders | 🟡 | ✅ | Cockpit: fuzzy file autocomplete (`@` menu, host `findFiles`); no `Alt+K` shortcut |
+| Share active selection (`@file#a-b`) | ✅ | ✅ | composer chip with an eye toggle to include/exclude the editor selection |
 | Checkpoints / rewind (restore files) | 🟡 | ✅ | official: fork / rewind-code / both. Cockpit rewinds the **transcript** only (file restore via Git planned) |
 
 **Spell-checker & dictation** *(Cockpit specialty)*
@@ -84,12 +85,14 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Feature | Cockpit | Official GUI | Notes |
 |---|:--:|:--:|---|
 | History: list / resume / rename / delete | ✅ | ✅ | both: AI-ish titles, search; official browses by time |
-| Search/filter sessions | ✅ | ✅ | official also sorts by time buckets |
+| Search/filter sessions | ✅ | ✅ | — |
+| History grouped by time | ✅ | ✅ | Today / Yesterday / Last 7 days / Older |
 | Multiple parallel conversations | ✅ | ✅ | per-tab CLI/stats/streaming; status dot idle/busy/error |
 | **Per-session spinner in the hub grid** | ✅ | 🟡 | Cockpit shows a spinner on every running context card |
 | **Close the webview without stopping the run** | ✅ | 🟡 | Cockpit keeps the CLI/session alive in the host; reopening replays the full timeline. Official tab-close behavior is not documented |
 | **Manual reload (fix gray/dead webview)** | ✅ | ➖ | status-bar ↻ + per-session-card ↻ + auto render-watchdog |
-| Reopen closed session | 🟡 | ✅ | official `Ctrl+Shift+T` |
+| Reopen closed session | ✅ | ✅ | `Ctrl+Shift+T` + command palette |
+| **Remote control (follow from phone)** | ✅ | ✅ | 📱 on the session card runs `/remote-control` (pairing link/QR in the timeline) |
 | Resume **cloud / remote** sessions (claude.ai) | ❌ | ✅ | official Remote tab |
 | Reposition panel (sidebar / editor / window) | 🟡 | ✅ | Cockpit lives in editor + activity-bar hub |
 
@@ -113,15 +116,16 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Theme synced with VS Code | ✅ | ✅ | `var(--vscode-*)` |
 | **Bilingual i18n (pt-BR + EN), runtime switch** | ✅ | ❌ | host + webview, no reload |
 | Image paste / screenshot | ✅ | ✅ | Cockpit also pastes **file paths** (Unicode-safe on Windows) |
-| Drag-to-attach (Shift+drag) | ❌ | ✅ | official only |
+| Drag-to-attach files | ✅ | ✅ | drop files on the composer (reuses the path resolver) |
 | Status-bar entry + spinner | ✅ | ✅ | Cockpit: idle/busy dot + model chip |
-| Editor-toolbar / Spark entry points | 🟡 | ✅ | official Spark icon in editor toolbar |
+| Editor-toolbar entry point | ✅ | ✅ | ✦ icon opens the Cockpit from the editor title bar |
+| Auto-save before read/write | ✅ | ✅ | flushes a dirty buffer before the agent touches the file (`tootega.autosave`) |
 | Keyboard shortcuts | ✅ | ✅ | open / new / interrupt / **Ctrl+F** |
 | URI handler (`vscode://…/open`) | ✅ | ✅ | both |
 | **Release-notes link for the active CLI** | ✅ | ❌ | clicking the CLI version opens GitHub releases |
 | **Live model discovery (`/v1/models`)** | ✅ | 🟡 | Cockpit lists discovered models + grouped picker |
 | **Tolerant stream-json parser** | ✅ | ➖ | unknown events ignored, survives CLI upgrades |
-| Sign-in / onboarding checklist | ❌ | ✅ | Cockpit relies on the CLI's auth |
+| Sign-in / onboarding checklist | 🟡 | ✅ | sign-in via the CLI auth; dismissible onboarding checklist in the hub |
 | Terminal mode (`useTerminal`) | ➖ | ✅ | Cockpit is GUI-only by design |
 | Third-party providers (Bedrock/Vertex) | 🟡 | ✅ | via shared `~/.claude/settings.json` |
 
@@ -165,6 +169,13 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Autocorrect + spell dropdown | ✅ | ❌ | high-confidence on space/punctuation |
 | Voice dictation with live partials | ✅ | ❌ | + post-dictation AI cleanup |
 | Slash autocomplete + curated hints | ✅ | ✅ | ↑/↓/Enter/Esc |
+| **@-mention file autocomplete** | ✅ | ✅ | `@` menu over workspace files (fuzzy) |
+| **Editable plan mode** | ✅ | ✅ | Edit/Preview + send notes back |
+| **Open diff in native editor** | ✅ | ✅ | button on the edit-permission modal |
+| **Auto-save before read/write** | ✅ | ✅ | flush dirty buffer first |
+| **Reopen closed session** | ✅ | ✅ | `Ctrl+Shift+T` |
+| **Remote control from phone** | ✅ | ✅ | 📱 on the session card |
+| Onboarding checklist (dismissible) | ✅ | ✅ | first-run steps in the hub |
 | One-click export to Markdown | ✅ | ❌ | direct or AI-polished |
 | Elegant confirm dialogs (delete/effort) | ✅ | 🟡 | Esc/overlay, danger styling |
 | Scroll-to-bottom + at-bottom autoscroll | ✅ | ✅ | floating button when scrolled up |
@@ -185,28 +196,24 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 - Checkpointing: <https://code.claude.com/docs/en/checkpointing>
 - Item-by-item analysis (ours): [`Docs/comparacao-gui-oficial.md`](Docs/comparacao-gui-oficial.md)
 
-### Gaps worth closing (official has it, Cockpit doesn't) — easy→medium effort
+### Gaps worth closing (official has it, Cockpit doesn't)
 
-Only items rated **🟢 easy** or **🟡 medium** to implement. Hard/heavy items
-(file-restoring checkpoints, built-in IDE MCP server, Chrome automation, git worktrees,
-cloud-session resume, dynamic workflows/Artifacts, terminal mode) are intentionally left
-out of this list.
+**Recently closed** (this release): reopen closed session, history time-buckets,
+editor-toolbar entry, drag-to-attach, auto-save before read/write, `@`-mention file
+autocomplete, active-selection sharing, editable plan mode, "open diff in native editor",
+onboarding checklist, and remote control (📱 on the session card).
 
-| Gap | Effort | Sketch of the approach |
+**Still open** — and *why* each is non-trivial here:
+
+| Gap | Effort | Why it's not done / approach |
 |---|:--:|---|
-| Reopen closed session (`Ctrl+Shift+T`) | 🟢 | track last-closed tabId; command re-opens it (we already have reload/recreate plumbing) |
-| Browse history by time buckets (Today/Yesterday/7d) | 🟢 | group the existing session list by `updatedAt` in the hub |
-| Editor-toolbar (Spark) entry point | 🟢 | add an `editor/title` (or editor toolbar) command to open the panel |
-| Drag-to-attach files (Shift+drag) | 🟢 | handle `drop` on the composer; reuse the existing paste→path resolver |
-| Context breakdown via `/context` | 🟡 | parse `/context` output → fill the already-built `contextBreakdown` UI |
-| Reposition: also live in the sidebar | 🟡 | register a secondary-sidebar `WebviewView` reusing the chat bundle |
-| `@`-mention files/folders (fuzzy autocomplete) | 🟡 | `@` menu in the composer; host does a fuzzy workspace file search and inserts the ref |
-| Active selection / open-file sharing (eye toggle) | 🟡 | host reads `window.activeTextEditor` selection; prepend an `@file#a-b` context line, with a toggle |
-| Editable plan mode | 🟡 | on `ExitPlanMode`, open the plan as a Markdown doc; collect edits/comments and feed them back before approval |
-| Side-by-side diff in the **native** editor + edit-before-accept | 🟡 | use `vscode.diff` / a virtual doc for Edit/Write previews instead of the in-webview diff |
-| Usage attribution (skill/subagent/plugin/MCP) | 🟡 | parse the `/usage` attribution payload into the existing usage panel |
-| Sign-in / sign-out screen + onboarding checklist | 🟡 | detect CLI auth state; show a sign-in panel that runs `/login`, plus a dismissible checklist |
-| Auto-save before read/write (`autosave`) | 🟢 | on Edit/Write permission, save the target doc if dirty before applying |
+| Context breakdown via `/context` | 🟡 blocked | No clean source in stream-json — only running `/context` (pollutes the transcript, costs a turn) yields a brittle text block. UI is ready; needs a stable data source. |
+| Usage attribution (skill/subagent/plugin/MCP) | 🟡 blocked | Same: the attribution lives in the CLI `/usage` dialog, not exposed in stream mode. |
+| Chat in the **secondary sidebar** | 🟡→large | Our chat is a `WebviewPanel` (editor area); VS Code only puts `WebviewView`s in the sidebar. Needs a dedicated chat-view provider with its own streaming/replay — a focused PR. |
+
+Heavy/out-of-scope (official-only): file-restoring checkpoints, built-in IDE MCP server,
+Chrome automation, git worktrees, cloud-session resume, dynamic workflows/Artifacts,
+terminal mode.
 
 ## Table of contents
 
@@ -485,9 +492,12 @@ automatically resumes the most recent session for that directory.
 |---|---|---|---|
 | Permission approval (Allow / Always / Deny) | ✅ | Per-tool modal with preview (Bash, Write, WebFetch, JSON); **Ctrl+Enter** = allow, **Esc** = deny | — |
 | Permission modes (HITL ↔ auto) | ✅ | **Permission** dropdown (`default`, `plan`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`) | `bypassPermissions` disables approvals — use with care |
-| **Plan mode** (view and approve a plan) | ✅ | `ExitPlanMode` arrives as a permission; **Approve and execute** / **Keep planning** | Editing the plan before approving is planned |
+| **Plan mode** (view, **edit** and approve a plan) | ✅ | `ExitPlanMode` permission with **Edit/Preview** toggle; **Approve & run** or **Keep planning (send my notes)** feeds your edits back | — |
 | Composed questions (AskUserQuestion) | ✅ | Modal with tabs per question, option cards, `multiSelect`, and an **Other** option (free text) | — |
-| Side-by-side diff in the native editor | ⏳ | — | Today the diff is rendered in the webview |
+| Side-by-side diff in the native editor | ✅ | **Open diff in editor** button on the edit-permission modal → VS Code `vscode.diff` | Editing inside the native diff to change the proposal is still in the webview path |
+| **@-mention file autocomplete** | ✅ | Type `@` to pick a workspace file (fuzzy) | No `Alt+K` line-range shortcut |
+| **Share editor selection** | ✅ | Composer chip (`@file#a-b`) with an eye toggle to include/exclude | — |
+| **Auto-save before read/write** | ✅ | Flushes a dirty buffer before the agent reads/writes (`tootega.autosave`) | — |
 | Accept/reject per file and per hunk | ⏳ | — | — |
 | Agent Todos panel | 🟡 | The **Tasks** tab shows the live task list | Depends on the CLI emitting todos |
 
@@ -727,9 +737,11 @@ Commands (palette, **Tootega** category):
 
 | Command | ID | Shortcut |
 |---|---|---|
-| Open Cockpit | `tootega.open` | **Ctrl+Alt+C** (mac: Cmd+Alt+C) |
+| Open Cockpit | `tootega.open` | **Ctrl+Alt+C** (mac: Cmd+Alt+C) · also ✦ in the editor toolbar |
 | New session | `tootega.newSession` | **Ctrl+Alt+N** (in the panel) |
 | Interrupt agent | `tootega.interrupt` | **Ctrl+Alt+.** |
+| **Reopen closed session** | `tootega.reopenClosed` | **Ctrl+Shift+T** (when the Cockpit is focused) |
+| **Reload view** (fix gray/blank panel) | `tootega.reloadView` | ↻ in the editor title bar + status bar |
 | Sessions | `tootega.openSessions` | — |
 | Settings | `tootega.settings` | — |
 | Open in editor (resizable) | `tootega.openInEditor` | — |
@@ -737,8 +749,12 @@ Commands (palette, **Tootega** category):
 | Toggle language (pt-BR / English) | `tootega.toggleLanguage` | — |
 | Enable / Disable real usage tracking | `tootega.enableUsageTracking` / `...disableUsageTracking` | — |
 
-In the composer: **Enter** sends · **Shift+Enter** new line · the **/** button opens the
-slash-command menu · the **▾** button opens options.
+In the composer: **Enter** sends · **Shift+Enter** new line · **Ctrl+F** finds in the
+conversation · **@** opens the file autocomplete · the **/** button opens the slash-command
+menu · the **▾** button opens options · **drag files** onto it to attach.
+
+On a session card (hub), hover reveals: **📱 remote control**, **↻ reload**, **✏ rename**,
+**🗑 delete**.
 
 URI handler: `vscode://tootega.tootega-cockpit/open` opens the Cockpit.
 

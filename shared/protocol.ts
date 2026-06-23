@@ -64,7 +64,8 @@ export interface StatsSnapshot {
   outputTokens: number;
   cacheCreateTokens: number;
   cacheReadTokens: number;
-  cacheHitRate: number; // 0..1
+  cacheHitRate: number; // 0..1 — cumulativo da sessão (read / (read+write+input))
+  lastTurnHitRate?: number; // 0..1 — hit do último turno consolidado (cr/total do turno)
   cacheSavingsUsd?: number; // economia estimada (tokens lidos × delta de preço input→read)
   // Custo
   sessionCostUsd: number;
@@ -307,7 +308,11 @@ type HostMsg =
   | { kind: 'pluginsData'; data: PluginsData } // lista de plugins/marketplaces (modal)
   | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operação em andamento
   | { kind: 'pluginsError'; message: string } // falha numa ação de plugin
-  | { kind: 'locale'; locale: string };
+  | { kind: 'locale'; locale: string }
+  // Corretor ortográfico (host via hunspell-asm): resultado de checagem (palavras
+  // erradas) e de sugestões (por idioma).
+  | { kind: 'spellResult'; bad: string[] }
+  | { kind: 'spellSuggestResult'; requestId: string; word: string; pt: string[]; en: string[] };
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
 // `category` é uma chave enum (session|context|config|tools|account|info|plugin|other);
@@ -328,6 +333,7 @@ export interface VoiceDictData {
   terms: string[];
   replacements: VoiceReplacement[];
   account?: string; // conta a que pertence (rótulo informativo)
+  spellWords?: string[]; // dicionário do corretor (palavras adicionadas/ignoradas)
 }
 
 // Imagem anexada (base64 sem prefixo data:).
@@ -359,6 +365,7 @@ export type WebviewToHost =
   | { kind: 'openSettings' }
   | { kind: 'listSessions' }
   | { kind: 'resumeSession'; sessionId: string }
+  | { kind: 'reloadSession'; sessionId: string }
   | { kind: 'deleteSession'; sessionId: string }
   | { kind: 'deleteAllSessions' }
   | { kind: 'setLocale'; locale: string }
@@ -395,4 +402,9 @@ export type WebviewToHost =
     }
   | { kind: 'fetchUsage' } // botão "Usage": busca conta + limites + breakdown (dado quente)
   | { kind: 'enableUsageTracking' } // instala o wrapper de statusline p/ capturar rate_limits real
-  | { kind: 'saveImage'; mediaType: string; data: string };
+  | { kind: 'saveImage'; mediaType: string; data: string }
+  // Corretor ortográfico: checa um lote de palavras; pede sugestões de uma; adiciona
+  // ao dicionário do usuário (persistente no host).
+  | { kind: 'spellCheck'; words: string[] }
+  | { kind: 'spellSuggest'; requestId: string; word: string }
+  | { kind: 'spellAdd'; word: string };

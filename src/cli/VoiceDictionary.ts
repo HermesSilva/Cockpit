@@ -11,8 +11,13 @@ import * as path from 'node:path';
 import { fetchAuthStatus } from './AuthStatus';
 import { log } from '../util/logger';
 
-const DIR = path.join(os.homedir(), '.claude', 'tootega', 'voice-dictionary');
-const VERSION = 1;
+// Dicionários POR MÁQUINA (login do SO), não por conta Claude: um único arquivo
+// que vale para tudo deste usuário da máquina. Inclui termos/substituições do
+// ditado e as palavras do corretor.
+const DIR = path.join(os.homedir(), '.claude', 'tootega');
+const LEGACY_DIR = path.join(DIR, 'voice-dictionary'); // antigo: por conta
+const FILE = path.join(DIR, 'dictionaries.json');
+const VERSION = 2;
 const MAX_TERMS = 200; // teto p/ não estourar o header de keyterms
 const MAX_KEYTERMS_CHARS = 2000;
 
@@ -23,9 +28,10 @@ export interface Replacement {
 export interface VoiceDict {
   terms: string[];
   replacements: Replacement[];
+  spellWords?: string[]; // dicionário do corretor (palavras adicionadas/ignoradas)
 }
 
-const EMPTY: VoiceDict = { terms: [], replacements: [] };
+const EMPTY: VoiceDict = { terms: [], replacements: [], spellWords: [] };
 
 /** Slug seguro p/ nome de arquivo a partir do e-mail da conta (ou 'default'). */
 export function accountSlug(email?: string): string {
@@ -48,57 +54,65 @@ export function resetAccountKey(): void {
   keyPromise = undefined;
 }
 
-function fileFor(accountKey: string): string {
-  const safe = accountKey.replace(/[^a-z0-9._-]+/gi, '_') || 'default';
-  return path.join(DIR, `${safe}.json`);
+function parse(raw: string): VoiceDict {
+  const o = JSON.parse(raw);
+  return {
+    terms: Array.isArray(o?.terms) ? o.terms.filter((t: unknown) => typeof t === 'string' && t.trim()) : [],
+    replacements: Array.isArray(o?.replacements)
+      ? o.replacements
+          .filter((r: any) => r && typeof r.from === 'string' && typeof r.to === 'string' && r.from.trim())
+          .map((r: any) => ({ from: r.from, to: r.to }))
+      : [],
+    spellWords: Array.isArray(o?.spellWords)
+      ? o.spellWords.filter((w: unknown) => typeof w === 'string' && w.trim())
+      : [],
+  };
 }
 
-/** Lê o dicionário da conta (vazio se ausente/corrompido). Tolerante. */
-export function loadDictionary(accountKey: string): VoiceDict {
-  let raw: string;
+// Migração: junta os dicionários por-conta legados num só (uma vez).
+function migrateLegacy(): VoiceDict {
+  const merged: VoiceDict = { terms: [], replacements: [], spellWords: [] };
   try {
-    raw = fs.readFileSync(fileFor(accountKey), 'utf8');
-  } catch {
-    // Legado: entradas salvas antes da chave estabilizar (em 'default'). Não perde.
-    if (accountKey !== 'default') {
+    for (const f of fs.readdirSync(LEGACY_DIR)) {
+      if (!f.endsWith('.json')) continue;
       try {
-        raw = fs.readFileSync(fileFor('default'), 'utf8');
+        const d = parse(fs.readFileSync(path.join(LEGACY_DIR, f), 'utf8'));
+        merged.terms.push(...d.terms);
+        merged.replacements.push(...d.replacements);
+        merged.spellWords!.push(...(d.spellWords ?? []));
       } catch {
-        return { ...EMPTY };
+        /* ignora arquivo corrompido */
       }
-    } else {
-      return { ...EMPTY };
     }
-  }
-  try {
-    const o = JSON.parse(raw);
-    return {
-      terms: Array.isArray(o?.terms) ? o.terms.filter((t: unknown) => typeof t === 'string' && t.trim()) : [],
-      replacements: Array.isArray(o?.replacements)
-        ? o.replacements
-            .filter((r: any) => r && typeof r.from === 'string' && typeof r.to === 'string' && r.from.trim())
-            .map((r: any) => ({ from: r.from, to: r.to }))
-        : [],
-    };
   } catch {
-    return { ...EMPTY };
+    /* sem dir legado */
+  }
+  return merged;
+}
+
+/** Lê o dicionário da máquina (vazio se ausente/corrompido). Tolerante. */
+export function loadDictionary(): VoiceDict {
+  try {
+    return parse(fs.readFileSync(FILE, 'utf8'));
+  } catch {
+    return migrateLegacy(); // 1ª vez: aproveita o legado por-conta
   }
 }
 
-/** Grava o dicionário da conta (atômico). Normaliza/dedupe os termos. */
-export function saveDictionary(accountKey: string, dict: VoiceDict): void {
+/** Grava o dicionário da máquina (atômico). Normaliza/dedupe. */
+export function saveDictionary(dict: VoiceDict): void {
   const terms = dedupe((dict.terms ?? []).map((t) => t.trim()).filter(Boolean)).slice(0, MAX_TERMS);
   const replacements = (dict.replacements ?? [])
     .map((r) => ({ from: (r.from ?? '').trim(), to: (r.to ?? '').trim() }))
     .filter((r) => r.from);
-  const dst = fileFor(accountKey);
-  const tmp = `${dst}.tmp`;
+  const spellWords = dedupe((dict.spellWords ?? []).map((w) => w.trim()).filter(Boolean));
+  const tmp = `${FILE}.tmp`;
   try {
     fs.mkdirSync(DIR, { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify({ version: VERSION, terms, replacements }, null, 2));
-    fs.renameSync(tmp, dst);
+    fs.writeFileSync(tmp, JSON.stringify({ version: VERSION, terms, replacements, spellWords }, null, 2));
+    fs.renameSync(tmp, FILE);
   } catch (e) {
-    log(`voice-dict save fail (${accountKey}): ${String(e)}`);
+    log(`dict save fail: ${String(e)}`);
   }
 }
 

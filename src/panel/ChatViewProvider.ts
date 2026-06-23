@@ -18,6 +18,7 @@ import {
 import { resolveMinEffort, EFFORT_RANK } from '../session/RepoDirectives';
 import { VoiceSession } from '../cli/VoiceStream';
 import { AudioCapture } from '../cli/AudioCapture';
+import { Speller } from '../spell/Speller';
 import { correctText } from '../cli/TextCorrector';
 import {
   loadDictionary,
@@ -114,6 +115,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private effortOverride?: string;
   private permissionOverride?: string;
   private statusBar?: vscode.StatusBarItem;
+  // Botão de reload na status bar: sempre visível enquanto há painel do Cockpit
+  // aberto. Recupera o webview cinza/morto (mesma ação do watchdog) — funciona no
+  // host, então independe do renderer e das configs de ações do editor.
+  private reloadBar?: vscode.StatusBarItem;
   // Modelos descobertos ao vivo (modelo ativo do init + /v1/models quando há key).
   private discoveredModels = new Set<string>();
   private discoveryTried = false;
@@ -128,6 +133,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private voiceCapture?: AudioCapture;
   private voiceDict: VoiceDict = { terms: [], replacements: [] }; // dicionário ativo do ditado
 
+  // Corretor ortográfico (hunspell-asm no host). Lazy: instancia no 1º uso.
+  private speller?: Speller;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly memory: vscode.Memento,
@@ -137,6 +145,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
     this.statusBar = statusBar;
     this.updateStatusBar(false);
+    // Botão de reload (status bar, direita). Escondido até abrir um contexto.
+    this.reloadBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    this.reloadBar.text = '$(refresh)';
+    this.reloadBar.tooltip = vscode.l10n.t('Reload Cockpit view (fix gray/blank panel)');
+    this.reloadBar.command = 'tootega.reloadView';
+    this.updateReloadBar();
     setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
     void resolveAccountKey(this.claudePath()); // resolve a conta cedo (chave do dicionário de ditado)
     // Ping automático de keep-alive DESLIGADO: qualquer refresh via --resume grava
@@ -148,6 +162,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Encerra recursos de background (chamado no deactivate da extensão). */
   dispose(): void {
     this.cacheKeeper.stop();
+    this.reloadBar?.dispose();
+  }
+
+  /** Mostra o botão de reload enquanto houver ao menos um painel do Cockpit aberto. */
+  private updateReloadBar(): void {
+    if (!this.reloadBar) return;
+    if (this.panels.size > 0) this.reloadBar.show();
+    else this.reloadBar.hide();
   }
 
   /**
@@ -197,6 +219,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
       }),
+      askLanguage: () => this.askLanguageCode(),
     };
   }
 
@@ -438,21 +461,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     this.panels.set(tabId, panel);
     this.webviewSession.set(panel.webview, tabId);
+    this.updateReloadBar();
     const sub = panel.webview.onDidReceiveMessage((m: WebviewToHost) =>
       this.onWebviewMessage(m, panel.webview),
     );
     const vs = panel.onDidChangeViewState(() => {
       if (panel.active) this.setActive(tabId);
+      // Context key próprio p/ o botão de refresh no title bar (mais confiável que
+      // activeWebviewPanelId p/ webview panels). True quando ESTE painel está ativo.
+      void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', panel.active);
       // Reexibido: timers ficaram throttled enquanto oculto — rearma o relógio p/
       // o watchdog não confundir o gap com render morto.
       if (panel.visible) this.lastBeat.set(tabId, Date.now());
     });
+    // Painel recém-criado nasce ativo: arma o context key já.
+    void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', true);
     this.lastBeat.set(tabId, Date.now()); // arma já: painel recém-criado ainda não bateu
     panel.onDidDispose(() => {
       this.panels.delete(tabId);
       this.webviewSession.delete(panel.webview);
       this.lastBeat.delete(tabId);
       this.reloadGuard.delete(tabId);
+      this.updateReloadBar();
+      if (panel.active) void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', false);
       sub.dispose();
       vs.dispose();
     });
@@ -550,6 +581,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.justRecreated.add(tabId); // o init do painel novo deve forçar replay mesmo se busy
     this.bindPanel(panel, tabId);
     return true;
+  }
+
+  /**
+   * Reload manual (botão de refresh no title bar da aba): força o mesmo recovery
+   * do watchdog na aba ativa, mas IGNORANDO o cooldown/cap — é pedido explícito do
+   * usuário p/ ressuscitar um painel cinza/branco (renderer morto). Roda no host,
+   * então funciona mesmo com o renderer travado.
+   */
+  reloadActivePanel(): void {
+    let tabId: string | undefined;
+    for (const [id, p] of this.panels) {
+      if (p.active) {
+        tabId = id;
+        break;
+      }
+    }
+    tabId ??= this.activeTab;
+    if (!tabId || !this.panels.has(tabId)) return;
+    this.reloadGuard.delete(tabId); // zera o guard: ação do usuário, sem cap
+    try {
+      if (!this.recreatePanel(tabId)) {
+        const p = this.panels.get(tabId);
+        if (p) p.webview.html = this.getHtml(p.webview, 'chat', tabId);
+      }
+    } catch {
+      return;
+    }
+    this.lastBeat.set(tabId, Date.now()); // janela de graça p/ remontar
+    log(`Webview manual reload (${tabId})`);
   }
 
   /** Painel restaurado pelo serializer não tem vínculo de sessão: descarta. */
@@ -816,6 +876,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.sendConfig();
   }
 
+  /**
+   * Reload (botão ↻ no card): recupera o webview cinza/morto do contexto. Se o
+   * painel está aberto, recria-o (mesmo tabId/sessão intactos) e revela; se não,
+   * abre fresco. Roda no host → funciona mesmo com o renderer travado.
+   */
+  private reloadSession(sessionId: string): void {
+    for (const [id, s] of this.sessions) {
+      if (s.sessionId === sessionId || s.resumeId === sessionId) {
+        if (this.panels.has(id)) {
+          this.reloadGuard.delete(id); // pedido explícito: ignora cooldown/cap
+          if (this.recreatePanel(id)) this.panels.get(id)?.reveal();
+        } else {
+          this.openSessionPanel(id);
+        }
+        return;
+      }
+    }
+    this.openSession(sessionId); // não estava carregada: abre do zero
+  }
+
   /** Carrega o histórico de uma sessão numa aba específica e arma --resume. */
   private resumeInTab(tab: string, sessionId: string): void {
     const s = this.sessions.get(tab);
@@ -886,13 +966,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Dicionário da conta: termos viesam o STT (keyterms) + substituições aplicadas
     // ao texto. Chave resolvida (cacheada) p/ casar com o que o modal salvou.
     // Recarrega do disco a cada ditado (reflete edições do modal na hora).
-    const key = await resolveAccountKey(this.claudePath());
-    this.voiceDict = loadDictionary(key);
+    this.voiceDict = loadDictionary();
     // Keyterms = dicionário do usuário + nome do projeto (melhora vocabulário).
     const keyterms = buildKeyterms(this.voiceDict, path.basename(this.workspaceCwd()));
     dlog(
       'voice',
-      `dict conta=${key}: ${this.voiceDict.terms.length} termos, ${this.voiceDict.replacements.length} substituições | keyterms="${keyterms.slice(0, 240)}"`,
+      `dict: ${this.voiceDict.terms.length} termos, ${this.voiceDict.replacements.length} substituições | keyterms="${keyterms.slice(0, 240)}"`,
     );
     const capture = new AudioCapture({
       ffmpegPath: this.cfg().get<string>('ffmpegPath', '') || undefined,
@@ -954,7 +1033,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     // Aplica as substituições do dicionário ANTES e orienta o Haiku a preservar
     // os termos da conta (não "corrigir" nomes próprios/jargão).
-    const dict = loadDictionary(await resolveAccountKey(this.claudePath()));
+    const dict = loadDictionary();
     const pre = applyReplacements(t, dict);
     const corrected = await correctText(pre, correctorHints(dict));
     if (corrected) this.post({ kind: 'voiceCorrected', text: corrected }, tabId);
@@ -1044,25 +1123,64 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       : `Generating document with AI (model ${m}, effort ${e})…`;
   }
 
-  /** Carrega o dicionário da conta resolvida e envia ao modal. */
-  private async sendVoiceDict(tabId: string): Promise<void> {
-    const key = await resolveAccountKey(this.claudePath());
-    const d = loadDictionary(key);
-    this.post({ kind: 'voiceDict', data: { ...d, account: key } }, tabId);
+  /** Carrega o dicionário da máquina (ditado + corretor) e envia ao modal. */
+  private sendVoiceDict(tabId: string): void {
+    const d = loadDictionary();
+    this.post({ kind: 'voiceDict', data: { ...d, spellWords: this.getSpeller().userDict() } }, tabId);
   }
 
-  /** Salva o dicionário sob a conta resolvida e reflete no ditado em curso. */
-  private async saveVoiceDict(tabId: string, terms: string[], replacements: VoiceReplacement[]): Promise<void> {
-    const key = await resolveAccountKey(this.claudePath());
-    saveDictionary(key, { terms, replacements });
-    this.voiceDict = loadDictionary(key); // aplica já às próximas transcrições
-    this.post({ kind: 'voiceDict', data: { ...this.voiceDict, account: key } }, tabId);
+  /** Salva ditado + dicionário do corretor (arquivo único da máquina). */
+  private saveVoiceDict(
+    tabId: string,
+    terms: string[],
+    replacements: VoiceReplacement[],
+    spellWords?: string[],
+  ): void {
+    if (spellWords) this.getSpeller().setUserDict(spellWords);
+    const words = this.getSpeller().userDict();
+    saveDictionary({ terms, replacements, spellWords: words });
+    this.voiceDict = loadDictionary(); // aplica já às próximas transcrições
+    this.post({ kind: 'voiceDict', data: { ...this.voiceDict, spellWords: words } }, tabId);
+  }
+
+  /** Corretor ortográfico (lazy). Dicionários em dict/ (arquivos de dados). */
+  private getSpeller(): Speller {
+    if (!this.speller) {
+      const dir = vscode.Uri.joinPath(this.extensionUri, 'dict').fsPath;
+      // Palavras do corretor vêm do arquivo único da máquina (~/.claude/tootega).
+      this.speller = new Speller(dir, loadDictionary().spellWords ?? []);
+    }
+    return this.speller;
+  }
+
+  /** Checa um lote de palavras e devolve as erradas à aba que pediu. */
+  private async handleSpellCheck(tabId: string, words: string[]): Promise<void> {
+    const sp = this.getSpeller();
+    await sp.ensure();
+    this.post({ kind: 'spellResult', bad: sp.check(words) }, tabId);
+  }
+
+  /** Sugestões de correção (por idioma) p/ uma palavra. */
+  private async handleSpellSuggest(tabId: string, requestId: string, word: string): Promise<void> {
+    const sp = this.getSpeller();
+    await sp.ensure();
+    const s = sp.suggest(word);
+    this.post({ kind: 'spellSuggestResult', requestId, word, pt: s.pt, en: s.en }, tabId);
   }
 
   /** Idioma do ditado: locale do Cockpit -> código BCP47 curto (pt-BR -> pt). */
   private voiceLanguage(): string {
     const loc = resolveLocale();
     return (loc.split('-')[0] || 'en').toLowerCase();
+  }
+
+  /**
+   * Idioma das perguntas do agente (AskUserQuestion). Mesma prioridade do ditado:
+   * setting explícito `tootega.voiceLanguage` > locale do Cockpit. Código curto.
+   */
+  private askLanguageCode(): string {
+    const forced = this.cfg().get<string>('voiceLanguage', '').trim();
+    return ((forced || resolveLocale()).split('-')[0] || 'en').toLowerCase();
   }
 
   /** Título curto a partir da primeira fala do usuário no transcript. */
@@ -1278,8 +1396,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.postTaskTimings(bound ?? this.activeTab); // médias do escopo p/ calibrar o gauge
         this.autoResumeLast();
         this.postTabs();
-        // Painel recriado pelo watchdog (render morto): força replay mesmo se busy.
-        this.replayTab(bound ?? this.activeTab, this.justRecreated.delete(bound ?? this.activeTab));
+        // init = painel recém-montado (abrir/reabrir/recriar). Força replay do
+        // histórico SEMPRE, mesmo com a sessão ocupada: senão reabrir um contexto
+        // em execução mostra só o trecho que chega após reabrir. Os deltas em voo
+        // se anexam ao histórico repintado.
+        this.justRecreated.delete(bound ?? this.activeTab);
+        this.replayTab(bound ?? this.activeTab, true);
         if (bound) this.primeCommands(bound); // carrega slash commands sem esperar o 1º envio
         // Recupera o rascunho/ditado espelhado (ex.: tela branca durante o ditado).
         {
@@ -1373,6 +1495,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'resumeSession':
         this.openSession(m.sessionId);
         break;
+      case 'reloadSession':
+        this.reloadSession(m.sessionId);
+        break;
       case 'deleteSession':
         // Confirmação já feita no webview (modal elegante). Apaga direto.
         deleteSession(this.workspaceCwd(), m.sessionId);
@@ -1450,6 +1575,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'saveImage':
         void this.saveImage(m.mediaType, m.data);
         break;
+      case 'spellCheck':
+        void this.handleSpellCheck(srcTab, m.words);
+        break;
+      case 'spellSuggest':
+        void this.handleSpellSuggest(srcTab, m.requestId, m.word);
+        break;
+      case 'spellAdd': {
+        // Persiste no arquivo único da máquina (preserva ditado existente).
+        this.getSpeller().addWord(m.word);
+        const cur = loadDictionary();
+        saveDictionary({ ...cur, spellWords: this.getSpeller().userDict() });
+        break;
+      }
       case 'taskDuration': {
         // Amostra de duração: agrega/persiste segmentada por (modelo, effort,
         // verbosity, tipo) e devolve ao surface da aba as médias do escopo atual.
@@ -1476,10 +1614,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.exportConversation(srcTab, m.markdown, m.fileName, m.mode);
         break;
       case 'voiceDictGet':
-        void this.sendVoiceDict(srcTab);
+        this.sendVoiceDict(srcTab);
         break;
       case 'voiceDictSave':
-        void this.saveVoiceDict(srcTab, m.data.terms, m.data.replacements);
+        this.saveVoiceDict(srcTab, m.data.terms, m.data.replacements, m.data.spellWords);
         break;
       case 'pluginsRefresh':
         void this.sendPlugins(m.force);

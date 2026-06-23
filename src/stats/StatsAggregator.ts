@@ -81,6 +81,7 @@ export class StatsAggregator {
 
   private sessionCostUsd = 0;
   private lastTurnCostUsd = 0;
+  private lastTurnHitRate = 0; // cr/total do último turno consolidado
   private costIsEstimate = true;
 
   private sessionStartTs?: number;
@@ -346,6 +347,7 @@ export class StatsAggregator {
     });
     this.timeline = capTimeline(this.timeline);
 
+    this.lastTurnHitRate = readFrac;
     this.prevContextUsed = total;
     this.prevCacheRead = cr;
     this.lastTurnTs = now;
@@ -433,6 +435,8 @@ export class StatsAggregator {
     this.prevContextUsed = p.lastContextUsed;
     this.contextUsed = p.lastContextUsed; // restaura a barra de contexto de imediato
     this.prevCacheRead = p.lastCacheRead;
+    // Hit do último turno reconstruído do par persistido (cr/total).
+    this.lastTurnHitRate = p.lastContextUsed > 0 ? p.lastCacheRead / p.lastContextUsed : 0;
     this.lastTurnTs = p.lastTurnTs;
     this.perModel = new Map(Object.entries(p.perModel ?? {}));
     this.toolDecisions = new Map(Object.entries(p.toolDecisions ?? {}));
@@ -511,6 +515,7 @@ export class StatsAggregator {
       cacheCreateTokens: create,
       cacheReadTokens: read,
       cacheHitRate: hit,
+      lastTurnHitRate: this.turnCount > 0 ? this.lastTurnHitRate : undefined,
       cacheSavingsUsd,
       sessionCostUsd: this.sessionCostUsd,
       lastTurnCostUsd: this.lastTurnCostUsd,

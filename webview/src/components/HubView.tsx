@@ -28,12 +28,14 @@ interface Props {
   cliVersion?: string;
   cliLatest?: string;
   stats?: StatsSnapshot;
+  busy?: boolean; // contexto ativo processando um turno → spinner no card
   config?: SessionConfig;
   activeModel?: string;
   loggedIn: boolean;
   sessions: SessionInfo[];
   cwd?: string;
   activeSessionId?: string;
+  busySessions?: Set<string>; // sessionIds com turno em andamento → spinner no card
   onNewSession: () => void;
   onOpenFolder: (path: string) => void;
   onSettings: () => void;
@@ -43,10 +45,12 @@ interface Props {
   onLogout: () => void;
   onUpdate: () => void;
   onInstall: () => void;
+  onOpenLink: (href: string) => void;
   onModel: (model: string) => void;
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
   onResume: (id: string) => void;
+  onReload: (id: string) => void;
   onDelete: (session: SessionInfo) => void;
   onRename: (session: SessionInfo, name: string) => void;
   onDeleteAll: () => void;
@@ -63,12 +67,14 @@ export function HubView({
   cliVersion,
   cliLatest,
   stats,
+  busy,
   config,
   activeModel,
   loggedIn,
   sessions,
   cwd,
   activeSessionId,
+  busySessions,
   onNewSession,
   onOpenFolder,
   onSettings,
@@ -78,10 +84,12 @@ export function HubView({
   onLogout,
   onUpdate,
   onInstall,
+  onOpenLink,
   onModel,
   onEffort,
   onPermission,
   onResume,
+  onReload,
   onDelete,
   onRename,
   onDeleteAll,
@@ -111,16 +119,14 @@ export function HubView({
         {cockpitVersion && <span className="hub-ver">v{cockpitVersion}</span>}
         {cliVersion ? (
           <>
-            <Tooltip
-              text={
-                cliOutdated(cliVersion, cliLatest)
-                  ? t('about.cliOutdated', semver(cliLatest) ?? cliLatest ?? '')
-                  : t('about.cliUpToDate')
-              }
-            >
-              <span className={`hub-cli ${cliOutdated(cliVersion, cliLatest) ? 'outdated' : ''}`}>
+            <Tooltip text={t('about.cliReleaseNotes')}>
+              <button
+                type="button"
+                className={`hub-cli ${cliOutdated(cliVersion, cliLatest) ? 'outdated' : ''}`}
+                onClick={() => onOpenLink(CLI_RELEASES_URL)}
+              >
                 Claude CLI {semver(cliVersion) ?? cliVersion}
-              </span>
+              </button>
             </Tooltip>
             {cliOutdated(cliVersion, cliLatest) && (
               <Tooltip text={t('about.cliOutdated', semver(cliLatest) ?? cliLatest ?? '')}>
@@ -181,7 +187,7 @@ export function HubView({
           {cliMissing ? (
             <div className="muted">{t('status.cliMissing')}</div>
           ) : stats ? (
-            <ContextInfo t={t} locale={locale} stats={stats} />
+            <ContextInfo t={t} locale={locale} stats={stats} busy={busy} />
           ) : (
             <div className="muted">{t('ctxPanel.noStats')}</div>
           )}
@@ -237,7 +243,9 @@ export function HubView({
                   s={s}
                   t={t}
                   active={s.id === activeSessionId}
+                  running={busySessions?.has(s.id) ?? false}
                   onResume={onResume}
+                  onReload={onReload}
                   onDelete={onDelete}
                   onRename={onRename}
                 />
@@ -257,14 +265,18 @@ function SessionCard({
   s,
   t,
   active,
+  running,
   onResume,
+  onReload,
   onDelete,
   onRename,
 }: {
   s: SessionInfo;
   t: Translator;
   active: boolean;
+  running: boolean;
   onResume: (id: string) => void;
+  onReload: (id: string) => void;
   onDelete: (session: SessionInfo) => void;
   onRename: (session: SessionInfo, name: string) => void;
 }) {
@@ -320,14 +332,35 @@ function SessionCard({
     >
       <button
         type="button"
-        className={`ctx-card ${active ? 'active' : ''}`}
+        className={`ctx-card ${active ? 'active' : ''} ${running ? 'running' : ''}`}
         onClick={() => onResume(s.id)}
       >
-        <span className="ctx-card-title">{s.title || t('session.untitled')}</span>
+        <span className="ctx-card-title">
+          {running && (
+            <span
+              className="voice-spinner ctx-card-spinner"
+              role="status"
+              title={t('status.busy')}
+              aria-label={t('status.busy')}
+            />
+          )}
+          {s.title || t('session.untitled')}
+        </span>
         <span className="ctx-card-meta">
           {fmtDate(s.updatedAt)} · {s.messageCount} {t('sessions.messages')}
         </span>
         <span className="ctx-card-actions">
+          <span
+            className="ctx-card-reload"
+            title={t('sessions.reload')}
+            role="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReload(s.id);
+            }}
+          >
+            ↻
+          </span>
           <span
             className="ctx-card-edit-btn"
             title={t('sessions.rename')}
@@ -389,7 +422,17 @@ function CacheLife({ t, stats, now }: { t: Translator; stats: StatsSnapshot; now
   );
 }
 
-function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stats: StatsSnapshot }) {
+function ContextInfo({
+  t,
+  locale,
+  stats,
+  busy,
+}: {
+  t: Translator;
+  locale: string;
+  stats: StatsSnapshot;
+  busy?: boolean;
+}) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!stats.sessionStartTs) return;
@@ -410,7 +453,17 @@ function ContextInfo({ t, locale, stats }: { t: Translator; locale: string; stat
     <>
       <Tooltip className="tt-block" title={t('stats.context')} text={t('tip.ctx.context')} meta={meta(t, 'server', 'high')}>
         <div className="ctx-info-head">
-          <span className="col-title">{t('stats.context')}</span>
+          <span className="col-title">
+            {t('stats.context')}
+            {busy && (
+              <span
+                className="voice-spinner ctx-info-spinner"
+                role="status"
+                title={t('status.busy')}
+                aria-label={t('status.busy')}
+              />
+            )}
+          </span>
           <span className={`ctx-info-pct ${band}`}>{fmtPct(pct)}</span>
         </div>
         <div className="meter">
@@ -552,6 +605,9 @@ function semver(s?: string): string | undefined {
   const m = s.match(/(\d+)\.(\d+)\.(\d+)/);
   return m ? m[0] : undefined;
 }
+
+// Lista de releases do Claude CLI no GitHub.
+const CLI_RELEASES_URL = 'https://github.com/anthropics/claude-code/releases';
 
 function cliOutdated(installed?: string, latest?: string): boolean {
   const a = semver(installed);

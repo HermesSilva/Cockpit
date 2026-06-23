@@ -31,6 +31,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative; /* âncora da barra de busca flutuante (Ctrl+F) */
 }
 
 /* ---------- Tab bar (sessões paralelas) ---------- */
@@ -1476,6 +1477,18 @@ body {
 @keyframes voice-spin {
   to { transform: rotate(360deg); }
 }
+/* Spinner no card de contexto (hub): contexto ativo processando um turno.
+   Laranja (sobrescreve o azul padrão do .voice-spinner). */
+.ctx-info-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+  margin-left: 6px;
+  vertical-align: -1px;
+  border-color: color-mix(in srgb, #ff7a18 35%, transparent);
+  border-top-color: #ff7a18;
+}
 /* Input travado durante a correção: leve dimming. */
 .composer-input[readonly] {
   opacity: 0.7;
@@ -1543,6 +1556,196 @@ body {
   caret-color: var(--vscode-input-foreground);
   outline: none;
   scrollbar-width: thin; /* menos diferença de largura vs espelho ao rolar */
+}
+/* Palavra com erro ortográfico no overlay: underline ondulado + cor de erro. */
+.spell-error {
+  text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+  color: var(--vscode-editorError-foreground, #f14c4c);
+  /* Recebe o clique através do textarea transparente acima (pointer-events do
+     overlay é none): o handler usa selectionStart do textarea, não o span. */
+  cursor: pointer;
+}
+/* Dropdown de correção (posição fixa, ancorado na palavra). */
+.spell-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 160px;
+  max-width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-menu-background, #252526));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-menu-border, #454545));
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.spell-group + .spell-group {
+  border-top: 1px solid var(--vscode-editorWidget-border, #454545);
+  margin-top: 3px;
+  padding-top: 3px;
+}
+.spell-group-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  padding: 2px 6px;
+}
+.spell-item,
+.spell-action {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.spell-item:hover,
+.spell-action:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+}
+.spell-actions {
+  border-top: 1px solid var(--vscode-editorWidget-border, #454545);
+  margin-top: 3px;
+  padding-top: 3px;
+}
+.spell-action {
+  opacity: 0.85;
+}
+.spell-menu-empty {
+  padding: 4px 8px;
+  opacity: 0.6;
+}
+/* Loader do timeline: enquanto o host não reportou o status do CLI. Anel grande
+   laranja girando com o nome "Cockpit" no centro. */
+.cockpit-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+}
+.cockpit-loader-ring {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  border: 6px solid color-mix(in srgb, #ff7a18 22%, transparent);
+  border-top-color: #ff7a18;
+  animation: cockpit-load-spin 1s linear infinite;
+}
+.cockpit-loader-name {
+  /* Contra-gira p/ o texto ficar parado enquanto o anel roda. */
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ff7a18;
+  animation: cockpit-load-spin 1s linear infinite reverse;
+}
+@keyframes cockpit-load-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-loader-ring,
+  .cockpit-loader-name {
+    animation: none;
+  }
+}
+/* Barra de busca (Ctrl+F): flutua no topo-direito da área do chat. */
+.search-bar {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.search-input {
+  width: 180px;
+  padding: 3px 6px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #555));
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.search-input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+.search-scope {
+  display: flex;
+  border: 1px solid var(--vscode-input-border, #555);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.search-scope-btn {
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.search-scope-btn.on {
+  background: var(--tt-accent-soft, color-mix(in srgb, #ff7a18 22%, transparent));
+  color: var(--tt-accent-strong, #ff7a18);
+  font-weight: 600;
+}
+.search-count {
+  font-size: 11px;
+  opacity: 0.7;
+  min-width: 38px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.search-nav {
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.search-nav:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+}
+.search-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* Realce dos matches (CSS Custom Highlight API). */
+::highlight(cockpit-search) {
+  background: color-mix(in srgb, #ffd54a 55%, transparent);
+  color: inherit;
+}
+::highlight(cockpit-search-current) {
+  background: #ff7a18;
+  color: #1a1a1a;
 }
 .composer-input::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground, #888));
@@ -2592,6 +2795,85 @@ body {
   max-height: 52vh;
   overflow-y: auto;
 }
+/* Abas (um dicionário por aba). */
+.voicedict-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, #454545);
+  margin: 4px 0 10px;
+}
+.voicedict-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  opacity: 0.7;
+}
+.voicedict-tab.on {
+  opacity: 1;
+  font-weight: 600;
+  border-bottom-color: var(--tt-accent-strong, #ff7a18);
+}
+.voicedict-tab-count {
+  font-size: 10px;
+  opacity: 0.7;
+  background: rgba(127, 127, 127, 0.22);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+/* Lista editável (linhas com input + remover). */
+.voicedict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.voicedict-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.voicedict-row-x {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.voicedict-row-x:hover {
+  opacity: 1;
+  background: var(--vscode-charts-red, #f85149);
+  color: #fff;
+}
+.voicedict-addrow {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--vscode-input-border, #555);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.voicedict-addrow:hover {
+  opacity: 1;
+  border-color: var(--tt-accent-strong, #ff7a18);
+  color: var(--tt-accent-strong, #ff7a18);
+}
 .voicedict-sec-title {
   font-weight: 700;
   font-size: 12px;
@@ -2656,6 +2938,19 @@ body {
 .voicedict-rep-to {
   font-weight: 600;
   flex: 1;
+}
+/* Texto do chip clicável p/ editar (corretor): herda o visual do chip. */
+.voicedict-chip-edit {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.voicedict-chip-edit:hover {
+  text-decoration: underline;
 }
 .voicedict-chip-x {
   background: none;
@@ -3428,6 +3723,21 @@ body {
   background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 12%, var(--vscode-editorWidget-background));
   box-shadow: inset 0 0 0 1px var(--vscode-focusBorder, #3794ff);
 }
+/* Contexto rodando: borda accent fina à esquerda (igual aos cards de tool busy). */
+.ctx-card.running {
+  border-left: 2px solid var(--vscode-charts-blue, #3794ff);
+}
+/* Spinner inline antes do título do card. Laranja. */
+.ctx-card-spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  border-color: color-mix(in srgb, #ff7a18 35%, transparent);
+  border-top-color: #ff7a18;
+}
 .ctx-card-title {
   font-size: 12px;
   font-weight: 600;
@@ -3489,6 +3799,7 @@ body {
   gap: 2px;
 }
 .ctx-card-edit-btn,
+.ctx-card-reload,
 .ctx-card-del {
   font-size: 12px;
   line-height: 1;
@@ -3501,11 +3812,13 @@ body {
 }
 /* Card sob o mouse: ações totalmente opacas, com fundo sólido p/ contraste. */
 .ctx-card:hover .ctx-card-edit-btn,
+.ctx-card:hover .ctx-card-reload,
 .ctx-card:hover .ctx-card-del {
   opacity: 1;
   background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-editorWidget-background));
 }
-.ctx-card:hover .ctx-card-edit-btn:hover {
+.ctx-card:hover .ctx-card-edit-btn:hover,
+.ctx-card:hover .ctx-card-reload:hover {
   background: var(--vscode-focusBorder, #3794ff);
   color: #fff;
 }
@@ -3593,7 +3906,16 @@ body {
   opacity: 0.85;
   color: var(--vscode-foreground);
   font-variant-numeric: tabular-nums;
-  cursor: default;
+  /* Reset de <button>: parece texto/link, abre as notas da versão no GitHub. */
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.hub-cli:hover {
+  text-decoration: underline;
+  opacity: 1;
 }
 .hub-cli.outdated {
   color: var(--vscode-charts-red, #f85149);

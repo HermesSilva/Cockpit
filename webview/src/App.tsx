@@ -28,8 +28,10 @@ import { PermissionModal } from './components/PermissionModal';
 import { AskQuestionModal } from './components/AskQuestionModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ScrollMarkers } from './components/ScrollMarkers';
+import { SearchBar } from './components/SearchBar';
 import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
 import { buildConversationMd, suggestedFileName } from './util/exportMd';
+import { resetSpell } from './spell/spell';
 
 export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: string }) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -54,6 +56,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // null = segue as settings; boolean = override do botão "expandir/colapsar tudo".
   const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [showSearch, setShowSearch] = useState(false);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const atBottomRef = useRef(true); // estado vivo p/ o auto-scroll (sem stale closure)
   const t = useMemo(() => createTranslator(state.locale), [state.locale]);
@@ -63,6 +66,20 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const tab =
     view === 'hub' ? activeTab(state) : state.tabs.find((tb) => tb.id === sessionId) ?? activeTab(state);
   const items = tab?.items ?? [];
+
+  // Ctrl+F: abre a barra de busca (só no chat, não no hub).
+  useEffect(() => {
+    if (view === 'hub') return;
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowSearch(true);
+      }
+    };
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
+  }, [view]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -157,7 +174,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
     send({
       kind: 'exportMd',
-      markdown: buildConversationMd(items, t, title),
+      markdown: buildConversationMd(items, t, title, state.config?.userName),
       fileName: suggestedFileName(title),
       mode,
     });
@@ -204,6 +221,10 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   };
 
   const cliMissing = !state.cli.available;
+  // Carregando: host ainda não reportou o status do CLI, OU a aba ainda não
+  // recebeu o histórico (reabrir contexto). Evita o flash do banner e do timeline
+  // vazio — mostra o loader do Cockpit. Banner só após o status do CLI.
+  const cliLoading = !state.cli.checked || (!!tab?.sessionId && !tab.historyLoaded);
 
   if (view === 'hub') {
     return (
@@ -216,12 +237,20 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           cliVersion={state.cli.version}
           cliLatest={state.cli.latest}
           stats={tab?.stats}
+          busy={tab?.status === 'busy'}
           config={state.config}
           activeModel={tab?.stats?.model ?? tab?.session?.model}
           loggedIn={state.loggedIn}
           sessions={state.sessions}
           cwd={state.sessionsCwd}
           activeSessionId={tab?.sessionId ?? tab?.session?.sessionId}
+          busySessions={
+            new Set(
+              state.tabs
+                .filter((tb) => tb.status === 'busy' && tb.sessionId)
+                .map((tb) => tb.sessionId as string),
+            )
+          }
           onNewSession={() => {
             send({ kind: 'newTab' });
             send({ kind: 'openEditor' });
@@ -234,6 +263,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onLogout={() => send({ kind: 'logoutCli' })}
           onUpdate={() => send({ kind: 'updateCli' })}
           onInstall={() => send({ kind: 'installCli' })}
+          onOpenLink={(href) => send({ kind: 'openLink', href })}
           onModel={onModel}
           onEffort={onEffort}
           onPermission={onPermissionMode}
@@ -241,6 +271,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onResume(id);
             send({ kind: 'openEditor' });
           }}
+          onReload={(id) => send({ kind: 'reloadSession', sessionId: id })}
           onDelete={onAskDelete}
           onRename={(s, name) => send({ kind: 'renameSession', sessionId: s.id, name })}
           onDeleteAll={() => setConfirmDeleteAll(true)}
@@ -290,14 +321,6 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onClose={() => setShowPlugins(false)}
           />
         )}
-        {showVoiceDict && (
-          <VoiceDictModal
-            t={t}
-            data={voiceDict}
-            onSave={(d) => send({ kind: 'voiceDictSave', data: d })}
-            onClose={() => setShowVoiceDict(false)}
-          />
-        )}
       </>
     );
   }
@@ -305,7 +328,15 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   return (
     <ImageViewerContext.Provider value={setViewerSrc}>
     <div className="app">
-      {(cliMissing || tab?.authRequired) && (
+      {showSearch && (
+        <SearchBar
+          t={t}
+          scrollRef={scrollRef}
+          itemsKey={items.length}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
+      {!cliLoading && (cliMissing || tab?.authRequired) && (
         <CliMissing
           t={t}
           mode={cliMissing ? 'missing' : 'login'}
@@ -318,6 +349,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       )}
 
       <div className="scroll-wrap">
+        {cliLoading ? (
+          <div className="cockpit-loader" role="status" aria-label="Cockpit">
+            <div className="cockpit-loader-ring">
+              <span className="cockpit-loader-name">Cockpit</span>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="scroll" ref={scrollRef} onClick={onContentClick} onScroll={onScroll}>
           <Timeline
             items={items}
@@ -388,6 +427,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           >
             ↓
           </button>
+        )}
+        </>
         )}
       </div>
 
@@ -464,6 +505,18 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             if (lastSendRef.current) setDraftRestore(lastSendRef.current); // devolve o texto ao input
             setConfirmEffort(null);
           }}
+        />
+      )}
+      {/* Dicionário (ditado + corretor): aberto pelo botão do composer (chat). */}
+      {showVoiceDict && (
+        <VoiceDictModal
+          t={t}
+          data={voiceDict}
+          onSave={(d) => {
+            send({ kind: 'voiceDictSave', data: d });
+            resetSpell(); // dicionário do corretor mudou → re-checa o overlay
+          }}
+          onClose={() => setShowVoiceDict(false)}
         />
       )}
     </div>

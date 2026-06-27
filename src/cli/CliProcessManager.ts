@@ -135,9 +135,17 @@ export class CliProcessManager extends EventEmitter {
     }
 
     const useShell = process.platform === 'win32';
+    // Auto mode (classifier do CLI decide allow/deny) é opt-in em Bedrock/Vertex/
+    // Foundry via env (2.1.158/159). Defensivo: liga a flag quando o modo é 'auto'
+    // p/ funcionar uniforme entre provedores. NÃO burla permissão — só habilita o
+    // modo nativo do CLI, que ainda roteia o que precisa pelo control_request.
+    const env =
+      this.opts.permissionMode === 'auto'
+        ? { ...process.env, CLAUDE_CODE_ENABLE_AUTO_MODE: '1' }
+        : process.env;
     const proc = spawn(shellSafe(this.opts.claudePath, useShell), args, {
       cwd: this.opts.cwd,
-      env: process.env,
+      env,
       shell: useShell, // resolve 'claude.cmd' no Windows e evita EINVAL no Node 22+
       // Fora do Windows, dá ao `claude` um GRUPO de processos próprio (detached) p/
       // encerrar a ÁRVORE inteira (claude + subagents) via kill(-pid) no stop().

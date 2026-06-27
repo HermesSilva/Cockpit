@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StatsAggregator } from '../src/stats/StatsAggregator';
+import { StatsAggregator, normalizeModel, deriveContextLimit } from '../src/stats/StatsAggregator';
 
 // Helpers para forjar eventos no shape que o ingest espera.
 const initEv = (model: string) => ({ type: 'system', subtype: 'init', model } as any);
@@ -37,6 +37,64 @@ describe('StatsAggregator — consolidação de turno', () => {
     expect(s.cacheAlive).toBe(true);
     expect(s.cacheExpiresAt).toBeGreaterThan(Date.now());
     expect(s.cacheLifeMs).toBe(60 * 60_000);
+  });
+});
+
+describe('StatsAggregator — robustez do parser', () => {
+  it('normalizeModel colapsa sufixos [1m] repetidos, mantém limite 1M', () => {
+    expect(normalizeModel('claude-opus-4-8[1m][1m]')).toBe('claude-opus-4-8[1m]');
+    expect(normalizeModel('claude-opus-4-8[1M][1m]')).toBe('claude-opus-4-8[1M]');
+    expect(normalizeModel('claude-opus-4-8')).toBe('claude-opus-4-8');
+    expect(normalizeModel(undefined)).toBeUndefined();
+    // O limite continua 1M mesmo após o colapso.
+    expect(deriveContextLimit(normalizeModel('claude-opus-4-8[1m][1m]'))).toBe(1_000_000);
+  });
+
+  it('o modelo de sessão é guardado já normalizado', () => {
+    const agg = new StatsAggregator(0);
+    agg.ingest(initEv('claude-opus-4-8[1m][1m]'));
+    expect(agg.snapshot().model).toBe('claude-opus-4-8[1m]');
+    expect(agg.snapshot().contextLimit).toBe(1_000_000);
+  });
+
+  it('usage malformado (NaN/negativo) não polui os totais', () => {
+    const agg = new StatsAggregator(0);
+    agg.beginTurn();
+    agg.ingest(initEv('claude-opus-4-8'));
+    agg.ingest(
+      assistantEv('claude-opus-4-8', {
+        input_tokens: NaN as any,
+        output_tokens: -5,
+        cache_creation_input_tokens: 100,
+        cache_read_input_tokens: undefined as any,
+      }),
+    );
+    agg.endTurn();
+    const s = agg.snapshot();
+    expect(s.inputTokens).toBe(0); // NaN -> 0
+    expect(s.outputTokens).toBe(0); // negativo -> 0
+    expect(s.cacheCreateTokens).toBe(100);
+    expect(Number.isFinite(s.sessionCostUsd)).toBe(true);
+  });
+});
+
+describe('StatsAggregator — log de negações (E5)', () => {
+  it('registra negações com razão (mais recente primeiro) e sobrevive ao round-trip', () => {
+    const agg = new StatsAggregator(0);
+    agg.recordDecision('Bash', 'allow');
+    agg.recordDecision('Write', 'deny', '  não mexa nesse arquivo  ');
+    agg.recordDecision('Bash', 'deny'); // sem razão
+
+    const s = agg.snapshot();
+    expect(s.recentDenials).toHaveLength(2);
+    expect(s.recentDenials?.[0].tool).toBe('Bash'); // último primeiro
+    expect(s.recentDenials?.[1]).toMatchObject({ tool: 'Write', reason: 'não mexa nesse arquivo' });
+    // Aceitação por ferramenta continua contando a negação.
+    expect(s.toolAcceptance?.find((d) => d.tool === 'Bash')?.deny).toBe(1);
+
+    const restored = new StatsAggregator(0);
+    restored.hydrate(agg.serialize('sess-deny'));
+    expect(restored.snapshot().recentDenials).toHaveLength(2);
   });
 });
 

@@ -12,5 +12,8 @@
   "Claude Code CLI not found. The Cockpit needs it to run.": "Claude Code CLI não encontrado. O Cockpit precisa dele para funcionar.",
   "Install": "Instalar",
   "Documentation": "Documentação",
-  "In the terminal, use /login to sign in. Then click \"Re-check\".": "No terminal, use /login para entrar. Depois clique em \"Verificar novamente\"."
+  "In the terminal, use /login to sign in. Then click \"Re-check\".": "No terminal, use /login para entrar. Depois clique em \"Verificar novamente\".",
+  "Claude process exited unexpectedly (code {0}) before finishing the turn. Send again to continue.": "O processo do Claude encerrou inesperadamente (código {0}) antes de concluir o turno. Envie novamente para continuar.",
+  "Connection was unstable — the turn may be incomplete. Send again if needed.{0}": "A conexão ficou instável — o turno pode estar incompleto. Envie novamente se precisar.{0}",
+  "The turn ended with an error.{0}": "O turno terminou com erro.{0}"
 }

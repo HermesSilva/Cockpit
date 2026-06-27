@@ -174,6 +174,14 @@ export const en = {
     'Estimated — the CLI has not yet reported a confirmed cost for this session. With "~" it is a price-table estimate; without "~" it is the CLI\'s real cost (matches /cost).',
   'tip.ctx.toolAcceptance':
     'Share of tool permission requests you allowed vs. denied this session, per tool.',
+  'tip.ctx.activity': 'Counters that survive reopening/resuming the context.',
+  'tip.ctx.peak': 'Largest context size reached this session (in tokens).',
+  'tip.ctx.compactions':
+    'How many times the context was condensed between turns to free up room (detected when the total shrinks).',
+  'tip.ctx.resets':
+    'How many times the prompt cache expired from idleness (>1h) and the prefix had to be re-written, plus the cost re-paid.',
+  'tip.ctx.denials':
+    'Tool requests you denied this session, newest first (with the reason when given). Access-control audit.',
   // Hint provenance footer (colored chips).
   'meta.origin.label': 'Source',
   'meta.origin.server': 'Server (via CLI)',
@@ -210,6 +218,7 @@ export const en = {
 
   'status.idle': 'Idle',
   'status.busy': 'Working…',
+  'background.title': 'Running in the background',
   'status.model': 'Model',
   'status.mode': 'Mode',
   'status.cliMissing': 'CLI not found',
@@ -273,6 +282,22 @@ export const en = {
   'usage.est.waiting':
     'Local estimate — real account limits appear after Claude refreshes the statusline (use the CLI once).',
   'usage.enableTracking': 'Enable live tracking',
+  'usage.breakdown': 'Breakdown (7 days)',
+  'usage.breakdown.byModel': 'By model',
+  'usage.breakdown.bySource': 'By source',
+  'usage.breakdown.note': 'Table estimate from this machine\'s sessions — this machine only, does not include other devices.',
+  'usage.source.main': 'Main',
+  'usage.source.subagent': 'Subagents',
+  'usage.otel': 'Telemetry (OTEL)',
+  'usage.otel.live': 'live',
+  'usage.otel.loc': 'Lines of code (+/−)',
+  'usage.otel.costByModel': 'Real cost by model',
+  'usage.otel.locByModel': 'Lines by model',
+  'usage.otel.lines': 'lines',
+  'usage.otel.sessions': 'Sessions',
+  'usage.otel.commits': 'Commits',
+  'usage.otel.prs': 'Pull requests',
+  'usage.otel.decisions': 'Edit decisions',
   'tip.stop.title': 'Interrupt',
   'tip.stop.desc': 'Stop the agent now. The current turn ends and the session stays open.',
 
@@ -352,6 +377,14 @@ export const en = {
   'stats.tokens.output': 'Output',
   'stats.session.duration': 'Duration',
   'stats.tools.acceptance': 'Tool acceptance',
+  'stats.activity': 'Session activity',
+  'stats.activity.turns': 'Turns',
+  'stats.activity.peak': 'Peak context',
+  'stats.activity.compactions': 'Compactions',
+  'stats.activity.resets': 'Cache resets',
+  'stats.activity.recache': 'Re-cache paid',
+  'stats.denials': 'Recent denials',
+  'alert.compacted': 'Context compacted ({0}): {1} tokens condensed to free up room.',
 
   'ctxPanel.title': 'Context',
   'ctxPanel.contexts': 'Saved contexts',

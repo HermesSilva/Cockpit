@@ -21,6 +21,13 @@ export interface ToolDecision {
   deny: number;
 }
 
+/** Uma negação de permissão registrada (log de negações — E5/auto-mode). */
+export interface DenialEvent {
+  tool: string;
+  ts: number; // epoch ms
+  reason?: string; // feedback do usuário ao negar (quando houver)
+}
+
 /** Uso acumulado segmentado por modelo (a sessão pode trocar de modelo). */
 export interface ModelUsage {
   model: string;
@@ -73,6 +80,8 @@ export interface StatsSnapshot {
   costIsEstimate: boolean;
   // Aceitação de ferramentas (por tool_name, acumulado na sessão)
   toolAcceptance?: ToolDecision[];
+  // Log das negações de permissão mais recentes (E5) — as últimas primeiro.
+  recentDenials?: DenialEvent[];
   // --- Persistência/coerência entre reaberturas do contexto ---
   turnCount?: number; // turnos consolidados na sessão
   reopenCount?: number; // quantas vezes o contexto foi reaberto/retomado
@@ -145,12 +154,44 @@ export interface UsageBucket {
   tokens?: number; // estimativa local (quando não há % real)
   usd?: number;
 }
+/** Uma fatia do detalhamento de uso (por modelo ou por origem). */
+export interface UsageSlice {
+  key: string; // id do modelo, ou 'main' | 'subagent'
+  usd: number;
+  tokens: number;
+}
+
+/** Detalhamento local da janela de 7 dias (sempre estimativa de tabela). */
+export interface UsageBreakdown {
+  byModel: UsageSlice[];
+  bySource: UsageSlice[]; // main vs. subagent (sidechain)
+}
+
 export interface UsageData {
   account: UsageAccount;
   buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; sevenDaySonnet?: UsageBucket };
   source: 'api' | 'statusline' | 'stream' | 'estimate'; // origem dos %
   trackingEnabled: boolean; // wrapper de statusline instalado (captura rate_limits real)
+  // Detalhamento local 7d (por modelo / origem) — estimativa, sempre presente.
+  breakdown?: UsageBreakdown;
+  // Telemetria OTEL (opt-in) agregada pelo receiver local — ausente se desligado.
+  otel?: OtelStats;
   generatedAt: string; // ISO 8601
+}
+
+/** Estatísticas agregadas da telemetria OTEL do Claude Code (opt-in, local). */
+export interface OtelStats {
+  enabled: boolean; // receiver ligado e escutando
+  endpoint?: string; // ex.: http://127.0.0.1:4318 (p/ o usuário apontar o OTEL)
+  sinceTs?: number; // epoch ms do início da coleta
+  linesAdded?: number; // claude_code.lines_of_code.count (type=added)
+  linesRemoved?: number; // claude_code.lines_of_code.count (type=removed)
+  locByModel?: UsageSlice[]; // LOC por modelo (tokens = linhas)
+  costByModel?: UsageSlice[]; // custo REAL por modelo (claude_code.cost.usage, USD)
+  sessionCount?: number; // claude_code.session.count
+  commitCount?: number; // claude_code.commit.count
+  prCount?: number; // claude_code.pull_request.count
+  toolDecisions?: { tool: string; accept: number; reject: number }[]; // claude_code.code_edit_tool.decision
 }
 
 export interface SessionConfig {
@@ -235,6 +276,13 @@ export interface TabInfo {
   sessionId?: string; // id do transcript da sessão (casa com SessionInfo.id)
 }
 
+// Uma tarefa em background em andamento (Workflow / tool com run_in_background).
+export interface BackgroundTask {
+  id: string; // tool_use id que a lançou (casa com o <tool-use-id> da notificação)
+  tool: string; // 'Workflow' | 'Task' | 'Bash' | …
+  label: string; // o que está fazendo (nome do workflow / descrição / comando)
+}
+
 // host -> webview. Toda mensagem pode carregar `tab` (id da aba de origem):
 // mensagens de conversa/stats são roteadas para o estado daquela aba; mensagens
 // globais (ready/config/cliStatus/locale/sessions/tabs) vêm sem `tab`.
@@ -285,6 +333,11 @@ type HostMsg =
   | { kind: 'statsTimeline'; timeline: TimelineSample[]; compactions: CompactionEvent[] }
   | { kind: 'turnComplete'; costUsd?: number; usage?: Usage }
   | { kind: 'busy'; busy: boolean }
+  // Tarefa(s) em background (Workflow / run_in_background) ainda executando após o
+  // turno terminar: o `result` zera o busy, mas o trabalho continua. Mantém o
+  // indicador de "executando" na timeline e no card do Hub até a notificação chegar,
+  // e lista o que cada processo está fazendo (rótulo) para o usuário ficar ciente.
+  | { kind: 'background'; tasks: BackgroundTask[] }
   | { kind: 'error'; message: string }
   | { kind: 'sessions'; sessions: SessionInfo[]; cwd: string }
   | { kind: 'slashCommands'; commands: string[] }

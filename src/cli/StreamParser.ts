@@ -2,6 +2,12 @@
 // Tolerante: linhas inválidas são descartadas com aviso, nunca quebram a UI.
 import type { ClaudeEvent } from '../../shared/events';
 
+// Teto do buffer sem quebra de linha: um evento NDJSON legítimo do CLI cabe bem
+// abaixo disto. Acima = linha corrompida/sem '\n' (ruído binário, processo travado):
+// descarta o acúmulo p/ não vazar memória nem travar a UI. Eventos seguintes (após
+// o próximo '\n') voltam a ser processados normalmente.
+const MAX_BUFFER = 64 * 1024 * 1024;
+
 export class StreamParser {
   private buffer = '';
 
@@ -17,6 +23,7 @@ export class StreamParser {
       const ev = this.parseLine(line);
       if (ev) events.push(ev);
     }
+    if (this.buffer.length > MAX_BUFFER) this.buffer = ''; // linha sem '\n' gigante: descarta
     return events;
   }
 

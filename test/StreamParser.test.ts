@@ -91,4 +91,13 @@ describe('StreamParser', () => {
     const evs = p.push('{"type":"text","text":"linha1\\nlinha2"}\n');
     expect(evs[0]).toMatchObject({ type: 'text', text: 'linha1\nlinha2' });
   });
+
+  it('descarta acúmulo gigante sem newline e volta a processar eventos seguintes', () => {
+    const p = new StreamParser();
+    // >64MB sem '\n' (linha corrompida / ruído binário): não vaza memória.
+    expect(p.push('x'.repeat(70 * 1024 * 1024))).toEqual([]);
+    // O buffer foi descartado; um evento legítimo após o próximo '\n' é processado.
+    const evs = p.push('{"type":"recuperado"}\n');
+    expect(evs).toEqual([{ type: 'recuperado' }]);
+  });
 });

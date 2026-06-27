@@ -33,8 +33,15 @@ function textOfContent(content: unknown): string {
 function isMetaUserText(text: string): boolean {
   const t = clean(text);
   if (!t) return true;
-  // pula wrappers de comando / system-reminders persistidos no transcript
-  return t.startsWith('<command-') || t.startsWith('<local-command') || t.startsWith('<system-reminder');
+  // pula wrappers de comando / system-reminders / notificações de tarefa em
+  // background (injetadas pela própria CLI) persistidos no transcript — não são
+  // mensagens do usuário, não devem virar bolha "Hermes" com XML cru.
+  return (
+    t.startsWith('<command-') ||
+    t.startsWith('<local-command') ||
+    t.startsWith('<system-reminder') ||
+    t.startsWith('<task-notification')
+  );
 }
 
 /** Lista as sessões do cwd, mais recentes primeiro (limit padrão 50). */

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Translator } from '../i18n';
 import type { StatsSnapshot, SessionConfig, SessionInfo } from '../../../shared/protocol';
-import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort } from '../util/format';
+import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort, fmtClock } from '../util/format';
 import type { TooltipRow } from './Tooltip';
 import { Controls } from './Controls';
 import { Tooltip, type TooltipMeta } from './Tooltip';
@@ -362,6 +362,7 @@ function SessionCard({
         </span>
         <span className="ctx-card-meta">
           {fmtDate(s.updatedAt)} · {s.messageCount} {t('sessions.messages')}
+          {s.sizeBytes != null && <span className="muted"> · {fmtBytes(s.sizeBytes)}</span>}
         </span>
         <span className="ctx-card-actions">
           <span
@@ -566,6 +567,47 @@ function ContextInfo({
         </div>
       </div>
 
+      {/* Atividade da sessão: contadores persistentes (turnos, pico, compactações,
+          resets de cache). Só aparece quando há ao menos um turno consolidado. */}
+      {(stats.turnCount ?? 0) > 0 && (
+        <div className="ctx-info-grid">
+          <div>
+            <Tooltip className="tt-block" title={t('stats.activity')} text={t('tip.ctx.activity')} meta={meta(t, 'computed', 'medium')}>
+              <div className="stats-section-title">{t('stats.activity')}</div>
+            </Tooltip>
+            <Row k={t('stats.activity.turns')} v={fmtInt(stats.turnCount ?? 0, locale)} />
+            {stats.peakContextUsed != null && stats.peakContextUsed > 0 && (
+              <Row
+                k={t('stats.activity.peak')}
+                v={`${fmtCompact(stats.peakContextUsed)} (${fmtPct(Math.min(1, stats.peakContextUsed / (stats.contextLimit || 1)))})`}
+                tip={t('tip.ctx.peak')}
+                tipMeta={meta(t, 'computed', 'high')}
+              />
+            )}
+            {(stats.compactionCount ?? 0) > 0 && (
+              <Row
+                k={t('stats.activity.compactions')}
+                v={fmtInt(stats.compactionCount ?? 0, locale)}
+                tip={t('tip.ctx.compactions')}
+                tipMeta={meta(t, 'computed', 'medium')}
+              />
+            )}
+            {(stats.cacheResetCount ?? 0) > 0 && (
+              <Row
+                k={t('stats.activity.resets')}
+                v={
+                  stats.cacheRecacheCostUsd != null && stats.cacheRecacheCostUsd > 0
+                    ? `${stats.cacheResetCount} · ${fmtUsdShort(stats.cacheRecacheCostUsd)}`
+                    : String(stats.cacheResetCount ?? 0)
+                }
+                tip={t('tip.ctx.resets')}
+                tipMeta={meta(t, 'computed', 'medium')}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Aceitação de ferramentas (só exibe se houve decisões) */}
       {toolRows.length > 0 && (
         <div className="ctx-tool-acceptance">
@@ -587,6 +629,24 @@ function ContextInfo({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Log de negações de permissão (E5) — auditoria das últimas recusas. */}
+      {stats.recentDenials && stats.recentDenials.length > 0 && (
+        <div className="ctx-denials">
+          <Tooltip className="tt-block" title={t('stats.denials')} text={t('tip.ctx.denials')} meta={meta(t, 'local', 'high')}>
+            <div className="stats-section-title">{t('stats.denials')}</div>
+          </Tooltip>
+          {stats.recentDenials.slice(0, 8).map((d, i) => (
+            <div key={`${d.ts}-${i}`} className="stat-row stat-denial">
+              <span className="stat-k stat-tool-name" title={d.reason || undefined}>
+                <span className="stat-denial-x">✕</span> {d.tool}
+                {d.reason && <span className="muted stat-denial-reason"> · {d.reason}</span>}
+              </span>
+              <span className="stat-v muted">{fmtClock(d.ts)}</span>
+            </div>
+          ))}
         </div>
       )}
     </>

@@ -148,6 +148,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     lastSendRef.current = { text, images };
     const previews = images.map((i) => `data:${i.mediaType};base64,${i.data}`);
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
+    dispatch({ type: 'clearError' }); // novo envio: limpa aviso de erro/abort anterior
     send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
   };
   const onStop = () => {
@@ -237,7 +238,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           cliVersion={state.cli.version}
           cliLatest={state.cli.latest}
           stats={tab?.stats}
-          busy={tab?.status === 'busy'}
+          busy={tab?.status === 'busy' || tab?.bgBusy === true}
           config={state.config}
           activeModel={tab?.stats?.model ?? tab?.session?.model}
           loggedIn={state.loggedIn}
@@ -247,7 +248,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           busySessions={
             new Set(
               state.tabs
-                .filter((tb) => tb.status === 'busy' && tb.sessionId)
+                .filter((tb) => (tb.status === 'busy' || tb.bgBusy === true) && tb.sessionId)
                 .map((tb) => tb.sessionId as string),
             )
           }
@@ -368,7 +369,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             userName={state.config?.userName}
             todos={tab?.todos ?? []}
             answers={tab?.answers}
-            busy={tab?.status === 'busy'}
+            busy={tab?.status === 'busy' || tab?.bgBusy === true}
             stats={tab?.stats}
             onRewind={tab?.status === 'busy' ? undefined : (idx) => setConfirmRewind(idx)}
             verbosity={state.config?.verbosity}
@@ -432,6 +433,39 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         </>
         )}
       </div>
+
+      {state.error && (
+        <div className="turn-error" role="alert">
+          <span className="turn-error-text">{state.error}</span>
+          <button
+            type="button"
+            className="turn-error-x"
+            title={t('common.close')}
+            onClick={() => dispatch({ type: 'clearError' })}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {tab?.bgTasks && tab.bgTasks.length > 0 && (
+        <div className="bg-tasks" role="status" aria-label={t('background.title')}>
+          <div className="bg-tasks-head">
+            <span className="voice-spinner bg-tasks-spinner" aria-hidden="true" />
+            <span className="bg-tasks-title">
+              {t('background.title')} ({tab.bgTasks.length})
+            </span>
+          </div>
+          <ul className="bg-tasks-list">
+            {tab.bgTasks.map((task) => (
+              <li key={task.id} className="bg-task" title={task.label}>
+                <span className="bg-task-tool">{task.tool}</span>
+                <span className="bg-task-label">{task.label}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <Composer
         t={t}

@@ -8,6 +8,7 @@ import type {
   ModelUsage,
   TimelineSample,
   CompactionEvent,
+  DenialEvent,
 } from '../../shared/protocol';
 import { STATS_VERSION, capTimeline, type PersistedStats } from './StatsStore';
 import { dlog } from '../util/logger';
@@ -23,6 +24,8 @@ const COLD_READ_FRAC = 0.1;
 // Compactação: o contexto TOTAL encolheu abaixo desta fração do turno anterior.
 // (Reset frio NÃO encolhe o total — só desloca read→create — então não colide.)
 const COMPACT_FRAC = 0.6;
+// Negações guardadas no log (E5): as últimas N, o suficiente p/ auditar a sessão.
+const DENIAL_CAP = 50;
 
 // Preços por 1M tokens (USD). Estimativa — rotulada como tal na Ui.
 interface Price {
@@ -60,6 +63,21 @@ export function deriveContextLimit(model?: string): number {
   return 200_000;
 }
 
+/**
+ * Normaliza o id do modelo: colapsa sufixos [1m] repetidos. O CLID já normaliza
+ * (2.1.172/173: `[1M][1m]` virava duplicado), mas eventos antigos retomados podem
+ * trazer o id duplicado — defensivo p/ não inflar o display nem confundir o preço.
+ */
+export function normalizeModel(model?: string): string | undefined {
+  if (!model) return model;
+  return model.replace(/(\[1m\])(\[1m\])+/gi, '$1');
+}
+
+/** Coerção defensiva p/ token count vindo do stream: número finito ≥ 0. */
+function num(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
 export class StatsAggregator {
   private model?: string;
   private mode?: string;
@@ -86,6 +104,8 @@ export class StatsAggregator {
 
   private sessionStartTs?: number;
   private toolDecisions = new Map<string, { allow: number; allowAlways: number; deny: number }>();
+  // Log das negações (E5): últimas DENIAL_CAP, mais recentes no fim.
+  private denials: DenialEvent[] = [];
 
   // --- Contadores que sobrevivem ao reopen do contexto ---
   private turnCount = 0;
@@ -133,12 +153,13 @@ export class StatsAggregator {
   // authoritative=false (eventos por-mensagem): o id da API vem SEM o sufixo [1m];
   // não pode sobrescrever o modelo de sessão nem rebaixar o limite para 200K.
   setModel(model?: string, authoritative = false) {
-    if (!model) return;
+    const m = normalizeModel(model);
+    if (!m) return;
     if (authoritative) {
-      this.model = model;
-      if (this.autoLimit) this.contextLimit = deriveContextLimit(model);
+      this.model = m;
+      if (this.autoLimit) this.contextLimit = deriveContextLimit(m);
     } else if (!this.model) {
-      this.model = model;
+      this.model = m;
     }
   }
   setMode(mode?: string) {
@@ -169,12 +190,18 @@ export class StatsAggregator {
     this.streamSeen = true;
   }
 
-  /** Registra decisão de permissão do usuário (allow/deny) por ferramenta. */
-  recordDecision(tool: string, decision: 'allow' | 'deny' | 'allow_always'): void {
+  /** Registra decisão de permissão do usuário (allow/deny) por ferramenta. Em
+   *  negações, guarda também a entrada no log (com a razão, quando houver). */
+  recordDecision(tool: string, decision: 'allow' | 'deny' | 'allow_always', reason?: string): void {
     const entry = this.toolDecisions.get(tool) ?? { allow: 0, allowAlways: 0, deny: 0 };
     if (decision === 'allow') entry.allow++;
     else if (decision === 'allow_always') entry.allowAlways++;
-    else entry.deny++;
+    else {
+      entry.deny++;
+      const clean = typeof reason === 'string' ? reason.trim() : '';
+      this.denials.push({ tool, ts: Date.now(), reason: clean || undefined });
+      if (this.denials.length > DENIAL_CAP) this.denials = this.denials.slice(-DENIAL_CAP);
+    }
     this.toolDecisions.set(tool, entry);
   }
 
@@ -227,15 +254,18 @@ export class StatsAggregator {
    * O evento `assistant` final consolida nos totais.
    */
   private applyDeltaUsage(u: Usage) {
-    if (typeof u.output_tokens === 'number') this.curOutput = u.output_tokens;
+    // Guarda defensiva: deltas malformados (NaN/negativo) não devem zerar/poluir
+    // o display. output_tokens é cumulativo no turno — só sobe.
+    const out = num(u.output_tokens);
+    if (out > this.curOutput) this.curOutput = out;
   }
 
   /** input_tokens + cache_* da requisição = tamanho do prompt (≈ contexto usado). */
   private applyPromptUsage(u: Usage, isFinal = false) {
-    const inp = u.input_tokens ?? 0;
-    const cw = u.cache_creation_input_tokens ?? 0;
-    const cr = u.cache_read_input_tokens ?? 0;
-    const out = u.output_tokens ?? 0;
+    const inp = num(u.input_tokens);
+    const cw = num(u.cache_creation_input_tokens);
+    const cr = num(u.cache_read_input_tokens);
+    const out = num(u.output_tokens);
 
     this.contextUsed = inp + cw + cr;
 
@@ -440,6 +470,7 @@ export class StatsAggregator {
     this.lastTurnTs = p.lastTurnTs;
     this.perModel = new Map(Object.entries(p.perModel ?? {}));
     this.toolDecisions = new Map(Object.entries(p.toolDecisions ?? {}));
+    this.denials = Array.isArray(p.denials) ? p.denials.slice(-DENIAL_CAP) : [];
     this.timeline = Array.isArray(p.timeline) ? p.timeline : [];
     this.compactions = Array.isArray(p.compactions) ? p.compactions : [];
   }
@@ -476,6 +507,7 @@ export class StatsAggregator {
       lastTurnTs: this.lastTurnTs,
       perModel: Object.fromEntries(this.perModel),
       toolDecisions: Object.fromEntries(this.toolDecisions),
+      denials: this.denials,
       timeline: this.timeline,
       compactions: this.compactions,
       updatedAt: new Date().toISOString(),
@@ -503,6 +535,10 @@ export class StatsAggregator {
         ? [...this.toolDecisions.entries()].map(([tool, d]) => ({ tool, ...d }))
         : undefined;
 
+    // Negações mais recentes primeiro (log de auditoria E5).
+    const recentDenials: DenialEvent[] | undefined =
+      this.denials.length > 0 ? [...this.denials].reverse() : undefined;
+
     return {
       model: this.model,
       mode: this.mode,
@@ -521,6 +557,7 @@ export class StatsAggregator {
       lastTurnCostUsd: this.lastTurnCostUsd,
       costIsEstimate: this.costIsEstimate,
       toolAcceptance,
+      recentDenials,
       turnCount: this.turnCount,
       reopenCount: this.reopenCount,
       cacheResetCount: this.cacheResetCount,

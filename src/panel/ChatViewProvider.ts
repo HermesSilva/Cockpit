@@ -40,6 +40,7 @@ import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
 import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/StatuslineInstaller';
 import { fetchAccountUsage } from '../cli/UsageApi';
+import { OtelReceiver } from '../cli/OtelReceiver';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
@@ -94,6 +95,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private reloadGuard = new Map<string, { at: number; count: number }>(); // cooldown/cap por superfície
   private justRecreated = new Set<string>(); // tabIds recriados pelo watchdog: replay forçado no init
   private watchdog?: ReturnType<typeof setInterval>;
+  private windowStateSub?: vscode.Disposable; // foco da janela (rearma pulso ao voltar)
 
   // Abas: cada uma é uma Session (runtime de CLI + stats + streaming) paralela.
   private sessions = new Map<string, Session>();
@@ -164,11 +166,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // um turno real no .jsonl (polui a conversa, gasta tokens e chega ao agente).
     // O medidor de vida do cache no painel continua (independe do keeper).
     void this.cacheKeeper; // mantido p/ futura reimplementação limpa (sem poluir o transcript)
+    // Telemetria OTEL (opt-in, padrão OFF): liga o receiver local que coleta LOC/
+    // sessões/commits da CLI. Ao ligar, injeta as env de export antes do 1º spawn.
+    if (this.cfg().get<boolean>('otel.enabled', false)) {
+      try {
+        this.otel.start();
+      } catch (e) {
+        log(`[otel] start falhou: ${String(e)}`);
+      }
+    }
   }
+
+  // Receiver OTLP local (opt-in). Sempre instanciado; só escuta se ligado.
+  private readonly otel = new OtelReceiver();
 
   /** Encerra recursos de background (chamado no deactivate da extensão). */
   dispose(): void {
     this.cacheKeeper.stop();
+    this.otel.stop();
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.windowStateSub?.dispose();
     this.reloadBar?.dispose();
     this.selListener?.dispose();
     this.diffProviderReg?.dispose();
@@ -234,6 +251,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
       onInit: (model, cmds) => this.onSessionInit(model, cmds, tabId),
       onAuthRequired: () => this.post({ kind: 'authRequired' }, tabId),
+      onTurnError: (info) => {
+        const message =
+          info.kind === 'aborted'
+            ? vscode.l10n.t(
+                'Claude process exited unexpectedly (code {0}) before finishing the turn. Send again to continue.',
+                String(info.code ?? '?'),
+              )
+            : info.kind === 'transient'
+              ? vscode.l10n.t('Connection was unstable — the turn may be incomplete. Send again if needed.{0}', info.text ? ` (${info.text})` : '')
+              : vscode.l10n.t('The turn ended with an error.{0}', info.text ? ` ${info.text}` : '');
+        this.post({ kind: 'error', message }, tabId);
+        this.updateStatusBar(this.anyBusy());
+      },
       fileText: (tool, input) => this.currentFileText(tool, input),
       onToolUse: (tool, input) => this.autoSaveForTool(tool, input),
       claudePath: () => this.claudePath(),
@@ -532,10 +562,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private startWatchdog(): void {
     if (this.watchdog) return;
     this.watchdog = setInterval(() => this.checkSurfaces(), WATCHDOG_TICK_MS);
+    // Foco da janela: o Chromium CONGELA os timers do renderer quando a janela do
+    // VSCode vai p/ segundo plano (background throttling) — o heartbeat para mesmo
+    // com o painel "visible" e SEM disparar onDidChangeViewState. Ao reganhar foco,
+    // rearma o relógio de pulso de todas as superfícies p/ o watchdog não confundir
+    // esse gap com render morto e fechar/recarregar a aba (e o Hub) indevidamente.
+    this.windowStateSub ??= vscode.window.onDidChangeWindowState((s) => {
+      if (s.focused) this.rearmAllBeats();
+    });
+  }
+
+  /** Rearma o relógio de pulso de todas as superfícies visíveis (agora). */
+  private rearmAllBeats(): void {
+    const now = Date.now();
+    for (const [tabId, panel] of this.panels) if (panel.visible) this.lastBeat.set(tabId, now);
+    if (this.hubView?.visible) this.lastBeat.set(HUB_SURFACE, now);
   }
 
   /** Varre superfícies VISÍVEIS; oculta é throttled/descartada, não conta. */
   private checkSurfaces(): void {
+    // Janela em segundo plano: os timers do renderer estão congelados (não é morte
+    // real). Não recarrega nada — só avalia liveness com a janela em foco.
+    if (!vscode.window.state.focused) return;
     const now = Date.now();
     for (const [tabId, panel] of this.panels) {
       if (panel.visible) this.maybeReload(tabId, panel.webview, now);
@@ -790,6 +838,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const sessions = listSessions(cwd).map((s) =>
       names[s.id] ? { ...s, title: names[s.id] } : s,
     );
+    // Sessões VIVAS (abas em memória) podem ainda não ter transcript listável no
+    // disco na 1ª resposta do CLI. Mescla-as para o hub refletir contextos em
+    // execução de imediato, sem esperar o turno terminar.
+    const known = new Set(sessions.map((s) => s.id));
+    for (const tabId of this.tabOrder) {
+      const s = this.sessions.get(tabId);
+      const id = s?.sessionId ?? s?.resumeId;
+      if (!id || known.has(id)) continue;
+      known.add(id);
+      const nowIso = new Date().toISOString();
+      sessions.push({
+        id,
+        title: names[id] || this.tabMeta.get(tabId)?.title || '',
+        updatedAt: nowIso,
+        createdAt: nowIso,
+        messageCount: 0,
+      });
+    }
+    sessions.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     this.post({ kind: 'sessions', sessions, cwd });
   }
 
@@ -831,6 +898,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       await this.refreshUsage(true); // força API fresca (dado quente ao clicar)
       const account = await fetchAuthStatus(this.claudePath());
       const sonnet = this.lastApiSonnet ?? readUsageCache()?.sevenDaySonnet;
+      // Detalhamento local 7d (por modelo / origem) — sempre estimativa de tabela,
+      // independente do % real da conta. Varre os transcripts desta máquina.
+      const local = await computeLocalUsage(Date.now());
       this.post({
         kind: 'usageData',
         data: {
@@ -842,6 +912,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           },
           source: this.lastUsageSource,
           trackingEnabled: usageTrackingEnabled(),
+          breakdown: local.breakdown,
+          otel: this.otel.stats(),
           generatedAt: new Date().toISOString(),
         },
       });

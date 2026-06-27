@@ -174,6 +174,14 @@ export const ptBR: Strings = {
   'tip.ctx.costEstimate': 'Estimado — o CLI ainda não reportou um custo confirmado para esta sessão. Com "~" é estimativa da tabela de preço; sem "~" é o custo real do CLI (bate com /cost).',
   'tip.ctx.toolAcceptance':
     'Proporção de solicitações de permissão de ferramenta que você permitiu vs. negou nesta sessão, por ferramenta.',
+  'tip.ctx.activity': 'Contadores que sobrevivem à reabertura/retomada do contexto.',
+  'tip.ctx.peak': 'Maior tamanho de contexto já atingido nesta sessão (em tokens).',
+  'tip.ctx.compactions':
+    'Quantas vezes o contexto foi condensado entre turnos para liberar espaço (detectado quando o total encolhe).',
+  'tip.ctx.resets':
+    'Quantas vezes o cache de prompt expirou por ociosidade (>1h) e o prefixo precisou ser re-escrito, mais o custo re-pago.',
+  'tip.ctx.denials':
+    'Solicitações de ferramenta que você negou nesta sessão, da mais recente para a mais antiga (com a razão, quando informada). Auditoria de controle.',
   // Rodapé de procedência dos hints (chips coloridos).
   'meta.origin.label': 'Origem',
   'meta.origin.server': 'Servidor (via CLI)',
@@ -210,6 +218,7 @@ export const ptBR: Strings = {
 
   'status.idle': 'Ocioso',
   'status.busy': 'Trabalhando…',
+  'background.title': 'Executando em segundo plano',
   'status.model': 'Modelo',
   'status.mode': 'Modo',
   'status.cliMissing': 'CLI não encontrado',
@@ -273,6 +282,22 @@ export const ptBR: Strings = {
   'usage.est.waiting':
     'Estimativa local — os limites reais aparecem depois que o Claude atualiza a statusline (use o CLI uma vez).',
   'usage.enableTracking': 'Ativar ao vivo',
+  'usage.breakdown': 'Detalhamento (7 dias)',
+  'usage.breakdown.byModel': 'Por modelo',
+  'usage.breakdown.bySource': 'Por origem',
+  'usage.breakdown.note': 'Estimativa de tabela das sessões desta máquina — só desta máquina, não inclui outros dispositivos.',
+  'usage.source.main': 'Principal',
+  'usage.source.subagent': 'Subagentes',
+  'usage.otel': 'Telemetria (OTEL)',
+  'usage.otel.live': 'ao vivo',
+  'usage.otel.loc': 'Linhas de código (+/−)',
+  'usage.otel.costByModel': 'Custo real por modelo',
+  'usage.otel.locByModel': 'Linhas por modelo',
+  'usage.otel.lines': 'linhas',
+  'usage.otel.sessions': 'Sessões',
+  'usage.otel.commits': 'Commits',
+  'usage.otel.prs': 'Pull requests',
+  'usage.otel.decisions': 'Decisões de edição',
   'tip.stop.title': 'Interromper',
   'tip.stop.desc': 'Para o agente agora. O turno atual encerra e a sessão continua aberta.',
 
@@ -352,6 +377,14 @@ export const ptBR: Strings = {
   'stats.tokens.output': 'Saída',
   'stats.session.duration': 'Duração',
   'stats.tools.acceptance': 'Aceitação de ferramentas',
+  'stats.activity': 'Atividade da sessão',
+  'stats.activity.turns': 'Turnos',
+  'stats.activity.peak': 'Pico de contexto',
+  'stats.activity.compactions': 'Compactações',
+  'stats.activity.resets': 'Resets de cache',
+  'stats.activity.recache': 'Re-cache pago',
+  'stats.denials': 'Negações recentes',
+  'alert.compacted': 'Contexto compactado ({0}): {1} tokens condensados para liberar espaço.',
 
   'ctxPanel.title': 'Contexto',
   'ctxPanel.contexts': 'Contextos salvos',

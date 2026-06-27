@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { log, dlog } from '../util/logger';
-import type { TimelineSample, CompactionEvent, ModelUsage } from '../../shared/protocol';
+import type { TimelineSample, CompactionEvent, ModelUsage, DenialEvent } from '../../shared/protocol';
 
 const DIR = path.join(os.homedir(), '.claude', 'tootega', 'stats');
 export const STATS_VERSION = 1;
@@ -52,6 +52,7 @@ export interface PersistedStats {
   // Detalhamento
   perModel: Record<string, ModelUsage>;
   toolDecisions: Record<string, { allow: number; allowAlways: number; deny: number }>;
+  denials?: DenialEvent[]; // log das negações de permissão (E5)
   timeline: TimelineSample[];
   compactions: CompactionEvent[];
   updatedAt: string; // ISO 8601

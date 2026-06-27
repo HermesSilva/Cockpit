@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { Portal } from './Portal';
 import type { Translator } from '../i18n';
-import type { UsageData, UsageBucket } from '../../../shared/protocol';
-import { fmtUsdShort } from '../util/format';
+import type { UsageData, UsageBucket, UsageSlice, OtelStats } from '../../../shared/protocol';
+import { fmtUsdShort, fmtCompact, fmtInt } from '../util/format';
 
 interface Props {
   t: Translator;
@@ -78,6 +78,15 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                   )}
                 </div>
               )}
+
+              {/* DETALHAMENTO LOCAL 7d (por modelo / origem) — estimativa de tabela */}
+              {usage.breakdown && (usage.breakdown.byModel.length > 0 || usage.breakdown.bySource.length > 0) && (
+                <Breakdown t={t} b={usage.breakdown} />
+              )}
+
+              {/* TELEMETRIA OTEL (opt-in) */}
+              {usage.otel?.enabled && <Otel t={t} locale={locale} o={usage.otel} />}
+
               <button type="button" className="usage-link" onClick={onManage}>
                 {t('usage.manage')}
               </button>
@@ -86,6 +95,123 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
         </div>
       </div>
     </Portal>
+  );
+}
+
+// Etiqueta curta de modelo (claude-opus-4-8[1m] -> "opus 4.8 1M").
+function modelLabel(id: string): string {
+  if (id === 'unknown') return id;
+  const oneM = /\[1m\]/i.test(id);
+  const core = id.replace(/^claude-/i, '').replace(/\[1m\]/i, '');
+  const m = core.match(/^(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d+))?$/i);
+  let s = core;
+  if (m) s = `${m[1]} ${m[3] ? `${m[2]}.${m[3]}` : m[2]}`;
+  return oneM ? `${s} 1M` : s;
+}
+
+// Barra proporcional de uma fatia (USD) dentro do total da categoria.
+function SliceRow({ label, usd, tokens, frac }: { label: string; usd: number; tokens: number; frac: number }) {
+  return (
+    <div className="usage-slice">
+      <div className="usage-slice-head">
+        <span className="usage-slice-label">{label}</span>
+        <span className="usage-slice-val">
+          {fmtUsdShort(usd)}
+          <span className="usage-muted"> · {fmtCompact(tokens)} tok</span>
+        </span>
+      </div>
+      <div className="usage-bar">
+        <span className="usage-bar-fill warm" style={{ width: `${Math.max(2, frac * 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// Detalhamento local da janela de 7d: por modelo e por origem (main/subagent).
+// Sempre estimativa de tabela (badge "≈"), independente do % real da conta.
+function Breakdown({ t, b }: { t: Translator; b: { byModel: UsageSlice[]; bySource: UsageSlice[] } }) {
+  const totalModel = b.byModel.reduce((s, x) => s + x.usd, 0) || 1;
+  const totalSrc = b.bySource.reduce((s, x) => s + x.usd, 0) || 1;
+  return (
+    <>
+      <div className="usage-section-label">
+        {t('usage.breakdown')}
+        <span className="usage-badge est">{t('usage.badge.est')}</span>
+      </div>
+      <div className="usage-sub-label">{t('usage.breakdown.byModel')}</div>
+      {b.byModel.map((s) => (
+        <SliceRow key={s.key} label={modelLabel(s.key)} usd={s.usd} tokens={s.tokens} frac={s.usd / totalModel} />
+      ))}
+      {b.bySource.length > 1 && (
+        <>
+          <div className="usage-sub-label">{t('usage.breakdown.bySource')}</div>
+          {b.bySource.map((s) => (
+            <SliceRow
+              key={s.key}
+              label={t(s.key === 'subagent' ? 'usage.source.subagent' : 'usage.source.main')}
+              usd={s.usd}
+              tokens={s.tokens}
+              frac={s.usd / totalSrc}
+            />
+          ))}
+        </>
+      )}
+      <div className="usage-muted usage-breakdown-note">{t('usage.breakdown.note')}</div>
+    </>
+  );
+}
+
+// Telemetria OTEL (opt-in): LOC por modelo, sessões, commits, PRs, decisões.
+function Otel({ t, locale, o }: { t: Translator; locale: string; o: OtelStats }) {
+  return (
+    <>
+      <div className="usage-section-label">
+        {t('usage.otel')}
+        <span className="usage-badge live">{t('usage.otel.live')}</span>
+      </div>
+      {o.costByModel && o.costByModel.length > 0 && (
+        <>
+          <div className="usage-sub-label">{t('usage.otel.costByModel')}</div>
+          {o.costByModel.map((s) => (
+            <SliceRow
+              key={s.key}
+              label={modelLabel(s.key)}
+              usd={s.usd}
+              tokens={s.tokens}
+              frac={s.usd / (o.costByModel!.reduce((a, x) => a + x.usd, 0) || 1)}
+            />
+          ))}
+        </>
+      )}
+      <div className="usage-rows">
+        {(o.linesAdded != null || o.linesRemoved != null) && (
+          <Row
+            k={t('usage.otel.loc')}
+            v={`+${fmtInt(o.linesAdded ?? 0, locale)} / −${fmtInt(o.linesRemoved ?? 0, locale)}`}
+            accent
+          />
+        )}
+        {o.sessionCount != null && <Row k={t('usage.otel.sessions')} v={fmtInt(o.sessionCount, locale)} />}
+        {o.commitCount != null && <Row k={t('usage.otel.commits')} v={fmtInt(o.commitCount, locale)} />}
+        {o.prCount != null && <Row k={t('usage.otel.prs')} v={fmtInt(o.prCount, locale)} />}
+      </div>
+      {o.locByModel && o.locByModel.length > 0 && (
+        <>
+          <div className="usage-sub-label">{t('usage.otel.locByModel')}</div>
+          {o.locByModel.map((s) => (
+            <Row key={s.key} k={modelLabel(s.key)} v={`${fmtInt(s.tokens, locale)} ${t('usage.otel.lines')}`} />
+          ))}
+        </>
+      )}
+      {o.toolDecisions && o.toolDecisions.length > 0 && (
+        <>
+          <div className="usage-sub-label">{t('usage.otel.decisions')}</div>
+          {o.toolDecisions.map((d) => (
+            <Row key={d.tool} k={d.tool} v={`✓ ${d.accept} · ✕ ${d.reject}`} />
+          ))}
+        </>
+      )}
+    </>
   );
 }
 

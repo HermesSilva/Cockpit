@@ -7,6 +7,7 @@ import type {
   SessionConfig,
   SessionInfo,
   SlashCmdMeta,
+  BackgroundTask,
 } from '../../shared/protocol';
 import type {
   TimelineItem,
@@ -22,6 +23,12 @@ export interface TabState {
   id: string;
   title: string;
   status: 'idle' | 'busy' | 'error';
+  // Tarefas em background (Workflow / run_in_background) ainda executando após o
+  // turno terminar. Independente de `status`: o composer continua liberado, mas a
+  // timeline e o card do Hub mostram o spinner de "executando" e a lista do que
+  // cada processo está fazendo. `bgBusy` = derivado (bgTasks.length > 0).
+  bgTasks?: BackgroundTask[];
+  bgBusy?: boolean;
   sessionId?: string; // id do transcript (casa com SessionInfo.id); vem do 'tabs'
   session?: { sessionId: string; model?: string; cwd?: string; mode?: string };
   items: TimelineItem[];
@@ -96,6 +103,7 @@ export type Action =
   | { type: 'clearAsk'; answers?: Record<string, string> }
   | { type: 'setSessionsOpen'; open: boolean }
   | { type: 'setContextOpen'; open: boolean }
+  | { type: 'clearError' }
   | { type: 'interruptUi' };
 
 export function reducer(state: UiState, action: Action): UiState {
@@ -133,6 +141,9 @@ export function reducer(state: UiState, action: Action): UiState {
   }
   if (action.type === 'setContextOpen') {
     return { ...state, showContext: action.open };
+  }
+  if (action.type === 'clearError') {
+    return state.error ? { ...state, error: undefined } : state;
   }
   if (action.type === 'interruptUi') {
     // Stop matou o CLI sem 'assistantDone': encerra o streaming e marca cancelado.
@@ -267,6 +278,9 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
 
     case 'stats':
       return { ...tab, stats: msg.stats };
+
+    case 'background':
+      return { ...tab, bgTasks: msg.tasks, bgBusy: msg.tasks.length > 0 };
 
     case 'history': {
       const items: TimelineItem[] = msg.items.map((h) =>

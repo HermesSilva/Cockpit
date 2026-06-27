@@ -3994,6 +3994,56 @@ body {
   background: var(--vscode-inputValidation-warningBackground, rgba(210, 153, 34, 0.15));
   border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
 }
+/* Log de negações de permissão (E5) */
+.ctx-denials {
+  margin-top: 10px;
+}
+.stat-denial .stat-k {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+.stat-denial-x {
+  color: var(--vscode-errorForeground, #f14c4c);
+  font-weight: 700;
+}
+.stat-denial-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Aviso de erro/abort do turno (banner acima do composer) */
+.turn-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 10px 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 5px;
+  background: var(--vscode-inputValidation-errorBackground, rgba(241, 76, 76, 0.12));
+  border: 1px solid var(--vscode-inputValidation-errorBorder, rgba(241, 76, 76, 0.5));
+  color: var(--vscode-foreground, #e0e0e0);
+}
+.turn-error-text {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.turn-error-x {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.turn-error-x:hover {
+  color: var(--vscode-foreground, #fff);
+}
 
 /* ---------- Hub (view da Activity Bar) ---------- */
 .hub {
@@ -4161,6 +4211,37 @@ body {
 .usage-row-v.accent {
   color: var(--vscode-focusBorder, #4da3ff);
   font-weight: 600;
+}
+/* Detalhamento (breakdown) + OTEL: subtítulo e fatias com barra proporcional */
+.usage-sub-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  margin: 10px 0 4px;
+}
+.usage-muted {
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.usage-breakdown-note {
+  font-size: 11px;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+.usage-slice {
+  margin: 6px 0 8px;
+}
+.usage-slice-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+.usage-slice-label {
+  color: var(--vscode-foreground, #e0e0e0);
+}
+.usage-slice-val {
+  font-variant-numeric: tabular-nums;
 }
 /* Medidores das janelas de limite */
 .usage-meter {
@@ -4359,4 +4440,64 @@ body {
   .usage-bar-fill {
     transition: none;
   }
+}
+
+/* Faixa de tarefas em segundo plano (Workflow / run_in_background): fica acima do
+   composer enquanto algo roda em background, mostrando o que cada processo faz.
+   O composer continua liberado — o usuário pode mandar follow-ups. */
+.bg-tasks {
+  flex: 0 0 auto;
+  margin: 4px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 8%, transparent);
+  font-size: 11px;
+}
+.bg-tasks-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.bg-tasks-spinner {
+  width: 11px;
+  height: 11px;
+  border-width: 1.5px;
+  flex: 0 0 auto;
+}
+.bg-tasks-title {
+  font-weight: 600;
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.bg-tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bg-task {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.bg-task-tool {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 18%, transparent);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+}
+.bg-task-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
 }

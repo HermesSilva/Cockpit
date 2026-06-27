@@ -23,6 +23,11 @@ export interface SessionHooks {
   onInteraction: () => void;
   onInit: (model?: string, slashCommands?: string[]) => void;
   onAuthRequired: () => void;
+  // Turno encerrou de forma anormal: o host localiza e mostra o aviso na aba.
+  //  - 'aborted': o processo do CLI morreu no meio do turno (sem result).
+  //  - 'error':   o CLI reportou um result de erro (texto da própria CLI).
+  //  - 'transient': queda/stall (CLI re-tenta); aviso brando.
+  onTurnError?: (info: { kind: 'aborted' | 'error' | 'transient'; code?: number | null; text?: string }) => void;
   fileText: (tool: string, input: unknown) => string | undefined;
   // Cada tool_use (antes da execução): permite autosave de arquivos read/write.
   onToolUse?: (tool: string, input: unknown) => void;
@@ -41,6 +46,13 @@ export class Session {
   busy = false;
   slashCommands: string[] = [];
   sessionId?: string;
+
+  // Tarefas em background ainda rodando (Workflow / tool com run_in_background).
+  // O turno que as lança termina (`result` zera o busy), mas o trabalho continua;
+  // a conclusão chega depois como um `user` com `<task-notification>`. Mantemos o
+  // indicador de "executando" vivo enquanto este mapa não esvaziar. Chave = tool_use
+  // id que lançou; valor = {tool, label} do que está fazendo (mostrado ao usuário).
+  private bgTasks = new Map<string, { tool: string; label: string }>();
 
   // Overrides POR ABA (em memória). Vazio = usa o default das settings.
   modelOverride?: string;
@@ -95,7 +107,10 @@ export class Session {
       model: model && model !== 'default' ? model : undefined,
       effort: effort && effort !== 'default' ? effort : undefined,
       permissionMode: this.permission(),
-      resumeSessionId: this.resumeId,
+      // resumeId ?? sessionId: defesa contra qualquer caminho que conheça o
+      // sessionId mas não tenha fixado o resumeId — evita spawn sem --resume
+      // (que duplicaria o contexto). clearConversation() zera ambos p/ nova conversa.
+      resumeSessionId: this.resumeId ?? this.sessionId,
       askLanguage: this.hooks.askLanguage(),
     });
     this.cli.on('event', (e: ClaudeEvent) => this.onCliEvent(e));
@@ -105,7 +120,22 @@ export class Session {
     });
     this.cli.on('exit', (code) => {
       log(`CLI exited (${code})`);
+      // Morte no meio de um turno (busy ainda ligado = não foi stop()/interrupt(),
+      // que zeram busy antes): o processo abortou sem emitir `result`. Sem aviso, o
+      // indicador some e o usuário acha que ainda roda. Finaliza e avisa.
+      const abortedMidTurn = this.busy;
+      if (abortedMidTurn) {
+        if (this.currentAssistantId) this.emit({ kind: 'assistantDone', id: this.currentAssistantId });
+        this.stats.endTurn();
+        this.persist();
+        this.resetStreamingState();
+      }
       this.setBusy(false);
+      this.resetBgTasks(); // processo morto → nenhuma tarefa em background sobrevive
+      if (abortedMidTurn) {
+        this.hooks.onTurnError?.({ kind: 'aborted', code });
+        this.emit({ kind: 'stats', stats: this.stats.snapshot() });
+      }
     });
     this.cli.start();
   }
@@ -137,6 +167,7 @@ export class Session {
     this.stats.endTurn();
     this.persist();
     this.setBusy(false);
+    this.resetBgTasks(); // interromper mata o processo → tarefas em background morrem
     dlog('session', `interrupt (${this.sessionId ?? '?'})`);
   }
 
@@ -150,12 +181,17 @@ export class Session {
     this.cli?.stop();
     this.cli = undefined;
     this.setBusy(false);
+    this.resetBgTasks();
   }
 
   /** Limpa a conversa por completo (novo/retomar): zera estatísticas também. */
   clearConversation(): void {
     this.stop();
     this.sessionId = undefined;
+    // Limpa também o resumeId: conversa REALMENTE nova. Sem isto, após "limpar
+    // contexto" numa sessão retomada o próximo send() respawnaria com --resume da
+    // sessão antiga (não limparia) — e o pinning do init deixaria esse id grudado.
+    this.resumeId = undefined;
     this.stats = new StatsAggregator(0);
   }
 
@@ -231,7 +267,8 @@ export class Session {
     const pend = this.pendingPerm.get(requestId);
     this.pendingPerm.delete(requestId);
     if (pend?.tool) {
-      this.stats.recordDecision(pend.tool, decision);
+      // Em negações, registra a razão (feedback do usuário) no log de negações.
+      this.stats.recordDecision(pend.tool, decision, decision === 'deny' ? message : undefined);
       this.emit({ kind: 'stats', stats: this.stats.snapshot() });
     }
     if (decision === 'deny') {
@@ -266,6 +303,29 @@ export class Session {
     this.hooks.onBusy(b);
   }
 
+  private addBgTask(id: string, tool: string, label: string): void {
+    if (this.bgTasks.has(id)) return;
+    this.bgTasks.set(id, { tool, label });
+    this.emitBackground();
+  }
+
+  private clearBgTask(id: string): void {
+    if (!this.bgTasks.delete(id)) return;
+    this.emitBackground();
+  }
+
+  /** Zera o estado de background (parada/limpeza da sessão). */
+  private resetBgTasks(): void {
+    if (this.bgTasks.size === 0) return;
+    this.bgTasks.clear();
+    this.emitBackground();
+  }
+
+  private emitBackground(): void {
+    const tasks = [...this.bgTasks.entries()].map(([id, v]) => ({ id, tool: v.tool, label: v.label }));
+    this.emit({ kind: 'background', tasks });
+  }
+
   private emit(msg: HostToWebview): void {
     this.hooks.emit(msg);
   }
@@ -282,6 +342,12 @@ export class Session {
           this.sessionId = s.session_id;
           if (s.session_id) {
             this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão
+            // Fixa o id de retomada no NÍVEL DA SESSÃO: um stop() (troca de
+            // model/effort/permission) descarta o CliProcessManager, e o próximo
+            // send() respawna via ensureCli() lendo `this.resumeId`. Sem isto, esse
+            // respawn subiria SEM --resume e o CLI criaria um .jsonl NOVO — contexto
+            // DUPLICADO no Hub. Com isto, continua sempre a mesma sessão.
+            this.resumeId = s.session_id;
             this.persist(); // sessionId conhecido: cria/atualiza o arquivo de stats
             dlog('session', `init: sessionId=${s.session_id} model=${s.model ?? '?'} mode=${s.permissionMode ?? '?'}`);
           }
@@ -358,7 +424,17 @@ export class Session {
           dlog('session', `result ignorado (busy=false): stray/replay do CLI`);
           break;
         }
-        if (r.is_error && isAuthError(r.result ?? r.error ?? '')) this.hooks.onAuthRequired();
+        const errText = String(r.result ?? r.error ?? '').trim();
+        if (r.is_error && isAuthError(errText)) {
+          this.hooks.onAuthRequired();
+        } else if (r.is_error) {
+          // Erro reportado pelo CLI no fim do turno. Transitório (queda/stall, CLI
+          // 2.1.179+ preserva o parcial) ganha aviso brando; demais, aviso de erro
+          // com o texto da própria CLI. Sem isto o turno "morre" sem explicação.
+          const transient = isTransientError(errText, r.subtype);
+          log(`[session] result ${transient ? 'transitório' : 'erro'} (${this.sessionId ?? '?'}): ${errText.slice(0, 160)}`);
+          this.hooks.onTurnError?.({ kind: transient ? 'transient' : 'error', text: errText || undefined });
+        }
         this.stats.endTurn(); // fecha o cronômetro do prompt (tempo de execução real)
         {
           const s = this.stats.snapshot();
@@ -490,6 +566,9 @@ export class Session {
           this.emittedTools.add(t.id);
           this.emit({ kind: 'toolUse', id: t.id, name: t.name, input: t.input });
           this.hooks.onToolUse?.(t.name, t.input);
+          if (isBackgroundLaunch(t.name, t.input)) {
+            this.addBgTask(t.id, t.name, backgroundLabel(t.name, t.input));
+          }
         }
       }
     }
@@ -497,6 +576,22 @@ export class Session {
 
   private onUser(ev: UserEvent): void {
     const content = ev.message?.content;
+    // Notificação de conclusão de tarefa em background (injetada pela própria CLI):
+    // `<task-notification>...<tool-use-id>ID</tool-use-id>...`. Tira a tarefa do
+    // conjunto e marca busy=true: a CLI inicia um turno por conta própria respondendo
+    // à notificação, então o `result` seguinte precisa ser contabilizado (sem isto
+    // ele cairia no descarte "stray/replay" porque busy estava false).
+    if (typeof content === 'string') {
+      const m = /<task-notification>[\s\S]*?<tool-use-id>([^<]+)<\/tool-use-id>/.exec(content);
+      if (m) {
+        this.clearBgTask(m[1].trim());
+        if (!this.busy) {
+          this.setBusy(true);
+          this.stats.beginTurn();
+        }
+      }
+      return;
+    }
     if (Array.isArray(content)) {
       for (const b of content) {
         if ((b as any).type === 'tool_result') {
@@ -514,6 +609,33 @@ export class Session {
     this.toolBuffers.clear();
     this.emittedTools.clear();
   }
+}
+
+// Detecta o lançamento de uma tarefa em background: o tool `Workflow` (sempre
+// roda em background) ou qualquer tool com `run_in_background: true` (Bash, Task).
+function isBackgroundLaunch(name: string, input: unknown): boolean {
+  if (name === 'Workflow') return true;
+  const o = (input ?? {}) as Record<string, unknown>;
+  return o.run_in_background === true;
+}
+
+// Rótulo do que a tarefa em background está fazendo (mostrado ao usuário).
+// Best-effort e tolerante: nome do workflow > descrição > 1ª linha do comando > tool.
+function backgroundLabel(name: string, input: unknown): string {
+  const o = (input ?? {}) as Record<string, unknown>;
+  const desc = typeof o.description === 'string' ? o.description.trim() : '';
+  if (name === 'Workflow') {
+    // O nome do workflow mora no `meta = { name: '...' }` do script inline OU é
+    // passado por `name` (workflow salvo). Extrai o 1º que casar.
+    if (typeof o.name === 'string' && o.name.trim()) return o.name.trim();
+    const script = typeof o.script === 'string' ? o.script : '';
+    const m = /name\s*:\s*['"]([^'"]+)['"]/.exec(script);
+    if (m) return m[1];
+    return desc || 'Workflow';
+  }
+  if (desc) return desc;
+  if (typeof o.command === 'string') return o.command.split('\n')[0].slice(0, 80);
+  return name;
 }
 
 function safeJson(s: string): unknown {
@@ -538,6 +660,19 @@ function extractSlashCommands(o: any): string[] {
     if (name) out.push(name.replace(/^\//, ''));
   }
   return out;
+}
+
+// Erro transitório (queda de conexão / stall / retry / timeout de stream) — NÃO
+// fatal: o CLI moderno preserva a resposta parcial e re-tenta. Distinguir de erro
+// real evita surfaçar ruído assustador e disparar fluxo de auth indevido.
+function isTransientError(text: unknown, subtype?: unknown): boolean {
+  const s = typeof text === 'string' ? text : '';
+  const st = typeof subtype === 'string' ? subtype : '';
+  return (
+    /error_during_execution|stream (disconnect|stall|error)|connection (drop|reset|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|premature close|waiting for api response|will retry|overloaded|\b5\d{2}\b/i.test(
+      s,
+    ) || /error_during_execution|max_turns/i.test(st)
+  );
 }
 
 // Heurística conservadora p/ erro de autenticação do CLI (headless não loga).

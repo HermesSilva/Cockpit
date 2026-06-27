@@ -25,6 +25,7 @@
   "cfg.voiceLanguage": "Language for voice dictation (speech-to-text). Empty = follow the Cockpit UI language.",
   "cfg.voiceCorrect": "After stopping dictation, send the text to the internal model for spelling/grammar correction. Clean isolated call (only instruction + text; no tools/MCP/context).",
   "cfg.debugLog": "Write detailed diagnostic logs to the \"Tootega Cockpit\" output channel (cache keep-alive, stats persistence, cache reset/compaction, session lifecycle). Off by default to avoid noise.",
+  "cfg.otelEnabled": "Start a local OpenTelemetry receiver (127.0.0.1) and turn on the Claude CLI telemetry export so the Usage panel can show lines of code, sessions, commits and edit-tool decisions per model. Opt-in, off by default. Loopback traffic only; never logs credentials or response text.",
   "cfg.internalModel": "Model used for Cockpit's internal AI calls (dictation correction, slash-command help). These are clean, isolated calls (no tools/MCP/context). Haiku is fastest/cheapest.",
   "cfg.verbosity": "How much of the timeline to show (display only — does not change the agent). Verbose = everything; Necessary = edits + final explanations; Dialogo = edits + what it's doing; Quiet = final explanations only.",
   "cfg.model": "Default model for new sessions. 'Account default' lets the CLI choose. This is reflected (pre-selected) in the Model dropdown in the panel; change it there to override just the current session.",

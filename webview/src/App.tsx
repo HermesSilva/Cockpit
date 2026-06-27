@@ -14,6 +14,7 @@ import type {
   SessionInfo,
   UsageData,
   VoiceDictData,
+  CredentialMeta,
 } from '../../shared/protocol';
 import { send } from './vscodeApi';
 import { createTranslator } from './i18n';
@@ -24,6 +25,7 @@ import { HubView } from './components/HubView';
 import { UsageModal } from './components/UsageModal';
 import { PluginsModal } from './components/PluginsModal';
 import { VoiceDictModal } from './components/VoiceDictModal';
+import { CredentialsModal } from './components/CredentialsModal';
 import { PermissionModal } from './components/PermissionModal';
 import { AskQuestionModal } from './components/AskQuestionModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -49,6 +51,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [plugins, setPlugins] = useState<PluginsData | null>(null);
   const [showVoiceDict, setShowVoiceDict] = useState(false);
   const [voiceDict, setVoiceDict] = useState<VoiceDictData | null>(null);
+  // Cofre de credenciais (TOTP 2FA).
+  const [showCreds, setShowCreds] = useState(false);
+  const [credsData, setCredsData] = useState<{ enrolled: boolean; items: CredentialMeta[] } | null>(null);
+  const [credsSetup, setCredsSetup] = useState<{ qrSvg: string; secret: string; uri: string } | null>(null);
+  const [credsResult, setCredsResult] = useState<{ ok: boolean; action: string; message?: string } | null>(null);
+  const [credsError, setCredsError] = useState<string | undefined>(undefined);
+  // Texto (valor de credencial) a injetar no composer. Muda de ref p/ disparar.
+  const [injectText, setInjectText] = useState<{ text: string } | null>(null);
   const [exportMenu, setExportMenu] = useState(false); // link de export expandido (direto/IA)
   const [pluginsBusy, setPluginsBusy] = useState(false);
   const [pluginsBusyLabel, setPluginsBusyLabel] = useState<string | undefined>(undefined);
@@ -108,6 +118,24 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         if (data.busy) setPluginsError(undefined);
       }
       if (data?.kind === 'pluginsError') setPluginsError(data.message);
+      if (data?.kind === 'credsData') {
+        setCredsData({ enrolled: data.enrolled, items: data.items });
+        setCredsSetup(null); // dado fresco: encerra qualquer enrollment em curso
+        setCredsResult(null);
+      }
+      if (data?.kind === 'credsSetup') setCredsSetup({ qrSvg: data.qrSvg, secret: data.secret, uri: data.uri });
+      if (data?.kind === 'credsResult') setCredsResult({ ok: data.ok, action: data.action, message: data.message });
+      if (data?.kind === 'credsError') setCredsError(data.message);
+      if (data?.kind === 'credsValue') {
+        // Valor liberado pelo cofre. No Hub não há composer → copia p/ a área de
+        // transferência; no Chat injeta no composer. Fecha o modal nos dois casos.
+        if (view === 'hub') {
+          void navigator.clipboard?.writeText(data.value);
+        } else {
+          setInjectText({ text: data.value });
+        }
+        setShowCreds(false);
+      }
       dispatch({ type: 'host', msg: data });
     };
     window.addEventListener('message', onMsg);
@@ -171,6 +199,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     setShowVoiceDict(true);
     send({ kind: 'voiceDictGet' });
   };
+  const onCredentials = () => {
+    setCredsData(null); // carregando até o host responder
+    setCredsSetup(null);
+    setCredsResult(null);
+    setCredsError(undefined);
+    setShowCreds(true);
+    send({ kind: 'credsLoad' });
+  };
   const onExportMd = (mode: 'direct' | 'ai') => {
     const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
     send({
@@ -198,6 +234,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const onModel = (model: string) => send({ kind: 'setModel', model });
   const onEffort = (effort: string) => send({ kind: 'setEffort', effort });
   const onPermissionMode = (mode: string) => send({ kind: 'setPermissionMode', mode });
+  const onAllowAgents = (value: boolean) => send({ kind: 'setAllowAgents', value });
   const onResume = (id: string) => send({ kind: 'resumeSession', sessionId: id });
   const onAskDelete = (session: SessionInfo) => setConfirmDelete(session);
   const onConfirmDelete = () => {
@@ -226,6 +263,46 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // recebeu o histórico (reabrir contexto). Evita o flash do banner e do timeline
   // vazio — mostra o loader do Cockpit. Banner só após o status do CLI.
   const cliLoading = !state.cli.checked || (!!tab?.sessionId && !tab.historyLoaded);
+
+  // Modal do cofre — compartilhado entre Hub e Chat. No Hub não há composer, então
+  // "usar" copia o valor p/ a área de transferência; no Chat injeta no composer (o
+  // host manda 'credsValue' e o handler em onMsg decide pelo `view`).
+  const credsModalEl = showCreds && (
+    <CredentialsModal
+      t={t}
+      data={credsData}
+      setup={credsSetup}
+      error={credsError}
+      result={credsResult}
+      onEnrollBegin={() => send({ kind: 'credsEnrollBegin' })}
+      onEnrollConfirm={(code) => send({ kind: 'credsEnrollConfirm', code })}
+      onAdd={(d) =>
+        send({
+          kind: 'credsAdd',
+          code: d.code,
+          name: d.name,
+          username: d.username,
+          value: d.value ?? '',
+          note: d.note,
+        })
+      }
+      onEdit={(id, d) =>
+        send({
+          kind: 'credsEdit',
+          code: d.code,
+          id,
+          name: d.name,
+          username: d.username,
+          value: d.value,
+          note: d.note,
+        })
+      }
+      onUse={(id, code) => send({ kind: 'credsUse', code, id })}
+      onDelete={(id, code) => send({ kind: 'credsDelete', code, id })}
+      onClose={() => setShowCreds(false)}
+      useLabel={view === 'hub' ? t('creds.copy') : t('creds.use')}
+    />
+  );
 
   if (view === 'hub') {
     return (
@@ -260,6 +337,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onSettings={onSettings}
           onUsage={onUsage}
           onPlugins={onPlugins}
+          onCredentials={onCredentials}
           onLogin={() => send({ kind: 'loginCli' })}
           onLogout={() => send({ kind: 'logoutCli' })}
           onUpdate={() => send({ kind: 'updateCli' })}
@@ -268,6 +346,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onModel={onModel}
           onEffort={onEffort}
           onPermission={onPermissionMode}
+          onAllowAgents={onAllowAgents}
           onResume={(id) => {
             onResume(id);
             send({ kind: 'openEditor' });
@@ -323,6 +402,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onClose={() => setShowPlugins(false)}
           />
         )}
+        {credsModalEl}
       </>
     );
   }
@@ -479,12 +559,17 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         allExpanded={allExpanded ?? false}
         injectDraft={draftRestore}
         onDraftInjected={() => setDraftRestore(null)}
+        injectText={injectText}
+        onTextInjected={() => setInjectText(null)}
         onToggleExpandAll={() => setAllExpanded((a) => !(a ?? false))}
         onSend={onSend}
         selectionRef={state.selectionRef}
         onStop={onStop}
         onVoiceDict={onVoiceDict}
+        onCredentials={onCredentials}
       />
+
+      {credsModalEl}
 
       {tab?.permission && <PermissionModal t={t} req={tab.permission} onDecision={onPermission} />}
 

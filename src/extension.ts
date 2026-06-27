@@ -16,7 +16,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   context.subscriptions.push(statusBar);
 
-  const provider = new ChatViewProvider(context.extensionUri, context.globalState, statusBar);
+  const provider = new ChatViewProvider(
+    context.extensionUri,
+    context.globalState,
+    statusBar,
+    context.secrets,
+  );
   context.subscriptions.push({ dispose: () => provider.dispose() }); // para o CacheKeeper
 
   // O Cockpit vive como aba no editor (WebviewPanel). Sem view de sidebar.
@@ -127,7 +132,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (
         e.affectsConfiguration('tootega.model') ||
         e.affectsConfiguration('tootega.effort') ||
-        e.affectsConfiguration('tootega.permissionMode')
+        e.affectsConfiguration('tootega.permissionMode') ||
+        e.affectsConfiguration('tootega.allowAgents')
       ) {
         provider.applyDefaultsFromSettings();
       }

@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.167",
+  "version": "1.0.169",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -268,6 +268,11 @@
           "default": "default",
           "description": "%cfg.permissionMode%"
         },
+        "tootega.allowAgents": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.allowAgents%"
+        },
         "tootega.notifyOnComplete": {
           "type": "boolean",
           "default": true,
@@ -400,12 +405,14 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "@types/qrcode": "^1.5.6",
     "dictionary-en": "^4.0.0",
     "dictionary-pt": "^4.0.0",
     "dictionary-pt-br": "^2.0.1",
     "highlight.js": "^11.9.0",
     "hunspell-asm": "^4.0.2",
     "nspell": "^2.1.5",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.21.0"

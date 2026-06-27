@@ -41,6 +41,7 @@ import { fetchAuthStatus } from '../cli/AuthStatus';
 import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/StatuslineInstaller';
 import { fetchAccountUsage } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
+import { CredentialsStore } from '../secrets/CredentialsStore';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
@@ -143,11 +144,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // Corretor ortográfico (hunspell-asm no host). Lazy: instancia no 1º uso.
   private speller?: Speller;
 
+  // Cofre de credenciais protegido por TOTP (SecretStorage). Ausente se o host não
+  // forneceu o SecretStorage (ex.: testes).
+  private creds?: CredentialsStore;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly memory: vscode.Memento,
     statusBar?: vscode.StatusBarItem,
+    secrets?: vscode.SecretStorage,
   ) {
+    if (secrets) this.creds = new CredentialsStore(secrets);
     this.defaults = readClaudeDefaults();
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
     this.statusBar = statusBar;
@@ -272,6 +279,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         model: this.cfg().get<string>('model', '') || 'default',
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
+        allowAgents: this.cfg().get<boolean>('allowAgents', true),
       }),
       askLanguage: () => this.askLanguageCode(),
     };
@@ -1043,18 +1051,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private saveSessionModel(s: Session): void {
     const id = s.sessionId ?? s.resumeId;
     if (!id) return; // sessão nova ainda sem id: salva quando o init trouxer o id
-    const map = this.memory.get<Record<string, { model?: string; effort?: string }>>('sessionModels', {});
-    map[id] = { model: s.modelOverride, effort: s.effortOverride };
+    const map = this.memory.get<Record<string, { model?: string; effort?: string; allowAgents?: boolean }>>('sessionModels', {});
+    map[id] = { model: s.modelOverride, effort: s.effortOverride, allowAgents: s.allowAgentsOverride };
     void this.memory.update('sessionModels', map);
   }
 
   /** Restaura o model/effort salvos de uma sessão (sem reiniciar — ainda sem CLI). */
   private restoreSessionModel(s: Session, id: string): void {
-    const map = this.memory.get<Record<string, { model?: string; effort?: string }>>('sessionModels', {});
+    const map = this.memory.get<Record<string, { model?: string; effort?: string; allowAgents?: boolean }>>('sessionModels', {});
     const o = map[id];
     if (!o) return;
     if (o.model) s.modelOverride = o.model;
     if (o.effort) s.effortOverride = o.effort;
+    if (typeof o.allowAgents === 'boolean') s.allowAgentsOverride = o.allowAgents;
   }
 
   /**
@@ -1445,6 +1454,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private currentPermissionMode(): string {
     return this.active().permission();
   }
+  private currentAllowAgents(): boolean {
+    return this.active().allowAgents();
+  }
   private userName(): string {
     const set = this.cfg().get<string>('userName', '').trim();
     if (set) return set;
@@ -1497,6 +1509,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         defaultEffort: this.defaults.effort,
         permissionMode: this.currentPermissionMode(),
         permissionModes: PERMISSION_MODES,
+        allowAgents: this.currentAllowAgents(),
         showThinking: this.cfg().get<boolean>('showThinking', false),
         expandToolCards: this.cfg().get<boolean>('expandToolCards', false),
         pendingRestart: this.pendingRestart,
@@ -1693,6 +1706,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.pendingRestart = true;
         this.sendConfig();
         break;
+      case 'setAllowAgents':
+        srcSession().setAllowAgents(m.value);
+        this.saveSessionModel(srcSession()); // persiste por contexto
+        this.pendingRestart = true;
+        this.sendConfig();
+        break;
       case 'renameSession':
         this.renameSession(m.sessionId, m.name);
         break;
@@ -1857,6 +1876,96 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.sendUsage(); // reflete o novo estado de tracking no modal
         break;
       }
+      case 'credsLoad':
+      case 'credsEnrollBegin':
+      case 'credsEnrollConfirm':
+      case 'credsAdd':
+      case 'credsEdit':
+      case 'credsUse':
+      case 'credsDelete':
+        void this.handleCreds(m);
+        break;
+    }
+  }
+
+  /** Cofre de credenciais (TOTP 2FA). Toda ação sensível valida o código no host. */
+  private async handleCreds(m: WebviewToHost): Promise<void> {
+    const tab = this.activeTab;
+    const store = this.creds;
+    if (!store) {
+      this.post({ kind: 'credsError', message: vscode.l10n.t('Secret storage is unavailable.') }, tab);
+      return;
+    }
+    const sendData = async () => {
+      this.post(
+        { kind: 'credsData', enrolled: await store.isEnrolled(), items: await store.list() },
+        tab,
+      );
+    };
+    try {
+      switch (m.kind) {
+        case 'credsLoad':
+          await sendData();
+          break;
+        case 'credsEnrollBegin': {
+          const setup = await store.beginEnroll();
+          this.post({ kind: 'credsSetup', ...setup }, tab);
+          break;
+        }
+        case 'credsEnrollConfirm': {
+          const ok = await store.confirmEnroll(m.code);
+          this.post({ kind: 'credsResult', ok, action: 'enroll' }, tab);
+          if (ok) await sendData();
+          break;
+        }
+        case 'credsAdd': {
+          const r = await store.add(m.code, {
+            name: m.name,
+            username: m.username,
+            value: m.value,
+            note: m.note,
+          });
+          this.post(
+            { kind: 'credsResult', ok: r.ok, action: 'add', message: r.reason },
+            tab,
+          );
+          if (r.ok) await sendData();
+          break;
+        }
+        case 'credsEdit': {
+          const r = await store.edit(m.code, m.id, {
+            name: m.name,
+            username: m.username,
+            value: m.value,
+            note: m.note,
+          });
+          this.post({ kind: 'credsResult', ok: r.ok, action: 'edit', message: r.reason }, tab);
+          if (r.ok) await sendData();
+          break;
+        }
+        case 'credsUse': {
+          const r = await store.use(m.code, m.id);
+          if (!r.ok) {
+            this.post({ kind: 'credsResult', ok: false, action: 'use', message: r.reason }, tab);
+            break;
+          }
+          const meta = (await store.list()).find((c) => c.id === m.id);
+          this.post(
+            { kind: 'credsValue', id: m.id, name: meta?.name ?? '', value: r.value ?? '' },
+            tab,
+          );
+          break;
+        }
+        case 'credsDelete': {
+          const r = await store.remove(m.code, m.id);
+          this.post({ kind: 'credsResult', ok: r.ok, action: 'delete', message: r.reason }, tab);
+          if (r.ok) await sendData();
+          break;
+        }
+      }
+    } catch (e) {
+      // Nunca logar valores/segredos: só a mensagem genérica do erro.
+      this.post({ kind: 'credsError', message: String((e as Error)?.message ?? e) }, tab);
     }
   }
 

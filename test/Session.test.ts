@@ -65,7 +65,7 @@ function makeSession(): Session {
     fileText: () => undefined,
     claudePath: () => 'claude',
     cwd: () => '/tmp/proj',
-    settings: () => ({ model: 'default', effort: 'default', permission: 'default' }),
+    settings: () => ({ model: 'default', effort: 'default', permission: 'default', allowAgents: true }),
     askLanguage: () => 'en',
   };
   return new Session(hooks);

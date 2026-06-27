@@ -12,9 +12,10 @@ interface Props {
   onModel: (model: string) => void;
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
+  onAllowAgents: (value: boolean) => void;
 }
 
-export function Controls({ t, config, activeModel, onModel, onEffort, onPermission }: Props) {
+export function Controls({ t, config, activeModel, onModel, onEffort, onPermission, onAllowAgents }: Props) {
   const [customMode, setCustomMode] = useState(false);
   const [customText, setCustomText] = useState('');
 
@@ -95,6 +96,17 @@ export function Controls({ t, config, activeModel, onModel, onEffort, onPermissi
               </option>
             ))}
           </select>
+        </label>
+      </Tooltip>
+
+      <Tooltip className="tt-block" title={t('controls.agents')} text={t('tip.ctrl.agents')}>
+        <label className="ctrl ctrl-check">
+          <input
+            type="checkbox"
+            checked={config.allowAgents}
+            onChange={(e) => onAllowAgents(e.target.checked)}
+          />
+          <span className="ctrl-label">{t('controls.agents')}</span>
         </label>
       </Tooltip>
 

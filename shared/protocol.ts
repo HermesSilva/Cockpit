@@ -204,6 +204,7 @@ export interface SessionConfig {
   defaultEffort?: string; // settings.effortLevel
   permissionMode: string;
   permissionModes: string[];
+  allowAgents: boolean; // liberar agentes (Task) e workflows (Workflow); off economiza tokens
   showThinking: boolean; // expandir thinking por padrão
   expandToolCards: boolean; // expandir cards de tool por padrão na timeline
   pendingRestart: boolean; // model/effort/permission mudou e reinicia no próximo envio
@@ -274,6 +275,15 @@ export interface TabInfo {
   title: string;
   status: 'idle' | 'busy' | 'error';
   sessionId?: string; // id do transcript da sessão (casa com SessionInfo.id)
+}
+
+// Metadados de uma credencial do cofre (nunca traz o valor secreto).
+export interface CredentialMeta {
+  id: string;
+  name: string;
+  username?: string;
+  note?: string;
+  createdAt: number;
 }
 
 // Uma tarefa em background em andamento (Workflow / tool com run_in_background).
@@ -366,6 +376,12 @@ type HostMsg =
   // erradas) e de sugestões (por idioma).
   | { kind: 'spellResult'; bad: string[] }
   | { kind: 'spellSuggestResult'; requestId: string; word: string; pt: string[]; en: string[] }
+  // --- Cofre de credenciais (TOTP 2FA) ---
+  | { kind: 'credsData'; enrolled: boolean; items: CredentialMeta[] } // estado do cofre
+  | { kind: 'credsSetup'; qrSvg: string; secret: string; uri: string } // enrollment: QR + segredo
+  | { kind: 'credsValue'; id: string; name: string; value: string } // valor liberado p/ injetar no composer
+  | { kind: 'credsResult'; ok: boolean; action: string; message?: string } // resultado de uma ação
+  | { kind: 'credsError'; message: string } // falha (storage indisponível, etc.)
   // Seleção/arquivo ativo do editor p/ compartilhar como @file#a-b (toggle no composer).
   | { kind: 'selection'; ref?: string }
   // Autocomplete de @-mention: resultados de arquivos p/ a query digitada.
@@ -419,6 +435,7 @@ export type WebviewToHost =
   | { kind: 'setModel'; model: string }
   | { kind: 'setEffort'; effort: string }
   | { kind: 'setPermissionMode'; mode: string }
+  | { kind: 'setAllowAgents'; value: boolean }
   | { kind: 'renameSession'; sessionId: string; name: string }
   | { kind: 'openSettings' }
   | { kind: 'listSessions' }
@@ -468,4 +485,13 @@ export type WebviewToHost =
   // ao dicionário do usuário (persistente no host).
   | { kind: 'spellCheck'; words: string[] }
   | { kind: 'spellSuggest'; requestId: string; word: string }
-  | { kind: 'spellAdd'; word: string };
+  | { kind: 'spellAdd'; word: string }
+  // --- Cofre de credenciais (TOTP 2FA) ---
+  | { kind: 'credsLoad' } // pede o estado do cofre (enrolado? lista)
+  | { kind: 'credsEnrollBegin' } // gera segredo TOTP novo (devolve QR)
+  | { kind: 'credsEnrollConfirm'; code: string } // confirma o enrollment com o 1º código
+  | { kind: 'credsAdd'; code: string; name: string; username?: string; value: string; note?: string }
+  // Edita: value ausente/indefinido = mantém o valor atual; presente = substitui.
+  | { kind: 'credsEdit'; code: string; id: string; name: string; username?: string; value?: string; note?: string }
+  | { kind: 'credsUse'; code: string; id: string } // usa: valida TOTP e devolve o valor
+  | { kind: 'credsDelete'; code: string; id: string };

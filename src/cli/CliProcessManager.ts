@@ -14,6 +14,9 @@ export interface CliOptions {
   model?: string;
   effort?: string;
   permissionMode?: string;
+  // Ferramentas a desabilitar no CLI (--disallowedTools). Ex.: ['Task','Workflow']
+  // p/ bloquear subagentes/workflows (que gastam muitos tokens). Vazio = nada.
+  disallowedTools?: string[];
   resumeSessionId?: string;
   // Código curto do idioma (pt, en…) p/ as perguntas do AskUserQuestion. Quando
   // setado, injeta um append-system-prompt que força o idioma SÓ das perguntas.
@@ -128,6 +131,9 @@ export class CliProcessManager extends EventEmitter {
     if (this.opts.effort) args.push('--effort', this.opts.effort);
     if (this.opts.permissionMode && this.opts.permissionMode !== 'default') {
       args.push('--permission-mode', this.opts.permissionMode);
+    }
+    if (this.opts.disallowedTools?.length) {
+      args.push('--disallowedTools', this.opts.disallowedTools.join(','));
     }
     if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
     if (this.opts.askLanguage) {

@@ -41,6 +41,7 @@ interface Props {
   onSettings: () => void;
   onUsage: () => void;
   onPlugins: () => void;
+  onCredentials: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onUpdate: () => void;
@@ -49,6 +50,7 @@ interface Props {
   onModel: (model: string) => void;
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
+  onAllowAgents: (value: boolean) => void;
   onResume: (id: string) => void;
   onReload: (id: string) => void;
   onRemote: (id: string) => void;
@@ -81,6 +83,7 @@ export function HubView({
   onSettings,
   onUsage,
   onPlugins,
+  onCredentials,
   onLogin,
   onLogout,
   onUpdate,
@@ -89,6 +92,7 @@ export function HubView({
   onModel,
   onEffort,
   onPermission,
+  onAllowAgents,
   onResume,
   onReload,
   onRemote,
@@ -172,6 +176,11 @@ export function HubView({
             🧩 {t('plugins.title')}
           </button>
         </Tooltip>
+        <Tooltip title={t('creds.title')} text={t('creds.open')}>
+          <button type="button" className="ctx-link" onClick={onCredentials}>
+            🔐 {t('creds.title')}
+          </button>
+        </Tooltip>
         <Tooltip
           className="hub-settings-wrap"
           title={t('tip.settings.title')}
@@ -204,6 +213,7 @@ export function HubView({
                 onModel={onModel}
                 onEffort={onEffort}
                 onPermission={onPermission}
+                onAllowAgents={onAllowAgents}
               />
             </div>
           )}

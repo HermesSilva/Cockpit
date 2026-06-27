@@ -31,11 +31,16 @@ interface Props {
   // Draft a restaurar no input (ex.: cancelou o gate de effort). Muda de ref p/ disparar.
   injectDraft?: { text: string; images: ImageAttachment[] } | null;
   onDraftInjected?: () => void;
+  // Texto a inserir no input sem apagar o que já existe (ex.: valor de credencial
+  // liberado pelo cofre). Muda de ref p/ disparar a inserção.
+  injectText?: { text: string } | null;
+  onTextInjected?: () => void;
   onToggleExpandAll: () => void;
   onSend: (text: string, images: ImageAttachment[], selection?: string) => void;
   selectionRef?: string; // @file#a-b da seleção ativa do editor
   onStop: () => void;
   onVoiceDict?: () => void; // abre o modal do dicionário de ditado
+  onCredentials?: () => void; // abre o cofre de credenciais (TOTP 2FA)
 }
 
 interface PendingImage {
@@ -60,10 +65,13 @@ export function Composer({
   allExpanded,
   injectDraft,
   onDraftInjected,
+  injectText,
+  onTextInjected,
   onToggleExpandAll,
   onSend,
   onStop,
   onVoiceDict,
+  onCredentials,
   selectionRef,
 }: Props) {
   const [includeSel, setIncludeSel] = useState(true);
@@ -365,6 +373,21 @@ export function Composer({
     onDraftInjected?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectDraft]);
+
+  // Insere texto (valor de credencial) na posição do cursor, sem apagar o resto.
+  useEffect(() => {
+    if (!injectText) return;
+    const ins = injectText.text;
+    const el = ref.current;
+    setText((prev) => {
+      const start = el?.selectionStart ?? prev.length;
+      const end = el?.selectionEnd ?? prev.length;
+      return prev.slice(0, start) + ins + prev.slice(end);
+    });
+    requestAnimationFrame(() => ref.current?.focus());
+    onTextInjected?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injectText]);
 
   const submit = () => {
     // Enviar durante o ditado: encerra a captura JÁ (sem correção) e cancela uma
@@ -773,6 +796,31 @@ export function Composer({
                   <path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z" />
                   <line x1="9" y1="7" x2="15" y2="7" />
                   <line x1="9" y1="11" x2="15" y2="11" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
+          {onCredentials && (
+            <Tooltip text={t('creds.open')}>
+              <button
+                type="button"
+                className="composer-side-btn creds-btn"
+                onClick={onCredentials}
+                aria-label={t('creds.open')}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
               </button>
             </Tooltip>

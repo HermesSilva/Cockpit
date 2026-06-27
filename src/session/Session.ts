@@ -34,7 +34,7 @@ export interface SessionHooks {
   claudePath: () => string;
   cwd: () => string;
   // Defaults vindos das settings (o que 'default' resolve quando não há override).
-  settings: () => { model: string; effort: string; permission: string };
+  settings: () => { model: string; effort: string; permission: string; allowAgents: boolean };
   // Idioma (código curto: pt, en…) p/ as perguntas do agente (AskUserQuestion).
   askLanguage: () => string;
 }
@@ -58,6 +58,8 @@ export class Session {
   modelOverride?: string;
   effortOverride?: string;
   permissionOverride?: string;
+  // Liberar agentes (Task) e workflows (Workflow). undefined = usa o default das settings.
+  allowAgentsOverride?: boolean;
 
   // Estado de streaming
   private currentAssistantId?: string;
@@ -83,6 +85,9 @@ export class Session {
   permission(): string {
     return this.permissionOverride ?? this.hooks.settings().permission;
   }
+  allowAgents(): boolean {
+    return this.allowAgentsOverride ?? this.hooks.settings().allowAgents;
+  }
 
   setModel(m: string): void {
     this.modelOverride = m;
@@ -96,6 +101,10 @@ export class Session {
     this.permissionOverride = p;
     this.stop();
   }
+  setAllowAgents(v: boolean): void {
+    this.allowAgentsOverride = v;
+    this.stop();
+  }
 
   ensureCli(): void {
     if (this.cli) return;
@@ -107,6 +116,8 @@ export class Session {
       model: model && model !== 'default' ? model : undefined,
       effort: effort && effort !== 'default' ? effort : undefined,
       permissionMode: this.permission(),
+      // Bloqueia subagentes/workflows quando desligado (economia de tokens).
+      disallowedTools: this.allowAgents() ? undefined : ['Task', 'Workflow'],
       // resumeId ?? sessionId: defesa contra qualquer caminho que conheça o
       // sessionId mas não tenha fixado o resumeId — evita spawn sem --resume
       // (que duplicaria o contexto). clearConversation() zera ambos p/ nova conversa.

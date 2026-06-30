@@ -45,6 +45,7 @@ import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
+import { ensureDaseMcpConfig, readDaseEndpoint } from '../cli/DaseMcp';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
@@ -72,6 +73,22 @@ const EFFORT_OPTIONS = ['default', 'low', 'medium', 'high', 'xhigh', 'max'];
 const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'];
 // Cache da statusline mais velho que isto não é confiável como % "real" (engana).
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
+
+// Tag de endereçamento ao DASE no início da mensagem: "@DASE:" / "@dase " etc.
+// Liga a integração (sticky) e é removido do prompt enviado ao agente.
+const DASE_TAG = /^\s*@dase\b\s*:?\s*/i;
+// Instrução curta injetada no prompt quando o @DASE: é usado (orienta às tools).
+const DASE_STEER =
+  'Use the DASE ORM Designer MCP tools (dase_*) to carry out this request. ' +
+  'If unsure of the current model, call dase_list_documents / dase_get_model first.';
+
+// Preferências por sessão persistidas em globalState (override da aba).
+interface SessionPrefs {
+  model?: string;
+  effort?: string;
+  allowAgents?: boolean;
+  daseEnabled?: boolean;
+}
 
 // --- Watchdog de renderização ---
 // DESATIVADO (2026-06-29): suspeito de causar tempestade de recreate de painel
@@ -156,12 +173,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // forneceu o SecretStorage (ex.: testes).
   private creds?: CredentialsStore;
 
+  // Diretório de globalStorage da própria extensão. Usado p/ (a) localizar o
+  // irmão tootega.dase (descoberta do MCP) e (b) gravar o arquivo --mcp-config.
+  private readonly globalStorageDir?: string;
+
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly memory: vscode.Memento,
     statusBar?: vscode.StatusBarItem,
     secrets?: vscode.SecretStorage,
+    globalStorageUri?: vscode.Uri,
   ) {
+    this.globalStorageDir = globalStorageUri?.fsPath;
     if (secrets) this.creds = new CredentialsStore(secrets);
     this.defaults = readClaudeDefaults();
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
@@ -288,7 +311,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
         allowAgents: this.cfg().get<boolean>('allowAgents', false),
+        daseModel: this.cfg().get<string>('dase.model', '') || 'default',
       }),
+      mcpConfigPath: () => this.daseMcpConfigPath(),
       askLanguage: () => this.askLanguageCode(),
     };
   }
@@ -1086,19 +1111,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private saveSessionModel(s: Session): void {
     const id = s.sessionId ?? s.resumeId;
     if (!id) return; // sessão nova ainda sem id: salva quando o init trouxer o id
-    const map = this.memory.get<Record<string, { model?: string; effort?: string; allowAgents?: boolean }>>('sessionModels', {});
-    map[id] = { model: s.modelOverride, effort: s.effortOverride, allowAgents: s.allowAgentsOverride };
+    const map = this.memory.get<Record<string, SessionPrefs>>('sessionModels', {});
+    map[id] = {
+      model: s.modelOverride,
+      effort: s.effortOverride,
+      allowAgents: s.allowAgentsOverride,
+      daseEnabled: s.daseEnabledOverride,
+    };
     void this.memory.update('sessionModels', map);
   }
 
   /** Restaura o model/effort salvos de uma sessão (sem reiniciar — ainda sem CLI). */
   private restoreSessionModel(s: Session, id: string): void {
-    const map = this.memory.get<Record<string, { model?: string; effort?: string; allowAgents?: boolean }>>('sessionModels', {});
+    const map = this.memory.get<Record<string, SessionPrefs>>('sessionModels', {});
     const o = map[id];
     if (!o) return;
     if (o.model) s.modelOverride = o.model;
     if (o.effort) s.effortOverride = o.effort;
     if (typeof o.allowAgents === 'boolean') s.allowAgentsOverride = o.allowAgents;
+    if (typeof o.daseEnabled === 'boolean') s.daseEnabledOverride = o.daseEnabled;
   }
 
   /**
@@ -1502,6 +1533,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private currentAllowAgents(): boolean {
     return this.active().allowAgents();
   }
+  private currentDaseEnabled(): boolean {
+    return this.active().daseEnabled();
+  }
+
+  /**
+   * Caminho do `--mcp-config` do DASE p/ a sessão atual, ou undefined. Gera o
+   * arquivo na hora (token do DASE muda a cada start, então sempre relê). Gated
+   * pelo setting `tootega.dase.enabled`.
+   */
+  private daseMcpConfigPath(): string | undefined {
+    if (!this.cfg().get<boolean>('dase.enabled', true)) return undefined;
+    const storageDir = this.globalStorageDir;
+    if (!storageDir) return undefined;
+    const p = ensureDaseMcpConfig(storageDir, storageDir);
+    if (!p) log('[dase] endpoint não encontrado (servidor MCP do DASE desligado?)');
+    return p;
+  }
+
+  /** Endpoint do DASE existe (servidor MCP ligado no DASE)? P/ habilitar o toggle. */
+  private daseAvailable(): boolean {
+    if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
+    return !!readDaseEndpoint(this.globalStorageDir);
+  }
   private userName(): string {
     const set = this.cfg().get<string>('userName', '').trim();
     if (set) return set;
@@ -1555,6 +1609,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         permissionMode: this.currentPermissionMode(),
         permissionModes: PERMISSION_MODES,
         allowAgents: this.currentAllowAgents(),
+        daseEnabled: this.currentDaseEnabled(),
+        daseAvailable: this.daseAvailable(),
         showThinking: this.cfg().get<boolean>('showThinking', false),
         expandToolCards: this.cfg().get<boolean>('expandToolCards', false),
         pendingRestart: this.pendingRestart,
@@ -1690,8 +1746,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ kind: 'effortGate', selected: eff, min }, srcTab);
           break; // bloqueia: webview confirma e reenvia com force
         }
-        if (!this.tabMeta.get(srcTab)?.title && m.text.trim()) {
-          this.setTabTitle(srcTab, m.text.replace(/\s+/g, ' ').trim().slice(0, 28));
+        // Tag @DASE: liga a integração DASE (sticky) e orienta o agente às tools
+        // dase_*. O tag é removido do prompt. 1ª vez respawna o CLI com o
+        // --mcp-config; depois fica ligado (cache quente).
+        let body = m.text;
+        let daseSteer = '';
+        if (DASE_TAG.test(body)) {
+          body = body.replace(DASE_TAG, '');
+          if (!s.daseEnabled() && this.daseAvailable()) {
+            s.setDaseEnabled(true); // stop() → respawn no s.send() abaixo com DASE
+            this.saveSessionModel(s);
+            this.sendConfig(); // reflete o toggle ligado na UI
+          }
+          if (s.daseEnabled()) {
+            daseSteer = `${DASE_STEER}\n\n`;
+          } else {
+            this.post(
+              {
+                kind: 'error',
+                message: vscode.l10n.t(
+                  '@DASE ignored — the DASE MCP server is not running (enable dase.mcp.enabled in the DASE extension).',
+                ),
+              },
+              srcTab,
+            );
+          }
+        }
+        if (!this.tabMeta.get(srcTab)?.title && body.trim()) {
+          this.setTabTitle(srcTab, body.replace(/\s+/g, ' ').trim().slice(0, 28));
         }
         if (this.pendingRestart) {
           // A mudança de model/effort/permission é aplicada agora (reinício): some o aviso.
@@ -1699,7 +1781,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.sendConfig();
         }
         // Compartilha a seleção do editor como contexto, se o composer pediu.
-        const text = m.selection ? `${m.selection}\n${m.text}` : m.text;
+        const sel = m.selection ? `${m.selection}\n` : '';
+        const text = `${daseSteer}${sel}${body}`;
         s.send(text, m.images);
         this.draftByTab.delete(srcTab); // enviado: descarta o rascunho espelhado
         break;
@@ -1753,6 +1836,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'setAllowAgents':
         srcSession().setAllowAgents(m.value);
+        this.saveSessionModel(srcSession()); // persiste por contexto
+        this.pendingRestart = true;
+        this.sendConfig();
+        break;
+      case 'setDaseEnabled':
+        srcSession().setDaseEnabled(m.value);
         this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;
         this.sendConfig();

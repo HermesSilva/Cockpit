@@ -21,6 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.globalState,
     statusBar,
     context.secrets,
+    context.globalStorageUri,
   );
   context.subscriptions.push({ dispose: () => provider.dispose() }); // para o CacheKeeper
 

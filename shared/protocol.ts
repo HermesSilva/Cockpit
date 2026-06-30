@@ -205,6 +205,8 @@ export interface SessionConfig {
   permissionMode: string;
   permissionModes: string[];
   allowAgents: boolean; // liberar agentes (Task) e workflows (Workflow); off economiza tokens
+  daseEnabled: boolean; // integração DASE (MCP do ORM Designer) ligada nesta aba
+  daseAvailable: boolean; // endpoint do DASE encontrado (servidor MCP ligado no DASE)
   showThinking: boolean; // expandir thinking por padrão
   expandToolCards: boolean; // expandir cards de tool por padrão na timeline
   pendingRestart: boolean; // model/effort/permission mudou e reinicia no próximo envio
@@ -436,6 +438,7 @@ export type WebviewToHost =
   | { kind: 'setEffort'; effort: string }
   | { kind: 'setPermissionMode'; mode: string }
   | { kind: 'setAllowAgents'; value: boolean }
+  | { kind: 'setDaseEnabled'; value: boolean }
   | { kind: 'renameSession'; sessionId: string; name: string }
   | { kind: 'openSettings' }
   | { kind: 'listSessions' }

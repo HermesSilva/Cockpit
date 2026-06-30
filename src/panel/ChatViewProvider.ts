@@ -197,6 +197,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.reloadBar.command = 'tootega.reloadView';
     this.updateReloadBar();
     setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
+    this.ensureDaseActivated(); // sobe o servidor MCP do DASE cedo (endpoint pronto antes do uso)
     void resolveAccountKey(this.claudePath()); // resolve a conta cedo (chave do dicionário de ditado)
     // Seleção ativa do editor → ref @file#a-b compartilhável no composer.
     this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
@@ -1544,6 +1545,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    */
   private daseMcpConfigPath(): string | undefined {
     if (!this.cfg().get<boolean>('dase.enabled', true)) return undefined;
+    this.ensureDaseActivated();
     const storageDir = this.globalStorageDir;
     if (!storageDir) return undefined;
     const p = ensureDaseMcpConfig(storageDir, storageDir);
@@ -1554,7 +1556,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Endpoint do DASE existe (servidor MCP ligado no DASE)? P/ habilitar o toggle. */
   private daseAvailable(): boolean {
     if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
+    this.ensureDaseActivated();
     return !!readDaseEndpoint(this.globalStorageDir);
+  }
+
+  // Ativação da extensão DASE já disparada (1x). DASE só ativa com .dsorm aberto/
+  // no workspace; sem isto, num workspace sem modelo o servidor MCP nunca sobe.
+  private daseActivation?: Thenable<unknown>;
+
+  /**
+   * Garante que a extensão DASE (tootega.dase) seja ativada. Ela registra o
+   * watcher de config e sobe o servidor MCP (se dase.mcp.enabled). Best-effort,
+   * idempotente: no-op se a extensão não estiver instalada. O endpoint aparece
+   * de forma assíncrona logo após — por isso ativamos cedo (na construção).
+   */
+  private ensureDaseActivated(): void {
+    if (this.daseActivation) return;
+    if (!this.cfg().get<boolean>('dase.enabled', true)) return;
+    const ext = vscode.extensions.getExtension('tootega.dase');
+    if (!ext) return;
+    this.daseActivation = (ext.isActive ? Promise.resolve() : ext.activate()).then(
+      () => dlog('dase', 'extensão DASE ativada'),
+      (e) => log(`[dase] activate falhou: ${String(e)}`),
+    );
   }
   private userName(): string {
     const set = this.cfg().get<string>('userName', '').trim();

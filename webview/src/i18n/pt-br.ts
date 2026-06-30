@@ -230,6 +230,8 @@ export const ptBR: Strings = {
     'Modo de permissão: como as tools são aprovadas — perguntar sempre, aceitar edições, ou ignorar prompts. Vale na próxima mensagem.',
   'tip.ctrl.agents':
     'Libera o agente a criar subagentes (Task) e workflows. Eles rodam agentes paralelos extras e podem gastar muitos tokens. Desligue para economizar. Vale na próxima mensagem.',
+  'tip.ctrl.dase':
+    'Conecta o ORM Designer (DASE) como servidor MCP nesta sessão. Liga só quando for projetar/editar um modelo .dsorm — as tools do DASE pesam no contexto. Pode usar um modelo dedicado (setting tootega.dase.model). Vale na próxima mensagem.',
 
   'role.user': 'Você',
   'role.assistant': 'Claude',
@@ -335,6 +337,7 @@ export const ptBR: Strings = {
   'controls.effort': 'Esforço',
   'controls.permission': 'Permissão',
   'controls.agents': 'Agentes e workflows',
+  'controls.dase': 'DASE (ORM)',
   'controls.applies': 'Aplica na próxima mensagem (reinicia a sessão).',
   'perm.default': 'Padrão',
   'perm.plan': 'Plano',

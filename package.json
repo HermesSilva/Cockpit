@@ -376,6 +376,16 @@
           ],
           "default": "",
           "description": "%cfg.voiceLanguage%"
+        },
+        "tootega.dase.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%cfg.daseEnabled%"
+        },
+        "tootega.dase.model": {
+          "type": "string",
+          "default": "",
+          "description": "%cfg.daseModel%"
         }
       }
     }

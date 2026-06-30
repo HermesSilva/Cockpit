@@ -235,6 +235,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const onEffort = (effort: string) => send({ kind: 'setEffort', effort });
   const onPermissionMode = (mode: string) => send({ kind: 'setPermissionMode', mode });
   const onAllowAgents = (value: boolean) => send({ kind: 'setAllowAgents', value });
+  const onDaseEnabled = (value: boolean) => send({ kind: 'setDaseEnabled', value });
   const onResume = (id: string) => send({ kind: 'resumeSession', sessionId: id });
   const onAskDelete = (session: SessionInfo) => setConfirmDelete(session);
   const onConfirmDelete = () => {
@@ -347,6 +348,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onEffort={onEffort}
           onPermission={onPermissionMode}
           onAllowAgents={onAllowAgents}
+          onDaseEnabled={onDaseEnabled}
           onResume={(id) => {
             onResume(id);
             send({ kind: 'openEditor' });

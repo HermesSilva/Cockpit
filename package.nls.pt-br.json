@@ -17,7 +17,7 @@
   "cfg.claudePath": "Caminho do executável do Claude Code CLI.",
   "cfg.language": "Idioma da UI. 'auto' segue o idioma do VS Code; cai para inglês.",
   "cfg.permissionMode": "Modo de permissão default passado ao CLI. Reflete (pré-seleciona) no combo Permission do painel; mude lá para sobrepor só a sessão atual.",
-  "cfg.allowAgents": "Libera o agente a criar subagentes (Task) e workflows (Workflow). Ligado por padrão. Eles rodam agentes paralelos extras e podem gastar muitos tokens; desligue para economizar (passa --disallowedTools Task,Workflow ao CLI). Reflete no checkbox 'Agentes e workflows' do painel; alterne lá para sobrepor só a sessão atual.",
+  "cfg.allowAgents": "Libera o agente a criar subagentes (Task) e workflows (Workflow). Desligado por padrão — eles rodam agentes paralelos extras e podem gastar muitos tokens, então por padrão o CLI sobe com --disallowedTools Task,Workflow. Ligue para permitir. Reflete no checkbox 'Agentes e workflows' do painel; alterne lá para sobrepor só a sessão atual.",
   "cfg.notifyOnComplete": "Mostra uma notificação quando o Claude termina um turno e o painel do Cockpit não está visível.",
   "cfg.showThinking": "Expande os blocos de raciocínio do Claude por padrão no chat.",
   "cfg.expandToolCards": "Expande os cartões de chamadas de ferramenta por padrão na timeline.",

@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.169",
+  "version": "1.0.176",
   "publisher": "tootega",
   "license": "MIT",
   "author": {
@@ -270,7 +270,7 @@
         },
         "tootega.allowAgents": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "%cfg.allowAgents%"
         },
         "tootega.notifyOnComplete": {

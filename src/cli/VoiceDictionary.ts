@@ -116,9 +116,16 @@ export function saveDictionary(dict: VoiceDict): void {
   }
 }
 
-/** String de keyterms p/ o header do STT: termos do dicionário + extras (projeto). */
-export function buildKeyterms(dict: VoiceDict, extra?: string): string {
-  const all = dedupe([...(extra ? [extra] : []), ...dict.terms.map((t) => t.trim())].filter(Boolean));
+/**
+ * String de keyterms p/ o header do STT. Ordem = PRIORIDADE: termos do dicionário
+ * do usuário primeiro (curados à mão, mais valiosos), depois os extras colhidos
+ * do workspace (nome do projeto, deps, glossário). O orçamento de chars corta o
+ * excedente — então o que o usuário definiu nunca é descartado em favor do auto.
+ * `extras` aceita string única (compat) ou lista.
+ */
+export function buildKeyterms(dict: VoiceDict, extras?: string | string[]): string {
+  const extraList = extras == null ? [] : Array.isArray(extras) ? extras : [extras];
+  const all = dedupe([...dict.terms.map((t) => t.trim()), ...extraList.map((e) => e.trim())].filter(Boolean));
   let out = '';
   for (const t of all) {
     const next = out ? `${out},${t}` : t;

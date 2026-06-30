@@ -17,6 +17,7 @@ import {
 } from '../session/SessionStore';
 import { resolveMinEffort, EFFORT_RANK } from '../session/RepoDirectives';
 import { VoiceSession } from '../cli/VoiceStream';
+import { workspaceTerms } from '../cli/WorkspaceTerms';
 import { AudioCapture } from '../cli/AudioCapture';
 import { Speller } from '../spell/Speller';
 import { correctText } from '../cli/TextCorrector';
@@ -73,6 +74,12 @@ const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', '
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
 // --- Watchdog de renderização ---
+// DESATIVADO (2026-06-29): suspeito de causar tempestade de recreate de painel
+// (dispose+create webview nativo + replayTab de timeline gigante em rajada) que
+// precedeu um crash nativo do extension host (0xC0000005). Mantido em código p/
+// avaliação de uso — religar trocando esta flag p/ true. Botão de reload manual
+// (reloadActivePanel) segue funcionando independente disto.
+const WATCHDOG_ENABLED = false;
 const HEARTBEAT_DEAD_MS = 30_000; // sem pulso por isto = render presumido morto
 const WATCHDOG_TICK_MS = 10_000; // frequência de checagem das superfícies visíveis
 const RELOAD_COOLDOWN_MS = 60_000; // não recarrega a mesma superfície antes disto
@@ -96,6 +103,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private reloadGuard = new Map<string, { at: number; count: number }>(); // cooldown/cap por superfície
   private justRecreated = new Set<string>(); // tabIds recriados pelo watchdog: replay forçado no init
   private watchdog?: ReturnType<typeof setInterval>;
+  private watchdogDisabledLogged = false; // loga só 1x que o watchdog está desativado
   private windowStateSub?: vscode.Disposable; // foco da janela (rearma pulso ao voltar)
 
   // Abas: cada uma é uma Session (runtime de CLI + stats + streaming) paralela.
@@ -279,7 +287,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         model: this.cfg().get<string>('model', '') || 'default',
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
-        allowAgents: this.cfg().get<boolean>('allowAgents', true),
+        allowAgents: this.cfg().get<boolean>('allowAgents', false),
       }),
       askLanguage: () => this.askLanguageCode(),
     };
@@ -539,6 +547,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Painel recém-criado nasce ativo: arma o context key já.
     void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', true);
     this.lastBeat.set(tabId, Date.now()); // arma já: painel recém-criado ainda não bateu
+    // Ref capturada AGORA: ler `panel.webview`/`panel.active` DEPOIS do dispose
+    // lança "Webview is disposed" (getter assertNotDisposed) e aborta o resto do
+    // handler — vazando os listeners e os mapas de pulso. Captura evita o getter.
+    const wv = panel.webview;
     panel.onDidDispose(() => {
       // Fechamento genuíno pelo usuário (não recreate do watchdog): o mapa ainda
       // aponta p/ ESTE painel. Guarda p/ "reabrir sessão fechada".
@@ -547,11 +559,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.lastClosed = { tabId, sessionId: s?.sessionId ?? s?.resumeId };
       }
       this.panels.delete(tabId);
-      this.webviewSession.delete(panel.webview);
+      this.webviewSession.delete(wv);
       this.lastBeat.delete(tabId);
       this.reloadGuard.delete(tabId);
       this.updateReloadBar();
-      if (panel.active) void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', false);
+      // Não lê panel.active (getter lança pós-dispose): zera o context key direto.
+      void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', false);
       sub.dispose();
       vs.dispose();
     });
@@ -568,6 +581,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Liga o checador periódico de render (idempotente). */
   private startWatchdog(): void {
+    if (!WATCHDOG_ENABLED) {
+      if (!this.watchdogDisabledLogged) {
+        this.watchdogDisabledLogged = true;
+        log('Watchdog de renderização DESATIVADO (avaliação de uso) — sem reload automático de webview');
+      }
+      return;
+    }
     if (this.watchdog) return;
     this.watchdog = setInterval(() => this.checkSurfaces(), WATCHDOG_TICK_MS);
     // Foco da janela: o Chromium CONGELA os timers do renderer quando a janela do
@@ -585,13 +605,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const now = Date.now();
     for (const [tabId, panel] of this.panels) if (panel.visible) this.lastBeat.set(tabId, now);
     if (this.hubView?.visible) this.lastBeat.set(HUB_SURFACE, now);
+    dlog('watchdog', 'janela reganhou foco — pulsos rearmados');
   }
 
   /** Varre superfícies VISÍVEIS; oculta é throttled/descartada, não conta. */
   private checkSurfaces(): void {
     // Janela em segundo plano: os timers do renderer estão congelados (não é morte
     // real). Não recarrega nada — só avalia liveness com a janela em foco.
-    if (!vscode.window.state.focused) return;
+    if (!vscode.window.state.focused) {
+      dlog('watchdog', 'tick ignorado: janela sem foco');
+      return;
+    }
     const now = Date.now();
     for (const [tabId, panel] of this.panels) {
       if (panel.visible) this.maybeReload(tabId, panel.webview, now);
@@ -611,10 +635,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.lastBeat.set(key, now); // 1ª observação: arma o relógio, não age
       return;
     }
-    if (now - beat < HEARTBEAT_DEAD_MS) return; // vivo
+    const gap = now - beat;
+    dlog('watchdog', `${key}: ${gap}ms desde o último pulso (limite ${HEARTBEAT_DEAD_MS}ms)`);
+    if (gap < HEARTBEAT_DEAD_MS) return; // vivo
     const g = this.reloadGuard.get(key) ?? { at: 0, count: 0 };
-    if (now - g.at < RELOAD_COOLDOWN_MS) return; // cooldown ativo
-    if (g.count >= RELOAD_MAX_TRIES) return; // já tentou demais: desiste (sem loop)
+    if (now - g.at < RELOAD_COOLDOWN_MS) {
+      dlog('watchdog', `${key}: pulso parado (${gap}ms) mas em cooldown — não recarrega`);
+      return; // cooldown ativo
+    }
+    if (g.count >= RELOAD_MAX_TRIES) {
+      dlog('watchdog', `${key}: pulso parado (${gap}ms) mas atingiu o cap de tentativas — desiste`);
+      return; // já tentou demais: desiste (sem loop)
+    }
+    // Sempre logado (não só debug): este é o ÚNICO ponto que reinicia uma webview.
+    log(`Watchdog: pulso de '${key}' parado há ${gap}ms (foco=${vscode.window.state.focused}) — vai recarregar`);
     try {
       // Renderer crashado IGNORA reatribuir webview.html — só recriar o painel
       // respawna o processo. Hub é WebviewView (VSCode dono): só resta o html.
@@ -665,6 +699,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     panel.iconPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'icon-color.svg');
     this.justRecreated.add(tabId); // o init do painel novo deve forçar replay mesmo se busy
+    log(`recreatePanel: painel da aba '${tabId}' recriado (renderer respawnado)`);
     this.bindPanel(panel, tabId);
     return true;
   }
@@ -1106,8 +1141,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // ao texto. Chave resolvida (cacheada) p/ casar com o que o modal salvou.
     // Recarrega do disco a cada ditado (reflete edições do modal na hora).
     this.voiceDict = loadDictionary();
-    // Keyterms = dicionário do usuário + nome do projeto (melhora vocabulário).
-    const keyterms = buildKeyterms(this.voiceDict, path.basename(this.workspaceCwd()));
+    // Keyterms = dicionário do usuário (prioridade) + nome do projeto + termos
+    // colhidos do workspace (deps + glossário tech). Como o STT roda monolíngue
+    // (proxy rejeita language=multi), keyterms é a âncora p/ grafia literal de
+    // jargão/inglês ditado dentro do PT.
+    const cwd = this.workspaceCwd();
+    const keyterms = buildKeyterms(this.voiceDict, [path.basename(cwd), ...workspaceTerms(cwd)]);
     dlog(
       'voice',
       `dict: ${this.voiceDict.terms.length} termos, ${this.voiceDict.replacements.length} substituições | keyterms="${keyterms.slice(0, 240)}"`,
@@ -1276,6 +1315,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     spellWords?: string[],
   ): void {
     if (spellWords) this.getSpeller().setUserDict(spellWords);
+    // Termos de ditado mudaram: reflete no corretor (não são erro).
+    this.getSpeller().setProjectTerms([...workspaceTerms(this.workspaceCwd()), ...terms]);
     const words = this.getSpeller().userDict();
     saveDictionary({ terms, replacements, spellWords: words });
     this.voiceDict = loadDictionary(); // aplica já às próximas transcrições
@@ -1287,7 +1328,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!this.speller) {
       const dir = vscode.Uri.joinPath(this.extensionUri, 'dict').fsPath;
       // Palavras do corretor vêm do arquivo único da máquina (~/.claude/tootega).
-      this.speller = new Speller(dir, loadDictionary().spellWords ?? []);
+      const dict = loadDictionary();
+      this.speller = new Speller(dir, dict.spellWords ?? []);
+      // Termos técnicos (deps/glossário do workspace + termos do dicionário de
+      // ditado) contam como conhecidos: o corretor não os marca como erro.
+      this.speller.setProjectTerms([...workspaceTerms(this.workspaceCwd()), ...dict.terms]);
     }
     return this.speller;
   }
@@ -2235,6 +2280,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     view.webview.html = this.getHtml(view.webview, 'hub');
     this.hubView = view;
     this.lastBeat.set(HUB_SURFACE, Date.now());
+    dlog('watchdog', 'hub-view montado (resolveWebviewView)');
     const sub = view.webview.onDidReceiveMessage((m: WebviewToHost) =>
       this.onWebviewMessage(m, view.webview),
     );

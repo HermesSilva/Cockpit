@@ -229,15 +229,80 @@ function splitLinks(text: string): ReactNode[] {
 }
 
 function splitCode(text: string, prefix: string): ReactNode[] {
-  return text.split(/(`[^`]+`)/g).map((p, i) =>
-    p.startsWith('`') && p.endsWith('`') ? (
-      <code key={`${prefix}c${i}`} className="md-inline">
-        {p.slice(1, -1)}
-      </code>
-    ) : (
-      <Fragment key={`${prefix}e${i}`}>{renderEmphasis(p)}</Fragment>
-    ),
-  );
+  return text.split(/(`[^`]+`)/g).map((p, i) => {
+    if (p.startsWith('`') && p.endsWith('`')) {
+      const inner = p.slice(1, -1);
+      // Código inline que é um caminho de arquivo (com separador ou extensão
+      // conhecida, opcionalmente com :linha) vira link clicável e abríve.
+      if (isFilePath(inner)) {
+        return (
+          <a key={`${prefix}c${i}`} href={pathHref(inner)} className="md-link md-inline">
+            {inner}
+          </a>
+        );
+      }
+      return (
+        <code key={`${prefix}c${i}`} className="md-inline">
+          {inner}
+        </code>
+      );
+    }
+    return <Fragment key={`${prefix}e${i}`}>{renderTextRun(p)}</Fragment>;
+  });
+}
+
+// --- Auto-link de caminhos de arquivo em texto puro ---
+// Extensões reconhecidas quando a menção não tem separador de caminho.
+const FILE_EXT =
+  /\.(?:tsx?|jsx?|mjs|cjs|json|jsonc|md|markdown|css|scss|sass|less|html?|py|rs|go|java|kt|c|h|hpp|cc|cpp|cs|rb|php|sh|bash|zsh|ps1|yml|yaml|toml|xml|txt|sql|vue|svelte|lock|cfg|ini|env|gitignore|svg|png|jpe?g|gif|webp|dockerfile)$/i;
+
+// Token candidato a caminho: opcional drive (C:\), segmentos, ponto+extensão,
+// e sufixo opcional de linha (:12, :12:5 ou #L12).
+const PATH_RE =
+  /(?:[A-Za-z]:[\\/])?(?:[\w.+\-]+[\\/])*[\w.+\-]+\.[A-Za-z][\w]{0,9}(?::\d+(?::\d+)?|#L\d+)?/g;
+
+/** Normaliza `path:linha[:col]` -> `path#Llinha` (âncora que o host entende). */
+function pathHref(tok: string): string {
+  if (/#L\d+$/.test(tok)) return tok;
+  const m = tok.match(/^(.+?):(\d+)(?::\d+)?$/);
+  if (m && !/^[A-Za-z]$/.test(m[1])) return `${m[1]}#L${m[2]}`;
+  return tok;
+}
+
+/** Heurística: string sem espaços que parece caminho (separador ou extensão). */
+function isFilePath(s: string): boolean {
+  const t = s.trim();
+  if (!t || /\s/.test(t)) return false;
+  const core = t.replace(/(?::\d+(?::\d+)?|#L\d+)$/, '');
+  if (/[\\/]/.test(core) && /[\w.\-]/.test(core)) return true;
+  return FILE_EXT.test(core);
+}
+
+/**
+ * Texto puro -> nós. Caminhos com separador (ex.: `docs/API.md`, `src/a.ts:42`)
+ * viram links; o resto passa por ênfase (bold/itálico).
+ */
+function renderTextRun(text: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  PATH_RE.lastIndex = 0;
+  while ((m = PATH_RE.exec(text))) {
+    const tok = m[0];
+    // Em texto puro só linka quando há separador, p/ evitar falsos positivos
+    // (ex.: "e.g.", "Node.js" em prosa). Backticks usam isFilePath (mais amplo).
+    if (!/[\\/]/.test(tok)) continue;
+    if (m.index > last) out.push(...renderEmphasis(text.slice(last, m.index)));
+    out.push(
+      <a key={`p${key++}`} href={pathHref(tok)} className="md-link">
+        {tok}
+      </a>,
+    );
+    last = m.index + tok.length;
+  }
+  if (last < text.length) out.push(...renderEmphasis(text.slice(last)));
+  return out;
 }
 
 function renderEmphasis(text: string): ReactNode[] {

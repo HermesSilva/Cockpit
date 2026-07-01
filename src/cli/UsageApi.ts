@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { LimitWindow } from '../../shared/protocol';
+import { dlog } from '../util/logger';
 
 export interface ApiUsage {
   fiveHour?: LimitWindow;
@@ -45,6 +46,7 @@ export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> 
   return new Promise((resolve) => {
     const token = readToken();
     if (!token) {
+      dlog('usage-api', 'sem accessToken OAuth em ~/.claude/.credentials.json');
       cache = { at: Date.now(), data: undefined };
       resolve(undefined);
       return;
@@ -78,17 +80,23 @@ export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> 
                 sevenDay: win(j.seven_day),
                 sevenDaySonnet: win(j.seven_day_sonnet),
               });
-            } catch {
+            } catch (e) {
+              dlog('usage-api', `200 mas JSON inválido: ${String(e)}`);
               done(undefined);
             }
           } else {
-            done(undefined); // 401/expirado/etc. -> fallback
+            dlog('usage-api', `HTTP ${res.statusCode}: ${body.slice(0, 200)}`); // 401/expirado/etc. -> fallback
+            done(undefined);
           }
         });
       },
     );
-    req.on('error', () => done(undefined));
+    req.on('error', (e) => {
+      dlog('usage-api', `erro de rede: ${String((e as Error)?.message || e)}`);
+      done(undefined);
+    });
     req.on('timeout', () => {
+      dlog('usage-api', 'timeout (8s)');
       req.destroy();
       done(undefined);
     });

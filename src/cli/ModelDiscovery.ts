@@ -1,7 +1,11 @@
 // Descoberta opcional de modelos via API /v1/models.
-// Só funciona quando há credencial de API (key ou bearer token) — contas de
-// assinatura (apiKeySource: none) não têm key e caem no fallback (aliases + custom).
+// Funciona com credencial de API (key/bearer via env) OU com o token OAuth da
+// assinatura (~/.claude/.credentials.json) — assim contas de assinatura também
+// veem modelos novos assim que a conta os libera, sem depender da lista estática.
+// GET /v1/models NÃO gasta token: cabe na exceção "utilitária limpa" do CLAUDE.md
+// (mesmo padrão do endpoint de usage). Só LEITURA do token; nunca grava/loga.
 import * as https from 'node:https';
+import { readOauthToken } from './AiClient';
 
 export interface DiscoveryCreds {
   apiKey?: string; // x-api-key
@@ -13,11 +17,22 @@ export function resolveCreds(settingApiKey?: string): DiscoveryCreds | undefined
   const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
   if (apiKey) return { apiKey };
   if (authToken) return { authToken };
+  // Assinatura sem API key: usa o token OAuth do CLI (mesma auth, chamada limpa).
+  const oauth = readOauthToken();
+  if (oauth) return { authToken: oauth };
   return undefined;
 }
 
-/** Retorna os ids de modelo que a credencial acessa, ou [] em qualquer falha. */
-export function discoverModels(creds: DiscoveryCreds): Promise<string[]> {
+// Modelo descoberto via /v1/models. `contextTokens` = max_input_tokens (janela
+// de contexto real da conta; presente desde mar/2026 — undefined em contas/versões
+// que ainda não o expõem).
+export interface DiscoveredModel {
+  id: string;
+  contextTokens?: number;
+}
+
+/** Retorna os modelos que a credencial acessa (id + contexto), ou [] em falha. */
+export function discoverModels(creds: DiscoveryCreds): Promise<DiscoveredModel[]> {
   return new Promise((resolve) => {
     const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' };
     if (creds.apiKey) {
@@ -46,10 +61,16 @@ export function discoverModels(creds: DiscoveryCreds): Promise<string[]> {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try {
               const json = JSON.parse(body);
-              const ids = Array.isArray(json?.data)
-                ? json.data.map((m: any) => m?.id).filter((x: unknown): x is string => !!x)
+              const models: DiscoveredModel[] = Array.isArray(json?.data)
+                ? json.data
+                    .filter((m: any) => m?.id)
+                    .map((m: any) => ({
+                      id: m.id as string,
+                      contextTokens:
+                        typeof m.max_input_tokens === 'number' ? m.max_input_tokens : undefined,
+                    }))
                 : [];
-              resolve(ids);
+              resolve(models);
             } catch {
               resolve([]);
             }

@@ -553,6 +553,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         t={t}
         locale={state.locale}
         correctEnabled={state.config?.voiceCorrect !== false}
+        spellCheck={state.config?.spellCheck === true}
         busy={tab?.status === 'busy'}
         disabled={cliMissing}
         slashCommands={tab?.slashCommands ?? []}

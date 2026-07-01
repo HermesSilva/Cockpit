@@ -22,6 +22,7 @@ interface Props {
   t: Translator;
   locale: string;
   correctEnabled: boolean;
+  spellCheck: boolean; // corretor ortográfico ao digitar (marca palavras no overlay)
   busy: boolean;
   disabled: boolean;
   slashCommands: string[];
@@ -57,6 +58,7 @@ export function Composer({
   t,
   locale,
   correctEnabled,
+  spellCheck,
   busy,
   disabled,
   slashCommands,
@@ -127,8 +129,8 @@ export function Composer({
     const hl = hlRef.current;
     // \n final garante que a última linha (e quebras finais) tenham altura no espelho.
     // spell=true marca palavras erradas (após os dicionários carregarem; spellTick).
-    if (hl) hl.innerHTML = `${richHighlight(text, spellReady())}\n`;
-  }, [text, spellTick]);
+    if (hl) hl.innerHTML = `${richHighlight(text, spellCheck && spellReady())}\n`;
+  }, [text, spellTick, spellCheck]);
 
   const syncScroll = () => {
     const el = ref.current;
@@ -521,7 +523,7 @@ export function Composer({
   // recém-terminada tem erro e há correção de alta confiança, troca sozinho.
   const WORD_TAIL = /[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*$/;
   const tryAutocorrect = (value: string, caret: number) => {
-    if (!spellReady() || caret < 2) return;
+    if (!spellCheck || !spellReady() || caret < 2) return;
     const delim = value[caret - 1];
     if (!delim || /[A-Za-zÀ-ÖØ-öø-ÿ0-9]/.test(delim)) return; // só dispara em delimitador
     const m = WORD_TAIL.exec(value.slice(0, caret - 1));

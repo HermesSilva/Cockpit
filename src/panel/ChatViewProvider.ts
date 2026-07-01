@@ -1535,6 +1535,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.sendSessions();
   }
 
+  /**
+   * Desliga o CLI vivo de uma aba antes de apagar seu transcript. Sem isto o
+   * processo `claude` da sessão aberta segura o handle do `.jsonl` (no Windows o
+   * unlink falha e o arquivo sobrevive) OU o recria no próximo flush/keep-alive —
+   * a "sessão-fantasma" que reaparece no hub. clearConversation() mata o processo
+   * e zera sessionId/resumeId, detachando a aba do transcript apagado.
+   * `all=true` detacha todas as abas vivas (usado no "apagar tudo").
+   */
+  private detachLiveSessions(sessionId?: string, all = false): void {
+    for (const [tabId, s] of this.sessions) {
+      const match = all || s.sessionId === sessionId || s.resumeId === sessionId;
+      if (!match) continue;
+      const wasOpen = !!(s.sessionId || s.resumeId || s.cli);
+      s.clearConversation();
+      if (!wasOpen) continue;
+      // Reflete a limpeza na webview aberta desta aba (se houver).
+      this.setTabTitle(tabId, '');
+      this.post({ kind: 'history', items: [] }, tabId);
+    }
+  }
+
   // Refletem a aba ativa (override da aba ?? default das settings).
   private currentModel(): string {
     return this.active().model();
@@ -1671,6 +1692,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         daseEnabled: this.currentDaseEnabled(),
         daseAvailable: this.daseAvailable(),
         showThinking: this.cfg().get<boolean>('showThinking', false),
+        spellCheck: this.cfg().get<boolean>('spellCheck', false),
         expandToolCards: this.cfg().get<boolean>('expandToolCards', false),
         pendingRestart: this.pendingRestart,
         userName: this.userName(),
@@ -1950,12 +1972,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.remoteControl(m.sessionId);
         break;
       case 'deleteSession':
-        // Confirmação já feita no webview (modal elegante). Apaga direto.
+        // Confirmação já feita no webview (modal elegante). Detacha a aba viva
+        // (libera o handle / impede recriação) e então apaga o transcript.
+        this.detachLiveSessions(m.sessionId);
         deleteSession(this.workspaceCwd(), m.sessionId);
         this.sendSessions();
         break;
       case 'deleteAllSessions':
-        // Confirmação já feita no webview. Apaga todos os transcripts do cwd.
+        // Confirmação já feita no webview. Detacha TODAS as abas vivas antes de
+        // apagar — senão a sessão aberta segura/recria seu .jsonl e reaparece.
+        this.detachLiveSessions(undefined, true);
         deleteAllSessions(this.workspaceCwd());
         this.sendSessions();
         break;

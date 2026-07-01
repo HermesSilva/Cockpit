@@ -226,6 +226,7 @@ export interface SessionConfig {
   daseEnabled: boolean; // integração DASE (MCP do ORM Designer) ligada nesta aba
   daseAvailable: boolean; // endpoint do DASE encontrado (servidor MCP ligado no DASE)
   showThinking: boolean; // expandir thinking por padrão
+  spellCheck: boolean; // corretor ortográfico ao digitar (overlay do compositor)
   expandToolCards: boolean; // expandir cards de tool por padrão na timeline
   pendingRestart: boolean; // model/effort/permission mudou e reinicia no próximo envio
   userName: string; // nome do assinante para o rótulo "You" (vazio = usa o padrão)

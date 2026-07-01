@@ -20,6 +20,7 @@
   "cfg.allowAgents": "Libera o agente a criar subagentes (Task) e workflows (Workflow). Desligado por padrão — eles rodam agentes paralelos extras e podem gastar muitos tokens, então por padrão o CLI sobe com --disallowedTools Task,Workflow. Ligue para permitir. Reflete no checkbox 'Agentes e workflows' do painel; alterne lá para sobrepor só a sessão atual.",
   "cfg.notifyOnComplete": "Mostra uma notificação quando o Claude termina um turno e o painel do Cockpit não está visível.",
   "cfg.showThinking": "Expande os blocos de raciocínio do Claude por padrão no chat.",
+  "cfg.spellCheck": "Corrige a ortografia enquanto você digita no compositor, sublinhando as palavras erradas. Desligado por padrão.",
   "cfg.expandToolCards": "Expande os cartões de chamadas de ferramenta por padrão na timeline.",
   "cfg.userName": "Nome exibido nas suas mensagens no lugar de 'You'. Vazio = usuário do sistema operacional.",
   "cfg.ffmpegPath": "Caminho do executável ffmpeg usado na captura do ditado por voz. Vazio = usa 'ffmpeg' do PATH.",

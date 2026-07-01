@@ -20,6 +20,7 @@
   "cfg.allowAgents": "Allow the agent to spawn subagents (Task) and workflows (Workflow). Default off — these run extra parallel agents and can burn a lot of tokens, so by default the CLI starts with --disallowedTools Task,Workflow. Turn on to allow them. Reflected in the 'Agents & workflows' checkbox in the panel; toggle there to override just the current session.",
   "cfg.notifyOnComplete": "Show a notification when Claude finishes a turn and the Cockpit panel is not visible.",
   "cfg.showThinking": "Expand Claude's thinking blocks by default in the chat.",
+  "cfg.spellCheck": "Check spelling as you type in the composer, underlining misspelled words. Off by default.",
   "cfg.expandToolCards": "Expand tool call cards by default in the timeline.",
   "cfg.userName": "Name shown for your messages instead of 'You'. Empty = your OS username.",
   "cfg.ffmpegPath": "Path to the ffmpeg executable used for voice dictation capture. Empty = use 'ffmpeg' from PATH.",

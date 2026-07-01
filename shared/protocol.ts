@@ -167,6 +167,21 @@ export interface UsageBreakdown {
   bySource: UsageSlice[]; // main vs. subagent (sidechain)
 }
 
+/** Tokens de um único dia (chave local YYYY-MM-DD). */
+export interface DailyTokens {
+  date: string; // YYYY-MM-DD no fuso local
+  sent: number; // input + cache_read + cache_creation
+  received: number; // output
+}
+
+/** Contador GLOBAL de tokens (todas as instâncias/contextos da máquina). */
+export interface TokenTotals {
+  sent: number; // all-time
+  received: number; // all-time
+  total: number; // sent + received
+  days: DailyTokens[]; // recorte por dia (mais recente primeiro)
+}
+
 export interface UsageData {
   account: UsageAccount;
   buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; sevenDaySonnet?: UsageBucket };
@@ -174,6 +189,8 @@ export interface UsageData {
   trackingEnabled: boolean; // wrapper de statusline instalado (captura rate_limits real)
   // Detalhamento local 7d (por modelo / origem) — estimativa, sempre presente.
   breakdown?: UsageBreakdown;
+  // Contador global de tokens (enviado/recebido/total) por dia — toda a máquina.
+  tokens?: TokenTotals;
   // Telemetria OTEL (opt-in) agregada pelo receiver local — ausente se desligado.
   otel?: OtelStats;
   generatedAt: string; // ISO 8601
@@ -199,6 +216,7 @@ export interface SessionConfig {
   effort: string; // 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   models: string[]; // opções planas (compat)
   modelGroups?: ModelGroup[]; // opções agrupadas (aliases / versões / ativos)
+  modelMeta?: Record<string, ModelMeta>; // contexto (real, /v1/models) + preço (docs) por id
   efforts: string[];
   defaultModel?: string; // o que 'Default' resolve (settings.model ou init observado)
   defaultEffort?: string; // settings.effortLevel
@@ -218,6 +236,16 @@ export interface SessionConfig {
 export interface ModelGroup {
   label: string; // 'aliases' | 'versions' | 'active' | 'discovered'
   items: string[];
+}
+
+// Metadados por modelo para o seletor (colunas contexto/preço).
+// Contexto vem REAL da Models API (/v1/models: max_input_tokens); preço vem das
+// docs de pricing (não há endpoint de preço). Campos ausentes = desconhecido.
+export interface ModelMeta {
+  contextTokens?: number; // janela de contexto (max_input_tokens)
+  inMTok?: number; // preço de entrada em USD por 1M tokens
+  outMTok?: number; // preço de saída em USD por 1M tokens
+  priceMult?: number; // multiplicador de entrada normalizado (Opus 4.8 = 1x)
 }
 
 // Sessão/conversa existente ("contexto") para retomar.

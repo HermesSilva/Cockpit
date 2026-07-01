@@ -514,6 +514,107 @@ body {
   font-size: 11px;
   max-width: 160px;
 }
+
+/* Seletor de modelo com 3 colunas (dropdown próprio) */
+.ctrl-modelsel {
+  position: relative;
+}
+.ctrl-modelsel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  max-width: 180px;
+}
+.ctrl-modelsel-cur {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctrl-modelsel-arrow {
+  opacity: 0.6;
+  font-size: 9px;
+}
+.ctrl-modelsel-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 300px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border, #555));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  padding: 2px;
+}
+/* Larguras fixas nas colunas numéricas: cada linha é um grid próprio, então só
+   colunas de largura fixa alinham verticalmente entre as linhas. */
+.ctrl-modelsel-head,
+.ctrl-modelsel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px 44px;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.ctrl-modelsel-head {
+  opacity: 0.55;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  position: sticky;
+  top: 0;
+  background: inherit;
+}
+.ctrl-modelsel-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--vscode-dropdown-foreground, inherit);
+  cursor: pointer;
+  text-align: left;
+}
+.ctrl-modelsel-row:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
+}
+.ctrl-modelsel-row.sel {
+  background: var(--vscode-list-activeSelectionBackground, rgba(255, 255, 255, 0.12));
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+.ctrl-modelsel-row .c-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctrl-modelsel-row .c-ctx,
+.ctrl-modelsel-row .c-price {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ctrl-modelsel-head span:not(:first-child) {
+  text-align: right;
+}
+.ctrl-modelsel-row.custom {
+  border-top: 1px solid var(--vscode-panel-border, #444);
+  opacity: 0.85;
+  font-style: italic;
+}
+/* Seletor de effort: 2 colunas (nível · consumo estimado) */
+.ctrl-effortsel .ctrl-modelsel-pop {
+  min-width: 180px;
+}
+.ctrl-effortsel .ctrl-modelsel-head,
+.ctrl-effortsel .ctrl-modelsel-row {
+  grid-template-columns: minmax(0, 1fr) 52px;
+}
 .ctrl-custom {
   display: flex;
   gap: 4px;
@@ -1282,17 +1383,18 @@ body {
 }
 .composer-side {
   flex: 0 0 auto;
-  width: 66px;
-  display: flex;
-  flex-direction: column;
+  width: 124px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
+  align-content: start; /* botões com altura fixa; não esticam p/ preencher a coluna */
 }
 .composer-side-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 30px;
+  height: 22px;
   flex: 0 0 auto;
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #555));
   border-radius: 6px;
@@ -1385,8 +1487,9 @@ body {
 /* Send/Stop preenche o resto da coluna lateral, alinhado à altura do input. */
 .composer-side .btn {
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 30px;
+  grid-column: 1 / -1; /* Send/Stop ocupa a linha inteira (2 colunas) */
+  flex: 0 0 auto;
+  min-height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

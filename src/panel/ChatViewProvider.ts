@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
 import { CacheKeeper } from '../cli/CacheKeeper';
 import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
+import { ensurePricing, type PricingMap } from '../cli/ModelPricing';
 import {
   listSessions,
   loadTranscript,
@@ -36,6 +37,7 @@ import { listPlugins, pluginAction } from '../cli/PluginManager';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
+import { computeDailyTokens } from '../stats/DailyTokens';
 import { readUsageCache } from '../cli/StatuslineCache';
 import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
@@ -43,7 +45,7 @@ import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/S
 import { fetchAccountUsage } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
-import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement } from '../../shared/protocol';
+import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { ensureDaseMcpConfig, readDaseEndpoint } from '../cli/DaseMcp';
 import { resolveLocale } from '../i18n/host';
@@ -152,9 +154,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // aberto. Recupera o webview cinza/morto (mesma ação do watchdog) — funciona no
   // host, então independe do renderer e das configs de ações do editor.
   private reloadBar?: vscode.StatusBarItem;
-  // Modelos descobertos ao vivo (modelo ativo do init + /v1/models quando há key).
-  private discoveredModels = new Set<string>();
+  // Modelos descobertos ao vivo (modelo ativo do init + /v1/models). Valor =
+  // janela de contexto real (max_input_tokens) ou undefined se a conta não expõe.
+  private discoveredModels = new Map<string, number | undefined>();
   private discoveryTried = false;
+  // Preço por modelo (das docs de pricing; cache 1x/dia). Vazio até carregar.
+  private pricing: PricingMap = {};
+  private pricingTried = false;
 
   // Defaults do Claude Code (effort do settings; model do settings ou init cacheado).
   private defaults: { model?: string; effort?: string } = {};
@@ -418,7 +424,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     if (typeof model === 'string' && model) {
       if (!this.discoveredModels.has(model)) {
-        this.discoveredModels.add(model);
+        this.discoveredModels.set(model, undefined); // contexto vem do /v1/models
         this.sendConfig();
       }
       const settingsModel = this.cfg().get<string>('model', '') || 'default';
@@ -910,10 +916,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Sessões VIVAS (abas em memória) podem ainda não ter transcript listável no
     // disco na 1ª resposta do CLI. Mescla-as para o hub refletir contextos em
     // execução de imediato, sem esperar o turno terminar.
+    // Só mescla abas OCUPADAS (rodando): uma aba idle com conteúdo já vem de
+    // listSessions (o .jsonl existe no disco); uma aba idle e vazia NÃO deve
+    // reaparecer — senão vira "fantasma" que ressurge após apagar tudo.
     const known = new Set(sessions.map((s) => s.id));
     for (const tabId of this.tabOrder) {
       const s = this.sessions.get(tabId);
-      const id = s?.sessionId ?? s?.resumeId;
+      if (!s || !s.busy) continue;
+      const id = s.sessionId ?? s.resumeId;
       if (!id || known.has(id)) continue;
       known.add(id);
       const nowIso = new Date().toISOString();
@@ -969,7 +979,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const sonnet = this.lastApiSonnet ?? readUsageCache()?.sevenDaySonnet;
       // Detalhamento local 7d (por modelo / origem) — sempre estimativa de tabela,
       // independente do % real da conta. Varre os transcripts desta máquina.
-      const local = await computeLocalUsage(Date.now());
+      const [local, tokens] = await Promise.all([
+        computeLocalUsage(Date.now()),
+        computeDailyTokens(),
+      ]);
       this.post({
         kind: 'usageData',
         data: {
@@ -982,6 +995,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           source: this.lastUsageSource,
           trackingEnabled: usageTrackingEnabled(),
           breakdown: local.breakdown,
+          tokens,
           otel: this.otel.stats(),
           generatedAt: new Date().toISOString(),
         },
@@ -1590,23 +1604,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Consulta /v1/models uma vez, se houver credencial de API. No-op sem key. */
+  /**
+   * Consulta /v1/models uma vez. Usa API key (se houver) ou o token OAuth da
+   * assinatura — assim modelos novos liberados na conta aparecem sem editar a
+   * lista estática. No-op só quando não há credencial alguma.
+   */
   private async tryDiscoverModels(): Promise<void> {
+    // Preço é independente da credencial (docs públicas) — busca em paralelo.
+    void this.tryFetchPricing();
     if (this.discoveryTried) return;
     this.discoveryTried = true;
     const creds = resolveCreds(this.cfg().get<string>('apiKey', ''));
-    if (!creds) return; // assinatura sem API key: usa fallback
+    if (!creds) return; // sem API key nem token OAuth: usa fallback estático
     try {
-      const ids = await discoverModels(creds);
+      const models = await discoverModels(creds);
       let added = false;
-      for (const id of ids) {
-        if (!this.discoveredModels.has(id)) {
-          this.discoveredModels.add(id);
-          added = true;
-        }
+      for (const m of models) {
+        if (!this.discoveredModels.has(m.id)) added = true;
+        this.discoveredModels.set(m.id, m.contextTokens);
       }
       if (added) {
-        log(`Discovered ${ids.length} models via /v1/models`);
+        log(`Discovered ${models.length} models via /v1/models`);
         this.sendConfig();
       }
     } catch {
@@ -1614,10 +1632,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** Carrega o preço das docs (cache 1x/dia). No-op após a 1ª vez. */
+  private async tryFetchPricing(): Promise<void> {
+    if (this.pricingTried || !this.globalStorageDir) return;
+    this.pricingTried = true;
+    try {
+      const map = await ensurePricing(this.globalStorageDir);
+      if (Object.keys(map).length > 0) {
+        this.pricing = map;
+        log(`Loaded pricing for ${Object.keys(map).length} models`);
+        this.sendConfig();
+      }
+    } catch {
+      /* silencioso — coluna de preço fica vazia */
+    }
+  }
+
   private sendConfig(): void {
     // Descobertos ao vivo que não estão na lista — pulando as versões de 200K
     // cuja variante 1M já é oferecida.
-    const discoveredExtra = [...this.discoveredModels].filter(
+    const discoveredExtra = [...this.discoveredModels.keys()].filter(
       (m) => !MODEL_LIST.includes(m) && !BASE_OF_1M.has(m),
     );
     const models = dedupe([...MODEL_LIST, ...discoveredExtra]);
@@ -1627,6 +1661,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         model: this.currentModel(),
         effort: this.currentEffort(),
         models,
+        modelMeta: this.buildModelMeta(models),
         efforts: EFFORT_OPTIONS,
         defaultModel: this.defaults.model ?? this.observedDefaultModel,
         defaultEffort: this.defaults.effort,
@@ -1643,6 +1678,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         verbosity: this.cfg().get<string>('verbosity', 'verbose') || 'verbose',
       },
     });
+  }
+
+  /**
+   * Metadados por modelo para as colunas do seletor. Contexto é REAL da Models
+   * API quando descoberto; senão derivado ([1m]→1M, senão 200K). Preço vem das
+   * docs (id base, sem sufixo [1m]); multiplicador normaliza a entrada pelo
+   * Opus 4.8 (=1x), ou pelo maior preço se o Opus não estiver na tabela.
+   */
+  private buildModelMeta(models: string[]): Record<string, ModelMeta> {
+    const anchor =
+      this.pricing['claude-opus-4-8']?.inMTok ??
+      Math.max(0, ...Object.values(this.pricing).map((p) => p.inMTok));
+    const meta: Record<string, ModelMeta> = {};
+    for (const id of models) {
+      if (id === 'default' || /^(opus|sonnet|haiku|fable|mythos)$/i.test(id)) continue;
+      const is1m = /\[1m\]/i.test(id);
+      // Chave de preço: sem sufixo [1m] e sem snapshot datado (-YYYYMMDD).
+      const baseId = id.replace(/\[1m\]/i, '').replace(/-\d{8}$/, '');
+      const contextTokens = is1m ? 1_000_000 : (this.discoveredModels.get(id) ?? 200_000);
+      const price = this.pricing[baseId];
+      meta[id] = {
+        contextTokens,
+        inMTok: price?.inMTok,
+        outMTok: price?.outMTok,
+        priceMult:
+          price && anchor > 0 ? Math.round((price.inMTok / anchor) * 100) / 100 : undefined,
+      };
+    }
+    return meta;
   }
 
   interrupt(): void {

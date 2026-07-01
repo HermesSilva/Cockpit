@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { Translator } from '../i18n';
-import type { SessionConfig } from '../../../shared/protocol';
+import type { SessionConfig, ModelMeta } from '../../../shared/protocol';
 import { Tooltip } from './Tooltip';
 
 const CUSTOM = '__custom__';
@@ -48,38 +48,29 @@ export function Controls({ t, config, activeModel, onModel, onEffort, onPermissi
       <Tooltip className="tt-block" title={t('controls.model')} text={t('tip.ctrl.model')}>
         <label className="ctrl">
           <span className="ctrl-label">{t('controls.model')}</span>
-          <select
-            className="ctrl-select"
+          <ModelSelect
+            t={t}
             value={selectValue}
-            onChange={(e) => onModelSelect(e.target.value)}
-          >
-            {!known && config.model && config.model !== CUSTOM && (
-              <option value={config.model}>{config.model}</option>
-            )}
-            {config.models.map((m) => (
-              <option key={m} value={m}>
-                {modelLabel(m, t, config.defaultModel ?? activeModel)}
-              </option>
-            ))}
-            <option value={CUSTOM}>{t('controls.model')} …</option>
-          </select>
+            models={config.models}
+            meta={config.modelMeta}
+            known={known}
+            currentModel={config.model}
+            defaultFor={config.defaultModel ?? activeModel}
+            onSelect={onModelSelect}
+          />
         </label>
       </Tooltip>
 
       <Tooltip className="tt-block" title={t('controls.effort')} text={t('tip.ctrl.effort')}>
         <label className="ctrl">
           <span className="ctrl-label">{t('controls.effort')}</span>
-          <select
-            className="ctrl-select"
+          <EffortSelect
+            t={t}
             value={config.effort}
-            onChange={(e) => onEffort(e.target.value)}
-          >
-            {config.efforts.map((ef) => (
-              <option key={ef} value={ef}>
-                {effortLabel(ef, t, config.defaultEffort)}
-              </option>
-            ))}
-          </select>
+            efforts={config.efforts}
+            defaultEffort={config.defaultEffort}
+            onSelect={onEffort}
+          />
         </label>
       </Tooltip>
 
@@ -150,6 +141,210 @@ export function Controls({ t, config, activeModel, onModel, onEffort, onPermissi
 
       {config.pendingRestart && (
         <div className="ctrl-note pending">{t('controls.applies')}</div>
+      )}
+    </div>
+  );
+}
+
+interface ModelSelectProps {
+  t: Translator;
+  value: string; // selecionado ('__custom__' quando em modo custom)
+  models: string[];
+  meta?: Record<string, ModelMeta>;
+  known: boolean; // config.model está na lista?
+  currentModel: string;
+  defaultFor?: string; // o que 'default' resolve (p/ rótulo)
+  onSelect: (v: string) => void;
+}
+
+/** Seletor de modelo com 3 colunas (modelo · contexto · preço). Dropdown próprio
+ *  porque <option> nativo não renderiza colunas. Contexto/preço vêm de `meta`. */
+function ModelSelect({
+  t,
+  value,
+  models,
+  meta,
+  known,
+  currentModel,
+  defaultFor,
+  onSelect,
+}: ModelSelectProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  // Modelo custom aplicado (fora da lista) aparece no topo.
+  const rows: string[] = [];
+  if (!known && currentModel && currentModel !== CUSTOM) rows.push(currentModel);
+  rows.push(...models);
+
+  const currentLabel =
+    value === CUSTOM ? `${t('controls.model')} …` : modelLabel(value, t, defaultFor);
+
+  const pick = (v: string) => {
+    setOpen(false);
+    onSelect(v);
+  };
+
+  return (
+    <div className="ctrl-modelsel" ref={ref}>
+      <button
+        type="button"
+        className="ctrl-select ctrl-modelsel-btn"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="ctrl-modelsel-cur">{currentLabel}</span>
+        <span className="ctrl-modelsel-arrow">▾</span>
+      </button>
+      {open && (
+        <div className="ctrl-modelsel-pop" role="listbox">
+          <div className="ctrl-modelsel-head">
+            <span>{t('controls.model')}</span>
+            <span>{t('controls.context')}</span>
+            <span>{t('controls.price')}</span>
+          </div>
+          {rows.map((m) => {
+            const md = meta?.[m];
+            return (
+              <button
+                key={m}
+                type="button"
+                role="option"
+                aria-selected={m === value}
+                className={`ctrl-modelsel-row${m === value ? ' sel' : ''}`}
+                onClick={() => pick(m)}
+              >
+                <span className="c-model">{modelLabel(m, t, defaultFor)}</span>
+                <span className="c-ctx">
+                  {md?.contextTokens ? formatContext(md.contextTokens) : '—'}
+                </span>
+                <span className="c-price" title={priceTitle(md)}>
+                  {md?.priceMult != null ? formatMult(md.priceMult) : '—'}
+                </span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            role="option"
+            className="ctrl-modelsel-row custom"
+            onClick={() => pick(CUSTOM)}
+          >
+            <span className="c-model">{t('controls.model')} …</span>
+            <span className="c-ctx" />
+            <span className="c-price" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 200000 -> "200K"; 1000000 -> "1M". */
+function formatContext(tokens: number): string {
+  if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`.replace('.0M', 'M');
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`;
+  return String(tokens);
+}
+
+/** 1 -> "1x"; 0.6 -> "0.6x"; 2 -> "2x". */
+function formatMult(mult: number): string {
+  return `${mult}x`;
+}
+
+/** Tooltip com o preço real em USD/1M ("$5/M in · $25/M out"). */
+function priceTitle(md?: ModelMeta): string {
+  if (!md || md.inMTok == null) return '';
+  const out = md.outMTok != null ? ` · $${md.outMTok}/M out` : '';
+  return `$${md.inMTok}/M in${out}`;
+}
+
+// Estimativa de consumo relativo de tokens por nível de effort. NÃO é fator
+// oficial (Anthropic não publica multiplicador por effort) — apenas ordem de
+// grandeza p/ orientar a escolha. Ancorado em high = 1x (default da API).
+// Recalibre aqui se quiser outros valores.
+const EFFORT_MULT: Record<string, number> = {
+  low: 0.3,
+  medium: 0.6,
+  high: 1,
+  xhigh: 1.6,
+  max: 2.5,
+};
+
+interface EffortSelectProps {
+  t: Translator;
+  value: string;
+  efforts: string[];
+  defaultEffort?: string;
+  onSelect: (v: string) => void;
+}
+
+/** Seletor de effort com multiplicador estimado de consumo de tokens por nível. */
+function EffortSelect({ t, value, efforts, defaultEffort, onSelect }: EffortSelectProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const pick = (v: string) => {
+    setOpen(false);
+    onSelect(v);
+  };
+
+  // 'default' resolve p/ o effort padrão — usa o multiplicador dele.
+  const multFor = (ef: string): number | undefined =>
+    EFFORT_MULT[ef === 'default' ? (defaultEffort ?? '') : ef];
+
+  return (
+    <div className="ctrl-modelsel ctrl-effortsel" ref={ref}>
+      <button
+        type="button"
+        className="ctrl-select ctrl-modelsel-btn"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="ctrl-modelsel-cur">{effortLabel(value, t, defaultEffort)}</span>
+        <span className="ctrl-modelsel-arrow">▾</span>
+      </button>
+      {open && (
+        <div className="ctrl-modelsel-pop" role="listbox">
+          <div className="ctrl-modelsel-head">
+            <span>{t('controls.effort')}</span>
+            <span title={t('tip.effort.est')}>{t('controls.usage')}</span>
+          </div>
+          {efforts.map((ef) => {
+            const mult = multFor(ef);
+            return (
+              <button
+                key={ef}
+                type="button"
+                role="option"
+                aria-selected={ef === value}
+                className={`ctrl-modelsel-row${ef === value ? ' sel' : ''}`}
+                onClick={() => pick(ef)}
+              >
+                <span className="c-model">{effortLabel(ef, t, defaultEffort)}</span>
+                <span className="c-price" title={t('tip.effort.est')}>
+                  {mult != null ? `~${mult}x` : '—'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

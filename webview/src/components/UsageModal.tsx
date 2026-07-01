@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Portal } from './Portal';
 import type { Translator } from '../i18n';
-import type { UsageData, UsageBucket, UsageSlice, OtelStats } from '../../../shared/protocol';
+import type { UsageData, UsageBucket, UsageSlice, OtelStats, TokenTotals } from '../../../shared/protocol';
 import { fmtUsdShort, fmtCompact, fmtInt } from '../util/format';
 
 interface Props {
@@ -84,6 +84,11 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                 <Breakdown t={t} b={usage.breakdown} />
               )}
 
+              {/* CONTADOR GLOBAL DE TOKENS (enviado/recebido/total) por dia */}
+              {usage.tokens && usage.tokens.total > 0 && (
+                <Tokens t={t} locale={locale} tk={usage.tokens} />
+              )}
+
               {/* TELEMETRIA OTEL (opt-in) */}
               {usage.otel?.enabled && <Otel t={t} locale={locale} o={usage.otel} />}
 
@@ -159,6 +164,65 @@ function Breakdown({ t, b }: { t: Translator; b: { byModel: UsageSlice[]; bySour
       <div className="usage-muted usage-breakdown-note">{t('usage.breakdown.note')}</div>
     </>
   );
+}
+
+// Contador GLOBAL de tokens (enviado/recebido/total), all-time + por dia. Fonte:
+// transcripts locais — soma de todos os contextos e janelas do VSCode da máquina.
+function Tokens({ t, locale, tk }: { t: Translator; locale: string; tk: TokenTotals }) {
+  const max = tk.days.reduce((m, d) => Math.max(m, d.sent + d.received), 0) || 1;
+  return (
+    <>
+      <div className="usage-section-label">
+        {t('usage.tokens')}
+        <span className="usage-badge live">{t('usage.tokens.badge')}</span>
+      </div>
+      <div className="usage-rows">
+        <Row k={t('usage.tokens.sent')} v={fmtInt(tk.sent, locale)} />
+        <Row k={t('usage.tokens.received')} v={fmtInt(tk.received, locale)} />
+        <Row k={t('usage.tokens.total')} v={fmtInt(tk.total, locale)} accent />
+      </div>
+      {tk.days.length > 0 && (
+        <>
+          <div className="usage-sub-label">{t('usage.tokens.byDay')}</div>
+          {tk.days.map((d) => (
+            <div className="usage-slice" key={d.date}>
+              <div className="usage-slice-head">
+                <span className="usage-slice-label">{fmtDay(d.date, locale)}</span>
+                <span className="usage-slice-val">
+                  {fmtCompact(d.sent + d.received)}
+                  <span className="usage-muted">
+                    {' '}
+                    ↑{fmtCompact(d.sent)} ↓{fmtCompact(d.received)}
+                  </span>
+                </span>
+              </div>
+              <div className="usage-bar">
+                <span
+                  className="usage-bar-fill cool"
+                  style={{ width: `${Math.max(2, ((d.sent + d.received) / max) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+      <div className="usage-muted usage-breakdown-note">{t('usage.tokens.note')}</div>
+    </>
+  );
+}
+
+// "2026-06-30" -> rótulo curto localizado (ex.: "30 jun"). Hoje vira "Today/Hoje".
+function fmtDay(iso: string, locale: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+  const now = new Date();
+  const sameDay = dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate();
+  if (sameDay) return locale.startsWith('pt') ? 'Hoje' : 'Today';
+  try {
+    return new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(dt);
+  } catch {
+    return iso;
+  }
 }
 
 // Telemetria OTEL (opt-in): LOC por modelo, sessões, commits, PRs, decisões.

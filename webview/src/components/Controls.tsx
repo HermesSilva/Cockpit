@@ -102,7 +102,7 @@ export function Controls({ t, config, activeModel, onModel, onEffort, onPermissi
         </label>
       </Tooltip>
 
-      {config.daseAvailable && (
+      {config.daseInstalled && (
         <Tooltip className="tt-block" title={t('controls.dase')} text={t('tip.ctrl.dase')}>
           <label className="ctrl ctrl-check">
             <input

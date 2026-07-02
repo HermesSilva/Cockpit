@@ -28,6 +28,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // O Cockpit vive como aba no editor (WebviewPanel). Sem view de sidebar.
   // O item da status bar (criado pelo provider) e o comando/atalho abrem o editor.
 
+  // Migração única: tira a antiga setting `tootega.apiKey` (texto plano) e move
+  // p/ o SecretStorage (keychain do SO). Best-effort, silencioso.
+  void provider.migrateApiKeyFromSettings();
+
   // Na ativação (onStartupFinished): se o CLI faltar, oferece instalar.
   void provider.promptInstallIfMissing();
   // Oferece (uma vez) ativar o uso real da conta via statusline — enriquece o %
@@ -71,6 +75,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('tootega.logout', () => {
       provider.logoutCli();
+    }),
+    vscode.commands.registerCommand('tootega.setApiKey', () => {
+      void provider.setApiKeyInteractive();
+    }),
+    vscode.commands.registerCommand('tootega.clearApiKey', () => {
+      void provider.clearApiKey();
     }),
     // Hub na Activity Bar (WebviewView). Mesma bundle, modo 'hub'.
     vscode.window.registerWebviewViewProvider('tootega.hub', provider, {
@@ -124,7 +134,6 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('tootega.language')) provider.pushLocale();
-      if (e.affectsConfiguration('tootega.apiKey')) provider.refreshModels();
       if (e.affectsConfiguration('tootega.internalModel')) provider.applyInternalModel();
       if (e.affectsConfiguration('tootega.debugLog')) {
         setDebugLogging(vscode.workspace.getConfiguration('tootega').get<boolean>('debugLog', false));

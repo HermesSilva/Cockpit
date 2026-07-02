@@ -3,8 +3,8 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.189",
-  "publisher": "tootega",
+  "version": "1.0.191",
+  "publisher": "HermesSilva",
   "license": "MIT",
   "author": {
     "name": "Tootega Pesquisa e Inovação"
@@ -22,8 +22,7 @@
   },
   "categories": [
     "AI",
-    "Chat",
-    "Other"
+    "Chat"
   ],
   "keywords": [
     "claude",
@@ -106,6 +105,16 @@
       {
         "command": "tootega.toggleLanguage",
         "title": "%cmd.toggleLanguage%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.setApiKey",
+        "title": "%cmd.setApiKey%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.clearApiKey",
+        "title": "%cmd.clearApiKey%",
         "category": "Tootega"
       },
       {
@@ -239,11 +248,6 @@
           ],
           "default": "default",
           "description": "%cfg.effort%"
-        },
-        "tootega.apiKey": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%cfg.apiKey%"
         },
         "tootega.autoResumeLastSession": {
           "type": "boolean",

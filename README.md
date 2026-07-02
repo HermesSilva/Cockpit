@@ -1,5 +1,10 @@
 # Tootega Cockpit for Claude Code
 
+> **Unofficial.** Not affiliated with, endorsed by, or sponsored by Anthropic.
+> "Claude", "Claude Code" and "Anthropic" are trademarks of Anthropic, PBC, used here
+> only to describe interoperability. This project talks to the official Claude Code CLI;
+> it does not bundle or redistribute it.
+
 > A rich GUI for **Claude Code**, packaged as a native VS Code extension.
 > The interface is **only a presentation and control layer over the Claude Code CLI** —
 > all orchestration (the agent loop, tools, subagents, context, cache, compaction,
@@ -11,7 +16,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.160` |
+| **Extension version** | `1.0.190` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.186`) |
 | **Languages** | pt-BR and international English (runtime switching) |
@@ -615,7 +620,8 @@ context, and **never** write or log credentials.
   1. always-valid aliases (`default` / `opus` / `sonnet` / `haiku`);
   2. the **active model** captured live from the `init` event (exact id/variant, e.g.
      `claude-opus-4-8[1m]`);
-  3. **`/v1/models`** when an API credential is present (`tootega.apiKey` or
+  3. **`/v1/models`** when an API credential is present (the API key set via the
+     **Tootega: Set Anthropic API key** command — stored in the OS keychain — or
      `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`);
   4. a **Custom…** field for any id (the CLI validates on spawn).
 - **Subscription** accounts (no API key) use (1) + (2) + (4).
@@ -710,7 +716,6 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `language` | enum | `auto` | UI: `auto` (follows VS Code) / `pt-BR` / `en` |
 | `model` | enum | `default` | Default model for new sessions; reflected in the panel dropdown |
 | `effort` | enum | `default` | Default effort (`low`…`max`); `default` uses the CLI's `effortLevel` |
-| `apiKey` | string | `""` | Optional API key, **only** to list models via `/v1/models`; never used in chat |
 | `autoResumeLastSession` | boolean | `true` | On opening the folder, resume the most recent session for that directory |
 | `permissionMode` | enum | `default` | Permission mode forwarded to the CLI; reflected in the dropdown |
 | `notifyOnComplete` | boolean | `true` | Notify when the agent finishes and the panel is not visible |
@@ -947,7 +952,9 @@ See the detailed status in
 
 - Credential content is **never** logged.
 - The CLI's permission model is honored; approvals are not bypassed by the UI.
-- The optional `apiKey` is used **only** to list models (`/v1/models`), never in chat.
+- The optional API key (stored **encrypted in the OS keychain** via SecretStorage, set
+  through the **Tootega: Set Anthropic API key** command) is used **only** to list models
+  (`/v1/models`), never in chat.
 - The local OAuth token (`~/.claude/.credentials.json`) is read **read-only** for the clean
   utility calls (real usage, voice STT, dictation correction); it is **never** written or
   logged, and those calls carry no agent context.

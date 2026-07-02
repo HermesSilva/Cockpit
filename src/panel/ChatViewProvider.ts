@@ -104,6 +104,7 @@ const WATCHDOG_TICK_MS = 10_000; // frequência de checagem das superfícies vis
 const RELOAD_COOLDOWN_MS = 60_000; // não recarrega a mesma superfície antes disto
 const RELOAD_MAX_TRIES = 2; // tentativas antes de desistir (evita loop de reload)
 const HUB_SURFACE = '__hub__'; // chave da superfície do hub no mapa de pulsos
+const API_KEY_SECRET = 'cockpit.apiKey'; // chave da API key no SecretStorage (keychain do SO)
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   // O Cockpit vive como aba no editor (WebviewPanel) + hub na Activity Bar
@@ -179,6 +180,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // forneceu o SecretStorage (ex.: testes).
   private creds?: CredentialsStore;
 
+  // SecretStorage do host (keychain do SO). Guarda a API key de descoberta de
+  // modelos cifrada — nunca em texto plano nas settings. Ausente em testes.
+  private readonly secrets?: vscode.SecretStorage;
+
   // Diretório de globalStorage da própria extensão. Usado p/ (a) localizar o
   // irmão tootega.dase (descoberta do MCP) e (b) gravar o arquivo --mcp-config.
   private readonly globalStorageDir?: string;
@@ -191,6 +196,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     globalStorageUri?: vscode.Uri,
   ) {
     this.globalStorageDir = globalStorageUri?.fsPath;
+    this.secrets = secrets;
     if (secrets) this.creds = new CredentialsStore(secrets);
     this.defaults = readClaudeDefaults();
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
@@ -1588,6 +1594,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return p;
   }
 
+  /**
+   * Extensão DASE (tootega.dase) instalada? Gate de VISIBILIDADE do checkbox:
+   * sem a extensão, o toggle nem aparece. Respeita o setting `dase.enabled`.
+   */
+  private daseInstalled(): boolean {
+    if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
+    return !!vscode.extensions.getExtension('tootega.dase');
+  }
+
   /** Endpoint do DASE existe (servidor MCP ligado no DASE)? P/ habilitar o toggle. */
   private daseAvailable(): boolean {
     if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
@@ -1635,7 +1650,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void this.tryFetchPricing();
     if (this.discoveryTried) return;
     this.discoveryTried = true;
-    const creds = resolveCreds(this.cfg().get<string>('apiKey', ''));
+    const creds = resolveCreds(await this.getApiKey());
     if (!creds) return; // sem API key nem token OAuth: usa fallback estático
     try {
       const models = await discoverModels(creds);
@@ -1690,6 +1705,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         permissionModes: PERMISSION_MODES,
         allowAgents: this.currentAllowAgents(),
         daseEnabled: this.currentDaseEnabled(),
+        daseInstalled: this.daseInstalled(),
         daseAvailable: this.daseAvailable(),
         showThinking: this.cfg().get<boolean>('showThinking', false),
         spellCheck: this.cfg().get<boolean>('spellCheck', false),
@@ -1739,10 +1755,84 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'locale', locale: resolveLocale() });
   }
 
-  /** Re-tenta a descoberta de modelos (ex.: após mudar a API key nas settings). */
+  /** Re-tenta a descoberta de modelos (ex.: após mudar a API key). */
   refreshModels(): void {
     this.discoveryTried = false;
     void this.tryDiscoverModels();
+  }
+
+  /** API key da descoberta de modelos, lida do SecretStorage (cifrada). '' se ausente. */
+  private async getApiKey(): Promise<string> {
+    if (!this.secrets) return '';
+    try {
+      return (await this.secrets.get(API_KEY_SECRET)) ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Pede a API key ao usuário (input mascarado) e grava no SecretStorage.
+   * Vazio = remove a chave. Reexecuta a descoberta de modelos ao final.
+   * Comando `tootega.setApiKey`.
+   */
+  async setApiKeyInteractive(): Promise<void> {
+    if (!this.secrets) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t('SecretStorage unavailable — cannot store the API key on this host.'),
+      );
+      return;
+    }
+    const current = await this.getApiKey();
+    const value = await vscode.window.showInputBox({
+      title: vscode.l10n.t('Anthropic API key (model discovery)'),
+      prompt: vscode.l10n.t('Stored encrypted in the OS keychain. Leave empty to remove.'),
+      password: true,
+      value: current,
+      ignoreFocusOut: true,
+      placeHolder: 'sk-ant-…',
+    });
+    if (value === undefined) return; // cancelou
+    const trimmed = value.trim();
+    if (trimmed) {
+      await this.secrets.store(API_KEY_SECRET, trimmed);
+      void vscode.window.showInformationMessage(vscode.l10n.t('API key saved to the OS keychain.'));
+    } else {
+      await this.secrets.delete(API_KEY_SECRET);
+      void vscode.window.showInformationMessage(vscode.l10n.t('API key removed.'));
+    }
+    this.refreshModels();
+  }
+
+  /** Remove a API key do SecretStorage. Comando `tootega.clearApiKey`. */
+  async clearApiKey(): Promise<void> {
+    if (this.secrets) await this.secrets.delete(API_KEY_SECRET);
+    void vscode.window.showInformationMessage(vscode.l10n.t('API key removed.'));
+    this.refreshModels();
+  }
+
+  /**
+   * Migração única: se a antiga setting `tootega.apiKey` (texto plano) tiver valor,
+   * move p/ o SecretStorage e apaga a setting. Best-effort, silencioso.
+   */
+  async migrateApiKeyFromSettings(): Promise<void> {
+    if (!this.secrets) return;
+    const legacy = this.cfg().get<string>('apiKey', '').trim();
+    if (!legacy) return;
+    try {
+      if (!(await this.secrets.get(API_KEY_SECRET))) {
+        await this.secrets.store(API_KEY_SECRET, legacy);
+      }
+      // Limpa dos 3 escopos p/ não deixar rastro em texto plano.
+      const cfg = this.cfg();
+      await cfg.update('apiKey', undefined, vscode.ConfigurationTarget.Global);
+      await cfg.update('apiKey', undefined, vscode.ConfigurationTarget.Workspace);
+      await cfg.update('apiKey', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
+      log('[apiKey] migrada da setting p/ SecretStorage; setting removida');
+      this.refreshModels();
+    } catch (e) {
+      log(`[apiKey] migração falhou: ${String(e)}`);
+    }
   }
 
   /** Aplica o modelo interno (tootega.internalModel) ao helper de IA. */

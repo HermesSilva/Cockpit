@@ -224,6 +224,7 @@ export interface SessionConfig {
   permissionModes: string[];
   allowAgents: boolean; // liberar agentes (Task) e workflows (Workflow); off economiza tokens
   daseEnabled: boolean; // integração DASE (MCP do ORM Designer) ligada nesta aba
+  daseInstalled: boolean; // extensão tootega.dase instalada (gate de VISIBILIDADE do checkbox)
   daseAvailable: boolean; // endpoint do DASE encontrado (servidor MCP ligado no DASE)
   showThinking: boolean; // expandir thinking por padrão
   spellCheck: boolean; // corretor ortográfico ao digitar (overlay do compositor)

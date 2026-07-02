@@ -12,6 +12,8 @@
   "cmd.login": "Entrar no Claude (CLI)",
   "cmd.logout": "Sair do Claude (CLI)",
   "cmd.toggleLanguage": "Alternar idioma (pt-BR / Inglês)",
+  "cmd.setApiKey": "Definir API key Anthropic (descoberta de modelos)",
+  "cmd.clearApiKey": "Remover API key Anthropic",
   "cmd.enableUsageTracking": "Ativar uso real da conta (statusline)",
   "cmd.disableUsageTracking": "Desativar uso real da conta",
   "cfg.claudePath": "Caminho do executável do Claude Code CLI.",
@@ -34,7 +36,6 @@
   "cfg.verbosity": "Quanto do timeline mostrar (só exibição — não muda o agente). Verbose = tudo; Necessary = edições + explicações finais; Dialogo = edições + o que está fazendo; Quiet = só explicações finais.",
   "cfg.model": "Modelo default para novas sessões. 'Account default' deixa o CLI escolher. Reflete (pré-seleciona) no combo Model do painel; mude lá para sobrepor só a sessão atual.",
   "cfg.effort": "Esforço de raciocínio default para novas sessões. 'CLI default' usa o effortLevel do ~/.claude/settings.json. Reflete (pré-seleciona) no combo Effort do painel; mude lá para sobrepor só a sessão atual.",
-  "cfg.apiKey": "API key Anthropic opcional, usada **apenas** para listar modelos disponíveis via `/v1/models`. Deixe vazio se o Claude Code está autenticado por assinatura — o seletor de modelo cai para aliases, o modelo ativo e um campo custom. A key não é usada no chat (isso sempre passa pelo CLI).",
   "cfg.autoResumeLastSession": "Ao abrir uma pasta, retoma automaticamente a sessão mais recente dela (carrega o histórico). Desligue para sempre começar vazio.",
   "cfg.autosave": "Salva automaticamente um arquivo aberto antes do Claude ler ou escrever nele, para o agente trabalhar com o conteúdo atual."
 }

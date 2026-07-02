@@ -12,7 +12,12 @@ tsconfig*.json
 .gitignore
 run-dev.ps1
 run-dev.cmd
+run-dev.sh
 CLAUDE.md
+test/**
+vitest.config.ts
+porque-um-chave-vencido-reto-2026-06-22.md
+*.vsix
 !dist/**
 !l10n/**
 !media/**
@@ -22,3 +27,4 @@ CLAUDE.md
 dist/**/*.map
 package-vsix.ps1
 package-vsix.cmd
+package-vsix.sh

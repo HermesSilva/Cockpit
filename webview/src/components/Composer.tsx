@@ -7,7 +7,6 @@ import {
   ensureSpell,
   spellReady,
   suggest,
-  autoCorrection,
   addUserWord,
   ignoreWord,
   onSpellUpdate,
@@ -88,6 +87,7 @@ export function Composer({
   const [mentionIdx, setMentionIdx] = useState(0);
   const mentionReq = useRef('');
   const ref = useRef<HTMLTextAreaElement>(null);
+  const hadFocus = useRef(false); // textarea estava focado quando a janela perdeu o foco
   const hlRef = useRef<HTMLPreElement>(null); // espelho com syntax highlight atrás do textarea
   const baseH = useRef(0); // altura padrão (rows=2), capturada na 1ª medição
   // Ditado por voz: estado do botão + base do texto ao começar. A captura do mic
@@ -131,6 +131,40 @@ export function Composer({
     // spell=true marca palavras erradas (após os dicionários carregarem; spellTick).
     if (hl) hl.innerHTML = `${richHighlight(text, spellCheck && spellReady())}\n`;
   }, [text, spellTick, spellCheck]);
+
+  // Foco perdido ao voltar de outro app: quando a janela do VSCode é reativada, o
+  // webview reconcilia o foco e BLURa o elemento ativo LOGO APÓS o clique — o
+  // textarea, que o clique acabara de focar, perde o foco. Rearma: se o textarea
+  // estava focado ao sair, restaura ao voltar, a menos que o usuário já tenha
+  // focado outro controle (activeElement !== body/null/textarea).
+  useEffect(() => {
+    const onWinBlur = () => {
+      hadFocus.current = document.activeElement === ref.current;
+    };
+    const restore = () => {
+      const el = ref.current;
+      if (!el || disabled) return;
+      const ae = document.activeElement;
+      if (ae === null || ae === document.body || ae === el) {
+        el.focus();
+        return true;
+      }
+      return false;
+    };
+    const onWinFocus = () => {
+      if (!hadFocus.current) return;
+      // O blur do VSCode é assíncrono; tenta em alguns instantes até pegar.
+      requestAnimationFrame(() => restore());
+      window.setTimeout(restore, 50);
+      window.setTimeout(restore, 150);
+    };
+    window.addEventListener('blur', onWinBlur);
+    window.addEventListener('focus', onWinFocus);
+    return () => {
+      window.removeEventListener('blur', onWinBlur);
+      window.removeEventListener('focus', onWinFocus);
+    };
+  }, [disabled]);
 
   const syncScroll = () => {
     const el = ref.current;
@@ -519,36 +553,6 @@ export function Composer({
     setSpellTick((n) => n + 1);
   };
 
-  // Autocorreção ao teclar um delimitador (espaço, pontuação, Enter): se a palavra
-  // recém-terminada tem erro e há correção de alta confiança, troca sozinho.
-  const WORD_TAIL = /[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*$/;
-  const tryAutocorrect = (value: string, caret: number) => {
-    if (!spellCheck || !spellReady() || caret < 2) return;
-    const delim = value[caret - 1];
-    if (!delim || /[A-Za-zÀ-ÖØ-öø-ÿ0-9]/.test(delim)) return; // só dispara em delimitador
-    const m = WORD_TAIL.exec(value.slice(0, caret - 1));
-    if (!m) return;
-    const word = m[0];
-    const wStart = caret - 1 - word.length;
-    void autoCorrection(word).then((fix) => {
-      if (!fix) return;
-      setText((cur) => {
-        // Só troca se a palavra ainda estiver no mesmo lugar (usuário não mexeu).
-        if (cur.slice(wStart, wStart + word.length) !== word) return cur;
-        const next = cur.slice(0, wStart) + fix + cur.slice(wStart + word.length);
-        const delta = fix.length - word.length;
-        const el = ref.current;
-        if (el) {
-          const pos = (el.selectionStart ?? wStart) + delta;
-          requestAnimationFrame(() => {
-            el.selectionStart = el.selectionEnd = Math.max(0, pos);
-          });
-        }
-        return next;
-      });
-    });
-  };
-
   // @-mention: detecta um token "@..." imediatamente antes do caret e pede arquivos.
   const mentionTimer = useRef<number | undefined>(undefined);
   const detectMention = (value: string, caret: number) => {
@@ -718,7 +722,6 @@ export function Composer({
               setSlashIdx(0);
               if (spellMenu) setSpellMenu(null);
               detectMention(val, caret);
-              tryAutocorrect(val, caret);
             }}
             onClick={(e) => openSpellAt(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={onKey}

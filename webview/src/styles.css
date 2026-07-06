@@ -992,6 +992,28 @@ body {
   word-break: break-word;
 }
 
+/* Prompt encolhido: mostra só a primeira linha. */
+.user-hl--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bubble-toggle {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--vscode-textLink-foreground);
+  position: relative;
+  z-index: 1201;
+}
+.bubble-toggle:hover {
+  text-decoration: underline;
+}
+
 /* Highlight markdown-aware (input + mensagem do usuário) */
 .rt-fence {
   opacity: 0.5;
@@ -2072,6 +2094,9 @@ body {
   cursor: pointer;
   font-size: 12px;
   padding: 0 4px;
+  /* Acima do tooltip portalado (.tt-pop z-index:1200): a caixa do título do
+     tooltip não pode cobrir nem bloquear o botão de copiar do bloco de código. */
+  z-index: 1201;
 }
 .code-copy:hover {
   opacity: 1;
@@ -2086,6 +2111,10 @@ body {
   margin-left: 6px;
   padding: 0 3px;
   transition: opacity 0.12s;
+  /* Acima do tooltip portalado (.tt-pop z-index:1200): a caixa do título não
+     pode cobrir/bloquear o botão de copiar no cabeçalho. */
+  position: relative;
+  z-index: 1201;
 }
 .bubble:hover .msg-copy {
   opacity: 0.5;
@@ -2105,6 +2134,8 @@ body {
   margin-left: 2px;
   padding: 0 3px;
   transition: opacity 0.12s, color 0.12s;
+  position: relative;
+  z-index: 1201;
 }
 .bubble:hover .msg-rewind {
   opacity: 0.5;

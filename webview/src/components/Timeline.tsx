@@ -526,6 +526,9 @@ function UserBubble({
   onRewind?: () => void;
 }) {
   const openImage = useImageViewer();
+  const [collapsed, setCollapsed] = useState(true);
+  // Só faz sentido oferecer expandir quando o texto tem mais de uma linha.
+  const collapsible = !!item.text && item.text.includes('\n');
   return (
     <Tooltip
       className={`tt-block ${pinned ? 'pinned-wrap' : ''}`}
@@ -537,6 +540,15 @@ function UserBubble({
           <span>{userName || t('role.user')}</span>
           {item.ts && <span className="bubble-time">{fmtStamp(item.ts)}</span>}
           {item.text && <CopyButton text={item.text} t={t} />}
+          {collapsible && (
+            <button
+              type="button"
+              className="bubble-toggle"
+              onClick={() => setCollapsed((v) => !v)}
+            >
+              {collapsed ? t('bubble.showMore') : t('bubble.showLess')}
+            </button>
+          )}
           {onRewind && (
             <button
               type="button"
@@ -565,7 +577,7 @@ function UserBubble({
         )}
         {item.text && (
           <pre
-            className="content hljs user-hl"
+            className={`content hljs user-hl ${collapsible && collapsed ? 'user-hl--clamp' : ''}`}
             dangerouslySetInnerHTML={{ __html: richHighlight(item.text) }}
           />
         )}

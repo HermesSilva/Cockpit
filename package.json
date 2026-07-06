@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.191",
+  "version": "1.0.202",
   "publisher": "HermesSilva",
   "license": "MIT",
   "author": {
@@ -345,7 +345,7 @@
         },
         "tootega.voiceCorrect": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "%cfg.voiceCorrect%"
         },
         "tootega.debugLog": {
@@ -389,7 +389,7 @@
         "tootega.dase.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "%cfg.daseEnabled%"
+          "markdownDescription": "%cfg.daseEnabled%"
         },
         "tootega.dase.model": {
           "type": "string",

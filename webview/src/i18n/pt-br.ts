@@ -515,5 +515,7 @@ export const ptBR: Strings = {
   'confirm.effort.body': 'Este repositório exige effort mínimo "{1}", mas o atual é "{0}". Enviar mesmo assim, ou cancelar e subir o effort antes?',
   'confirm.effort.action': 'Enviar mesmo assim',
   'rewind.title': 'Rebobinar até aqui (remove este prompt e tudo depois)',
+  'bubble.showMore': 'Mostrar mais',
+  'bubble.showLess': 'Mostrar menos',
   'confirm.cancel': 'Cancelar',
 };

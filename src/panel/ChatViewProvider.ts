@@ -38,6 +38,7 @@ import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
 import { computeDailyTokens } from '../stats/DailyTokens';
+import { registerModelContext } from '../stats/StatsAggregator';
 import { readUsageCache } from '../cli/StatuslineCache';
 import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
@@ -47,7 +48,7 @@ import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
-import { ensureDaseMcpConfig, readDaseEndpoint } from '../cli/DaseMcp';
+import { ensureDaseMcpConfig, readDaseEndpoint, KNOWN_DASE_EXT_IDS } from '../cli/DaseMcp';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
@@ -150,6 +151,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private modelOverride?: string;
   private effortOverride?: string;
   private permissionOverride?: string;
+  // Baseline dos combos da aba ativa antes de o usuário mexer neles. Se, após
+  // mexer, ele criar um NOVO contexto (em vez de enviar um prompt), a escolha era
+  // para o novo contexto: o novo nasce com os valores escolhidos e a aba anterior
+  // volta a este baseline. Enviar um prompt confirma a escolha na aba atual e
+  // limpa o baseline (comportamento de sempre). Chave = aba que estava sendo editada.
+  private comboBaseline?: {
+    tab: string;
+    model?: string;
+    effort?: string;
+    permission?: string;
+    allowAgents?: boolean;
+  };
   private statusBar?: vscode.StatusBarItem;
   // Botão de reload na status bar: sempre visível enquanto há painel do Cockpit
   // aberto. Recupera o webview cinza/morto (mesma ação do watchdog) — funciona no
@@ -185,7 +198,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private readonly secrets?: vscode.SecretStorage;
 
   // Diretório de globalStorage da própria extensão. Usado p/ (a) localizar o
-  // irmão tootega.dase (descoberta do MCP) e (b) gravar o arquivo --mcp-config.
+  // a pasta *.dase irmã (descoberta do MCP) e (b) gravar o arquivo --mcp-config.
   private readonly globalStorageDir?: string;
 
   constructor(
@@ -354,9 +367,55 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.replayTab(tabId); // garante o histórico em todas as superfícies
   }
 
+  // Captura o baseline dos combos de `tab` (uma vez por edição). Chamado antes de
+  // aplicar qualquer mudança de combo, p/ poder reverter se o usuário optar por
+  // levar a escolha a um novo contexto.
+  private snapComboBaseline(tab: string): void {
+    const s = this.sessions.get(tab);
+    if (!s || this.comboBaseline?.tab === tab) return;
+    this.comboBaseline = {
+      tab,
+      model: s.modelOverride,
+      effort: s.effortOverride,
+      permission: s.permissionOverride,
+      allowAgents: s.allowAgentsOverride,
+    };
+  }
+
   /** Cria um contexto novo (conversa vazia) e abre seu painel. */
   private openNewTab(): void {
+    // O novo contexto herda os valores atualmente escolhidos nos combos da aba ativa.
+    const prevTab = this.activeTab;
+    const prev = this.sessions.get(prevTab);
+    const inherited = prev
+      ? {
+          model: prev.modelOverride,
+          effort: prev.effortOverride,
+          permission: prev.permissionOverride,
+          allowAgents: prev.allowAgentsOverride,
+        }
+      : undefined;
+    // Se os combos foram editados sobre a aba ativa, a escolha era p/ o novo
+    // contexto: reverte a aba anterior ao baseline (não a muta indevidamente).
+    if (prev && this.comboBaseline?.tab === prevTab) {
+      prev.modelOverride = this.comboBaseline.model;
+      prev.effortOverride = this.comboBaseline.effort;
+      prev.permissionOverride = this.comboBaseline.permission;
+      prev.allowAgentsOverride = this.comboBaseline.allowAgents;
+      this.saveSessionModel(prev);
+      this.pendingRestart = false; // aba anterior voltou ao original: sem restart pendente
+    }
+    this.comboBaseline = undefined;
+
     const id = this.createTab();
+    if (inherited) {
+      const s = this.sessions.get(id)!;
+      s.modelOverride = inherited.model;
+      s.effortOverride = inherited.effort;
+      s.permissionOverride = inherited.permission;
+      s.allowAgentsOverride = inherited.allowAgents;
+      this.saveSessionModel(s);
+    }
     this.openSessionPanel(id);
     this.post({ kind: 'history', items: [] }, id);
   }
@@ -1595,12 +1654,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Extensão DASE (tootega.dase) instalada? Gate de VISIBILIDADE do checkbox:
-   * sem a extensão, o toggle nem aparece. Respeita o setting `dase.enabled`.
+   * Extensão DASE instalada? Gate de VISIBILIDADE do checkbox: sem a extensão, o
+   * toggle nem aparece. Tenta os IDs conhecidos (publishers variam) e, como
+   * fallback, considera instalado se o endpoint de descoberta já existe (servidor
+   * ligado). Respeita o setting `dase.enabled`.
    */
   private daseInstalled(): boolean {
     if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
-    return !!vscode.extensions.getExtension('tootega.dase');
+    if (this.daseExtension()) return true;
+    return !!readDaseEndpoint(this.globalStorageDir);
+  }
+
+  /** Resolve a extensão DASE por qualquer ID conhecido, ou undefined. */
+  private daseExtension(): vscode.Extension<unknown> | undefined {
+    for (const id of KNOWN_DASE_EXT_IDS) {
+      const ext = vscode.extensions.getExtension(id);
+      if (ext) return ext;
+    }
+    return undefined;
   }
 
   /** Endpoint do DASE existe (servidor MCP ligado no DASE)? P/ habilitar o toggle. */
@@ -1615,15 +1686,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private daseActivation?: Thenable<unknown>;
 
   /**
-   * Garante que a extensão DASE (tootega.dase) seja ativada. Ela registra o
-   * watcher de config e sobe o servidor MCP (se dase.mcp.enabled). Best-effort,
-   * idempotente: no-op se a extensão não estiver instalada. O endpoint aparece
-   * de forma assíncrona logo após — por isso ativamos cedo (na construção).
+   * Garante que a extensão DASE seja ativada. Ela registra o watcher de config e
+   * sobe o servidor MCP (se dase.mcp.enabled). Best-effort, idempotente: no-op se
+   * a extensão não estiver instalada. O endpoint aparece de forma assíncrona logo
+   * após — por isso ativamos cedo (na construção).
    */
   private ensureDaseActivated(): void {
     if (this.daseActivation) return;
     if (!this.cfg().get<boolean>('dase.enabled', true)) return;
-    const ext = vscode.extensions.getExtension('tootega.dase');
+    const ext = this.daseExtension();
     if (!ext) return;
     this.daseActivation = (ext.isActive ? Promise.resolve() : ext.activate()).then(
       () => dlog('dase', 'extensão DASE ativada'),
@@ -1658,10 +1729,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       for (const m of models) {
         if (!this.discoveredModels.has(m.id)) added = true;
         this.discoveredModels.set(m.id, m.contextTokens);
+        registerModelContext(m.id, m.contextTokens); // fonte p/ o limite da barra (1M nativo)
       }
       if (added) {
         log(`Discovered ${models.length} models via /v1/models`);
         this.sendConfig();
+        this.refreshContextLimits(); // descoberta pós-init: corrige a barra dos modelos 1M
       }
     } catch {
       /* silencioso — fallback já cobre */
@@ -1681,6 +1754,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
     } catch {
       /* silencioso — coluna de preço fica vazia */
+    }
+  }
+
+  // Reaplica o limite de contexto (auto) de todas as abas e reemite os stats das
+  // que mudaram. Usado quando a descoberta chega depois do init da sessão.
+  private refreshContextLimits(): void {
+    for (const [tab, s] of this.sessions) {
+      if (s.stats.refreshContextLimit()) {
+        this.post({ kind: 'stats', stats: s.snapshot() }, tab);
+      }
     }
   }
 
@@ -1712,7 +1795,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         expandToolCards: this.cfg().get<boolean>('expandToolCards', false),
         pendingRestart: this.pendingRestart,
         userName: this.userName(),
-        voiceCorrect: this.cfg().get<boolean>('voiceCorrect', true),
+        voiceCorrect: this.cfg().get<boolean>('voiceCorrect', false),
         verbosity: this.cfg().get<string>('verbosity', 'verbose') || 'verbose',
       },
     });
@@ -1975,6 +2058,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (!this.tabMeta.get(srcTab)?.title && body.trim()) {
           this.setTabTitle(srcTab, body.replace(/\s+/g, ' ').trim().slice(0, 28));
         }
+        // Enviar prompt confirma as escolhas de combo na aba atual: descarta o
+        // baseline (não há mais reversão pendente para um novo contexto).
+        if (this.comboBaseline?.tab === srcTab) this.comboBaseline = undefined;
         if (this.pendingRestart) {
           // A mudança de model/effort/permission é aplicada agora (reinício): some o aviso.
           this.pendingRestart = false;
@@ -2016,6 +2102,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         srcSession().answer(m.requestId, m.answers);
         break;
       case 'setModel':
+        this.snapComboBaseline(srcTab);
         srcSession().setModel(m.model);
         this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;
@@ -2023,6 +2110,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
         break;
       case 'setEffort':
+        this.snapComboBaseline(srcTab);
         srcSession().setEffort(m.effort);
         this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;
@@ -2030,11 +2118,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
         break;
       case 'setPermissionMode':
+        this.snapComboBaseline(srcTab);
         srcSession().setPermission(m.mode);
         this.pendingRestart = true;
         this.sendConfig();
         break;
       case 'setAllowAgents':
+        this.snapComboBaseline(srcTab);
         srcSession().setAllowAgents(m.value);
         this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;

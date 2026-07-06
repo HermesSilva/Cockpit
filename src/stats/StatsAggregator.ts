@@ -57,9 +57,35 @@ export function estimateCost(u: Usage, model?: string): number {
   return (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
 }
 
-/** Limite efetivo do Claude Code: variante [1m] = 1M; caso contrário 200K. */
+// Contextos reais por modelo (id normalizado sem [1m], minúsculo), populado pela
+// descoberta via /v1/models. É a fonte de verdade p/ modelos 1M nativos que NÃO
+// carregam o sufixo [1m] (ex.: Claude Fable 5, Sonnet 5).
+const knownContextLimits = new Map<string, number>();
+
+/** Chave de lookup do contexto: id sem sufixo [1m], em minúsculas. */
+function ctxKey(model: string): string {
+  return model.replace(/\[1m\]/i, '').toLowerCase();
+}
+
+/** Registra o contexto real de um modelo (descoberta). Ignora valores inválidos. */
+export function registerModelContext(model: string, tokens?: number): void {
+  if (!model || !tokens || tokens <= 0) return;
+  knownContextLimits.set(ctxKey(model), tokens);
+}
+
+/**
+ * Limite efetivo do Claude Code:
+ *  - sufixo [1m] → 1M;
+ *  - contexto real conhecido (descoberta /v1/models) → usa esse;
+ *  - família Claude 5 (…-5) é 1M nativo mesmo sem [1m] (fallback antes da descoberta);
+ *  - caso contrário 200K.
+ */
 export function deriveContextLimit(model?: string): number {
-  if (model && /\[1m\]/i.test(model)) return 1_000_000;
+  if (!model) return 200_000;
+  if (/\[1m\]/i.test(model)) return 1_000_000;
+  const known = knownContextLimits.get(ctxKey(model));
+  if (known) return known;
+  if (/(?:fable|sonnet|opus|haiku|mythos)-5\b/i.test(model)) return 1_000_000;
   return 200_000;
 }
 
@@ -170,6 +196,17 @@ export class StatsAggregator {
       this.contextLimit = limit;
       this.autoLimit = false;
     }
+  }
+
+  // Recalcula o limite do modelo ativo (auto). Chamado quando a descoberta de
+  // modelos chega DEPOIS do init da sessão — senão o limite ficaria preso em 200K
+  // p/ modelos 1M nativos sem sufixo [1m] (ex.: Fable 5). Devolve true se mudou.
+  refreshContextLimit(): boolean {
+    if (!this.autoLimit || !this.model) return false;
+    const next = deriveContextLimit(this.model);
+    if (next === this.contextLimit) return false;
+    this.contextLimit = next;
+    return true;
   }
 
   /** Limites de conta (real via statusline, ou estimativa local). */

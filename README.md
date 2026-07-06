@@ -11,14 +11,22 @@
 > permissions, MCP, hooks, skills) **lives in the CLI**. The extension renders the event
 > stream the CLI emits and implements the client side of the interactive protocols.
 
+[![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/HermesSilva.tootega-cockpit?label=Marketplace&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/HermesSilva.tootega-cockpit?color=1f883d)](https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/HermesSilva.tootega-cockpit)](https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Languages: pt-BR · EN](https://img.shields.io/badge/i18n-pt--BR%20%C2%B7%20EN-blueviolet)
+
+![Cockpit main panel](images/Main%20Panel.png)
+
 | | |
 |---|---|
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.190` |
+| **Extension version** | `1.0.198` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.186`) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.198`; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -65,11 +73,10 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 
 | Feature | Cockpit | Official GUI | Notes |
 |---|:--:|:--:|---|
-| **Inline spell-checker PT-BR + EN** | ✅ | ❌ | Hunspell (WASM) in the host; only flags words wrong in **both** languages |
-| **Spell suggestions dropdown** | ✅ | ❌ | grouped per language; click word → fixes |
-| **High-confidence autocorrect on space/punctuation** | ✅ | ❌ | edit-distance gated; preserves case |
+| **Inline spell-checker PT-BR + EN** | ✅ | ❌ | Hunspell (WASM) in the host; only flags words wrong in **both** languages. **Marks only — never auto-corrects** |
+| **Spell suggestions dropdown** | ✅ | ❌ | grouped per language; click the underlined word → fixes |
 | **Voice dictation (speech-to-text)** | ✅ | ❌ | Claude STT WebSocket; live partials |
-| **Post-dictation AI correction** | ✅ | ❌ | clean isolated Haiku call |
+| **Post-dictation AI correction** | ✅ | ❌ | **opt-in** (`tootega.voiceCorrect`, default off); clean isolated one-shot |
 | **Editable dictionaries modal (tabs)** | ✅ | ❌ | dictation terms/replacements + spell words; per-machine in `~/.claude/tootega` |
 
 **Statistics, context & consumption** *(the heart of the product)*
@@ -171,8 +178,8 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Reopen → full timeline replay | ✅ | 🟡 | even if the run continued in the background |
 | Manual render recovery (no restart) | ✅ | ➖ | status-bar ↻ + card ↻ + auto-watchdog |
 | Find + jump + highlight (Ctrl+F) | ✅ | ❌ | scope Timeline / Prompts |
-| Autocorrect + spell dropdown | ✅ | ❌ | high-confidence on space/punctuation |
-| Voice dictation with live partials | ✅ | ❌ | + post-dictation AI cleanup |
+| Inline spell-checker + suggestions dropdown | ✅ | ❌ | marks only; click to fix (no auto-correct) |
+| Voice dictation with live partials | ✅ | ❌ | + opt-in post-dictation AI cleanup |
 | Slash autocomplete + curated hints | ✅ | ✅ | ↑/↓/Enter/Esc |
 | **@-mention file autocomplete** | ✅ | ✅ | `@` menu over workspace files (fuzzy) |
 | **Editable plan mode** | ✅ | ✅ | Edit/Preview + send notes back |
@@ -188,7 +195,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 
 > **Where Cockpit leads:** consumption transparency (cache panel, cost estimate, keep-alive,
 > turn timing), bilingual runtime i18n, in-conversation find, an inline PT/EN spell-checker
-> with autocorrect, voice dictation, Markdown export, and resilient render recovery.
+> (marks only, click to fix), voice dictation, Markdown export, and resilient render recovery.
 > **Where the official GUI leads:** native-editor diff with edit-before-accept, editable plan
 > mode, @-mentions, file-restoring checkpoints, sign-in/onboarding, the built-in IDE MCP
 > server (diagnostics/Jupyter), Chrome automation, worktrees, cloud-session resume, and
@@ -335,9 +342,9 @@ The stream parser ([`src/cli/StreamParser.ts`](src/cli/StreamParser.ts)) is
 | Claude Code CLI | recent | `claude` on the `PATH`, **authenticated** |
 | Git | any | Recommended for checkpoints (planned) |
 
-Tested against Claude CLI **2.1.x** (the screenshots show `2.1.177`). The parser is
-tolerant, but the event contract can vary between versions — see
-[Known limitations](#known-limitations).
+Tested against Claude CLI **2.1.x** (latest `2.1.198`; screenshots show `2.1.177`). The
+parser is version-tolerant — unknown stream events are ignored gracefully — but the event
+contract can vary between versions, see [Known limitations](#known-limitations).
 
 On **Windows**, `claude` is typically a `.cmd` shim. Node 22+ refuses to execute it
 without a shell (CVE-2024-27980 mitigation), so the host spawns it with `shell: true`.
@@ -592,7 +599,7 @@ context, and **never** write or log credentials.
 | Feature | What it does | Channel |
 |---|---|---|
 | 🎙️ **Voice dictation** (speech-to-text) | Dictate straight into the composer — see [Voice dictation](#voice-dictation) | OAuth STT WebSocket (same service as the CLI's `/voice`); **no** token spend |
-| ✍️ **Dictation correction** | Optional spelling/grammar pass after you stop dictating; a clean one-shot (instruction + text only, ~1.7 s) | Anthropic Messages API with the internal model (`tootega.internalModel`, default Haiku) |
+| ✍️ **Dictation correction** | **Opt-in** (default off) spelling/grammar pass after you stop dictating; a clean one-shot (instruction + text only, ~1.7 s) | Anthropic Messages API with the internal model (`tootega.internalModel`, default Haiku) |
 | 🧠 **Internal AI utility helper** ([`AiClient`](src/cli/AiClient.ts)) | Shared, clean one-shot helper for the Cockpit's own utility calls (dictation correction, slash-command research). Avoids the CLI one-shot's ~5 s cold start + full system prompt/tools | Anthropic Messages API (OAuth), isolated |
 | 🏷️ **Slash-command auto-research** ([`SlashCommandResearch`](src/cli/SlashCommandResearch.ts)) | Categorizes/labels **unknown** slash commands (category, short hint, detail) in the UI language; results cached globally in `~/.claude/tootega/` so each command is researched only once | Internal AI helper |
 | 🧩 **Plugins manager** ([`PluginManager`](src/cli/PluginManager.ts)) | Browse/install/remove/enable/disable/update plugins + marketplaces; canonical URL and kind badge per plugin resolved once by the internal helper and cached — see [Plugins](#plugins) | CLI (`claude plugin …`) + internal AI helper for URL/kind |
@@ -679,9 +686,9 @@ and stops capture.
 - **Mic capture happens on the host** via **ffmpeg** (the webview blocks `getUserMedia`).
   Point `tootega.ffmpegPath` at your ffmpeg binary, or leave it empty to use `ffmpeg` from
   the `PATH`.
-- **Optional correction:** with `tootega.voiceCorrect` on, when you stop, the text is sent
-  to the **internal model** (`tootega.internalModel`, default Haiku) for a quick
-  spelling/grammar pass — a clean, isolated one-shot (instruction + text only, ~1.7 s).
+- **Optional correction (opt-in, default off):** turn on `tootega.voiceCorrect` and, when you
+  stop, the text is sent to the **internal model** (`tootega.internalModel`, default Haiku) for a
+  quick spelling/grammar pass — a clean, isolated one-shot (instruction + text only, ~1.7 s).
 - **Language:** `tootega.voiceLanguage` sets the dictation language; empty follows the
   Cockpit UI language.
 - **UX:** the input gets focus when dictation starts; on stop it goes read-only with a
@@ -722,11 +729,14 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `showThinking` | boolean | `false` | Expand *thinking* blocks by default |
 | `verbosity` | enum | `verbose` | Timeline display level — `verbose` / `necessary` / `dialogo` / `quiet` (display only; see [Timeline verbosity](#timeline-verbosity)) |
 | `expandToolCards` | boolean | `false` | Expand tool cards by default in the timeline |
+| `spellCheck` | boolean | `false` | Inline PT-BR + EN spell-checker in the composer — **marks only, never auto-corrects**; click an underlined word for suggestions |
 | `userName` | string | `""` | Name shown on your messages; empty = OS user |
 | `internalModel` | enum | `claude-haiku-4-5` | Model for the Cockpit's internal AI calls (dictation correction, slash-command research) — clean, isolated calls; Haiku is fastest/cheapest |
-| `voiceCorrect` | boolean | `true` | After stopping dictation, run a spelling/grammar pass with the internal model (clean one-shot) |
+| `voiceCorrect` | boolean | `false` | After stopping dictation, run a spelling/grammar pass with the internal model (clean one-shot). Opt-in |
 | `voiceLanguage` | string | `""` | Dictation language (speech-to-text); empty follows the UI language |
 | `ffmpegPath` | string | `""` | Path to ffmpeg used for voice capture; empty = `ffmpeg` from PATH |
+| `dase.enabled` | boolean | `true` | Allow connecting the [DASE ORM Designer](https://marketplace.visualstudio.com/items?itemName=HermesSilva.dase) as an MCP server; the per-session **DASE** toggle only appears when that extension is installed |
+| `dase.model` | string | `""` | Model to run on while the DASE toggle is on for a tab; empty = keep the current model |
 
 > The 5h / 7d meters now read **real** account usage via the OAuth `/usage` API
 > (same source as the CLI's `/usage`), so no manual budgets are needed. The context
@@ -752,6 +762,7 @@ Commands (palette, **Tootega** category):
 | Open in editor (resizable) | `tootega.openInEditor` | — |
 | Sign in / Sign out to Claude (CLI) | `tootega.login` / `tootega.logout` | — |
 | Toggle language (pt-BR / English) | `tootega.toggleLanguage` | — |
+| **Set / Remove Anthropic API key** (model discovery, stored in the OS keychain) | `tootega.setApiKey` / `tootega.clearApiKey` | — |
 | Enable / Disable real usage tracking | `tootega.enableUsageTracking` / `...disableUsageTracking` | — |
 
 In the composer: **Enter** sends · **Shift+Enter** new line · **Ctrl+F** finds in the

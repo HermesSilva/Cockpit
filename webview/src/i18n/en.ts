@@ -515,6 +515,8 @@ export const en = {
   'confirm.effort.body': 'This repo requires at least "{1}" effort, but the current effort is "{0}". Send anyway, or cancel and raise the effort first?',
   'confirm.effort.action': 'Send anyway',
   'rewind.title': 'Rewind to here (removes this prompt and everything after)',
+  'bubble.showMore': 'Show more',
+  'bubble.showLess': 'Show less',
   'confirm.cancel': 'Cancel',
 };
 

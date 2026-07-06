@@ -613,22 +613,31 @@ export class Session {
 
   private onUser(ev: UserEvent): void {
     const content = ev.message?.content;
+
     // Notificação de conclusão de tarefa em background (injetada pela própria CLI):
     // `<task-notification>...<tool-use-id>ID</tool-use-id>...`. Tira a tarefa do
     // conjunto e marca busy=true: a CLI inicia um turno por conta própria respondendo
     // à notificação, então o `result` seguinte precisa ser contabilizado (sem isto
     // ele cairia no descarte "stray/replay" porque busy estava false).
-    if (typeof content === 'string') {
-      const m = /<task-notification>[\s\S]*?<tool-use-id>([^<]+)<\/tool-use-id>/.exec(content);
-      if (m) {
+    //
+    // A notificação chega ora como `content` string, ora como bloco `text` dentro
+    // de um array, ora dentro do `content` de um `tool_result` — varremos TODAS as
+    // formas para não deixar tarefa pendurada (uma notificação pode fechar várias).
+    const notifText = collectUserText(content);
+    if (notifText.includes('<task-notification>')) {
+      const re = /<task-notification>[\s\S]*?<tool-use-id>([^<]+)<\/tool-use-id>/g;
+      let m: RegExpExecArray | null;
+      let cleared = false;
+      while ((m = re.exec(notifText))) {
         this.clearBgTask(m[1].trim());
-        if (!this.busy) {
-          this.setBusy(true);
-          this.stats.beginTurn();
-        }
+        cleared = true;
       }
-      return;
+      if (cleared && !this.busy) {
+        this.setBusy(true);
+        this.stats.beginTurn();
+      }
     }
+
     if (Array.isArray(content)) {
       for (const b of content) {
         if ((b as any).type === 'tool_result') {
@@ -673,6 +682,21 @@ function backgroundLabel(name: string, input: unknown): string {
   if (desc) return desc;
   if (typeof o.command === 'string') return o.command.split('\n')[0].slice(0, 80);
   return name;
+}
+
+// Concatena todo o texto de um `content` de mensagem `user`, seja ele string,
+// array de blocos `text`, ou `tool_result` cujo `content` também é string/array.
+// Usado só para varrer `<task-notification>` — tolerante a shape.
+function collectUserText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const b of content) {
+    const o = b as any;
+    if (o?.type === 'text' && typeof o.text === 'string') parts.push(o.text);
+    else if (o?.type === 'tool_result') parts.push(collectUserText(o.content));
+  }
+  return parts.join('\n');
 }
 
 function safeJson(s: string): unknown {

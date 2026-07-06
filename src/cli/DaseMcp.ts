@@ -1,13 +1,18 @@
-// Integração com o servidor MCP embutido do DASE (extensão tootega.dase).
+// Integração com o servidor MCP embutido do DASE (extensão do ORM Designer).
 //
-// O DASE expõe um servidor MCP via Streamable HTTP em loopback. Ele é OFF por
-// padrão e, quando ligado, escreve URL + token (token novo a cada start) no seu
-// globalStorage: `<globalStorage>/tootega.dase/mcp-endpoint.json`.
+// O DASE expõe um servidor MCP via Streamable HTTP em loopback (porta padrão
+// 39100). Ele é OFF por padrão e, quando ligado, escreve URL + token (token novo
+// a cada start) no seu globalStorage: `<globalStorage>/<ext>/mcp-endpoint.json`.
 //
-// Aqui localizamos esse arquivo de descoberta, lemos o endpoint e geramos um
-// arquivo `--mcp-config` que o Claude Code CLI consome para enxergar as tools do
-// DASE. Como o token muda a cada start do DASE, regeneramos o config a cada spawn
-// (barato). Conforme o CLAUDE.md: nunca logamos o token.
+// O ID da extensão DASE varia por publisher/build (`hermessilva.dase`,
+// `tootega.dase`…). Em vez de fixar um ID, localizamos o arquivo de descoberta
+// varrendo o globalStorage por QUALQUER pasta `*.dase` que contenha o
+// mcp-endpoint.json — assim "ligar e conectar" funciona sem caçar o token na mão.
+//
+// Lido o endpoint, geramos um arquivo `--mcp-config` que o Claude Code CLI
+// consome para enxergar as tools do DASE. Como o token muda a cada start, o
+// config é regenerado a cada spawn (barato). Conforme o CLAUDE.md: nunca logamos
+// o token.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -17,29 +22,54 @@ export interface DaseEndpoint {
   token: string;
 }
 
-const DASE_EXT_ID = 'tootega.dase';
+// IDs conhecidos da extensão DASE, na ordem de preferência. A varredura por
+// `*.dase` cobre publishers não listados; estes são só o atalho rápido e o gate
+// de visibilidade do checkbox (vide ChatViewProvider.daseInstalled).
+export const KNOWN_DASE_EXT_IDS = ['hermessilva.dase', 'tootega.dase'];
 const DISCOVERY_FILE = 'mcp-endpoint.json';
+const DASE_DIR_SUFFIX = '.dase';
 
 /**
- * Localiza o arquivo de descoberta do DASE. Tenta primeiro o irmão do nosso
- * próprio globalStorage (mesmo host: VS Code, Insiders, Cursor…), depois o local
- * padrão por plataforma do VS Code estável. Retorna o 1º que existir.
+ * Localiza o arquivo de descoberta do DASE. Varre as raízes de globalStorage
+ * (irmão do nosso próprio + padrões por plataforma): em cada uma tenta primeiro
+ * os IDs conhecidos e, senão, qualquer pasta `*.dase` com o mcp-endpoint.json.
+ * Retorna o 1º arquivo existente e legível.
  */
 export function findDaseEndpointFile(ownGlobalStorageDir?: string): string | undefined {
-  const candidates: string[] = [];
-  if (ownGlobalStorageDir) {
-    // .../User/globalStorage/<nossa-ext> -> irmão .../tootega.dase/mcp-endpoint.json
-    candidates.push(path.join(path.dirname(ownGlobalStorageDir), DASE_EXT_ID, DISCOVERY_FILE));
-  }
-  candidates.push(...platformGlobalStorageGuesses());
-  for (const c of candidates) {
+  const roots: string[] = [];
+  if (ownGlobalStorageDir) roots.push(path.dirname(ownGlobalStorageDir));
+  roots.push(...platformGlobalStorageRoots());
+  const seen = new Set<string>();
+  for (const root of roots) {
+    if (seen.has(root)) continue;
+    seen.add(root);
+    // 1) atalho: IDs conhecidos.
+    for (const id of KNOWN_DASE_EXT_IDS) {
+      const c = path.join(root, id, DISCOVERY_FILE);
+      if (existsSafe(c)) return c;
+    }
+    // 2) varredura: qualquer `*.dase/mcp-endpoint.json`.
+    let entries: fs.Dirent[];
     try {
-      if (fs.existsSync(c)) return c;
+      entries = fs.readdirSync(root, { withFileTypes: true });
     } catch {
-      /* ignora candidato inacessível */
+      continue; // raiz inacessível/ausente
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || !e.name.toLowerCase().endsWith(DASE_DIR_SUFFIX)) continue;
+      const c = path.join(root, e.name, DISCOVERY_FILE);
+      if (existsSafe(c)) return c;
     }
   }
   return undefined;
+}
+
+function existsSafe(p: string): boolean {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
 }
 
 /** Lê o endpoint do DASE (url + token). undefined se ausente/desligado/ilegível. */
@@ -95,9 +125,9 @@ export function ensureDaseMcpConfig(
   }
 }
 
-/** Locais padrão do globalStorage do DASE no VS Code estável, por plataforma. */
-function platformGlobalStorageGuesses(): string[] {
-  const join = (...p: string[]) => path.join(...p, 'globalStorage', DASE_EXT_ID, DISCOVERY_FILE);
+/** Raízes padrão do globalStorage no VS Code estável, por plataforma. */
+function platformGlobalStorageRoots(): string[] {
+  const join = (...p: string[]) => path.join(...p, 'globalStorage');
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
     return appData ? [join(appData, 'Code', 'User')] : [];

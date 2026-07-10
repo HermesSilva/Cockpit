@@ -24,7 +24,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.204` |
+| **Extension version** | `1.0.208` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.206`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
 | **Languages** | pt-BR and international English (runtime switching) |

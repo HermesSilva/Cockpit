@@ -54,10 +54,18 @@ export class Session {
 
   // Tarefas em background ainda rodando (Workflow / tool com run_in_background).
   // O turno que as lança termina (`result` zera o busy), mas o trabalho continua;
-  // a conclusão chega depois como um `user` com `<task-notification>`. Mantemos o
-  // indicador de "executando" vivo enquanto este mapa não esvaziar. Chave = tool_use
-  // id que lançou; valor = {tool, label} do que está fazendo (mostrado ao usuário).
+  // mantemos o indicador de "executando" vivo enquanto este mapa não esvaziar.
+  // Chave = `task_id` do engine; valor = {tool, label} mostrado ao usuário.
+  //
+  // A fonte da verdade são os eventos `system` do stream (`background_tasks_changed`,
+  // `task_started`, `task_updated`, `task_notification`). NÃO dá para deduzir do texto
+  // `<task-notification>`: quando a tarefa termina com um turno em voo, a CLI enfileira
+  // a notificação e ela nunca chega ao stdout como mensagem — só o evento `system` chega.
   private bgTasks = new Map<string, { tool: string; label: string }>();
+
+  // tool_use id → nome da tool, para dar nome à tarefa quando o `task_started` chega
+  // (o evento traz o tool_use id, não o nome). Só guarda o que ainda pode virar tarefa.
+  private toolNames = new Map<string, string>();
 
   // Overrides POR ABA (em memória). Vazio = usa o default das settings.
   modelOverride?: string;
@@ -340,8 +348,10 @@ export class Session {
     this.hooks.onBusy(b);
   }
 
+  /** Insere ou refina (o `task_started` chega depois e sabe a tool de verdade). */
   private addBgTask(id: string, tool: string, label: string): void {
-    if (this.bgTasks.has(id)) return;
+    const cur = this.bgTasks.get(id);
+    if (cur && cur.tool === tool && cur.label === label) return;
     this.bgTasks.set(id, { tool, label });
     this.emitBackground();
   }
@@ -351,8 +361,33 @@ export class Session {
     this.emitBackground();
   }
 
+  /**
+   * `background_tasks_changed` traz a lista COMPLETA do que roda agora — é a fonte da
+   * verdade. Reconcilia contra ela: some o que morreu (inclusive tarefas mortas pelo
+   * agente, que não emitem notificação) e aparece o que a UI não viu nascer (ex.: sessão
+   * retomada com tarefa já em andamento).
+   */
+  private syncBgTasks(tasks: any[]): void {
+    const live = new Map<string, any>();
+    for (const t of tasks) if (t?.task_id != null) live.set(String(t.task_id), t);
+    let changed = false;
+    for (const id of [...this.bgTasks.keys()]) {
+      if (!live.has(id)) {
+        this.bgTasks.delete(id);
+        changed = true;
+      }
+    }
+    for (const [id, t] of live) {
+      if (this.bgTasks.has(id)) continue;
+      this.bgTasks.set(id, { tool: taskTool(t.task_type), label: String(t.description ?? id) });
+      changed = true;
+    }
+    if (changed) this.emitBackground();
+  }
+
   /** Zera o estado de background (parada/limpeza da sessão). */
   private resetBgTasks(): void {
+    this.toolNames.clear();
     if (this.bgTasks.size === 0) return;
     this.bgTasks.clear();
     this.emitBackground();
@@ -374,6 +409,32 @@ export class Session {
     switch (ev.type) {
       case 'system': {
         const s = ev as any;
+        if (s.subtype === 'background_tasks_changed') {
+          this.syncBgTasks(Array.isArray(s.tasks) ? s.tasks : []);
+          break;
+        }
+        if (s.subtype === 'task_started') {
+          const tool = this.toolNames.get(s.tool_use_id) ?? taskTool(s.task_type);
+          this.toolNames.delete(s.tool_use_id);
+          this.addBgTask(String(s.task_id), tool, String(s.description ?? s.task_id));
+          break;
+        }
+        if (s.subtype === 'task_notification' || s.subtype === 'task_updated') {
+          // Qualquer estado que não seja `running` = a tarefa saiu do ar (concluída,
+          // falhou, morta pelo agente). `background_tasks_changed` também cobre isto,
+          // mas fechar aqui evita depender da ordem entre os dois eventos.
+          const status = String(s.status ?? s.patch?.status ?? '');
+          if (status && status !== 'running') this.clearBgTask(String(s.task_id));
+          // Tarefa concluída com a sessão ociosa: a CLI abre um turno por conta própria
+          // para reagir à notificação. Sem marcar busy, o `result` desse turno cairia no
+          // descarte "stray/replay" e não seria contabilizado. Tarefa morta (`stopped`/
+          // `killed`) não gera turno — marcar busy aí deixaria o spinner preso.
+          if (s.subtype === 'task_notification' && !this.busy && (status === 'completed' || status === 'failed')) {
+            this.setBusy(true);
+            this.stats.beginTurn();
+          }
+          break;
+        }
         if (s.subtype === 'init') {
           if (Array.isArray(s.slash_commands)) this.slashCommands = s.slash_commands;
           this.sessionId = s.session_id;
@@ -603,8 +664,10 @@ export class Session {
           this.emittedTools.add(t.id);
           this.emit({ kind: 'toolUse', id: t.id, name: t.name, input: t.input });
           this.hooks.onToolUse?.(t.name, t.input);
-          if (isBackgroundLaunch(t.name, t.input)) {
-            this.addBgTask(t.id, t.name, backgroundLabel(t.name, t.input));
+          // Lançamento em background (Workflow, ou tool com run_in_background): guarda o
+          // nome para nomear a tarefa quando o `task_started` correspondente chegar.
+          if (t.name === 'Workflow' || (t.input as any)?.run_in_background === true) {
+            this.toolNames.set(t.id, t.name);
           }
         }
       }
@@ -613,37 +676,11 @@ export class Session {
 
   private onUser(ev: UserEvent): void {
     const content = ev.message?.content;
-
-    // Notificação de conclusão de tarefa em background (injetada pela própria CLI):
-    // `<task-notification>...<tool-use-id>ID</tool-use-id>...`. Tira a tarefa do
-    // conjunto e marca busy=true: a CLI inicia um turno por conta própria respondendo
-    // à notificação, então o `result` seguinte precisa ser contabilizado (sem isto
-    // ele cairia no descarte "stray/replay" porque busy estava false).
-    //
-    // A notificação chega ora como `content` string, ora como bloco `text` dentro
-    // de um array, ora dentro do `content` de um `tool_result` — varremos TODAS as
-    // formas para não deixar tarefa pendurada (uma notificação pode fechar várias).
-    const notifText = collectUserText(content);
-    if (notifText.includes('<task-notification>')) {
-      const re = /<task-notification>[\s\S]*?<tool-use-id>([^<]+)<\/tool-use-id>/g;
-      let m: RegExpExecArray | null;
-      let cleared = false;
-      while ((m = re.exec(notifText))) {
-        this.clearBgTask(m[1].trim());
-        cleared = true;
-      }
-      if (cleared && !this.busy) {
-        this.setBusy(true);
-        this.stats.beginTurn();
-      }
-    }
-
-    if (Array.isArray(content)) {
-      for (const b of content) {
-        if ((b as any).type === 'tool_result') {
-          const r = b as ToolResultBlock;
-          this.emit({ kind: 'toolResult', toolUseId: r.tool_use_id, content: r.content, isError: r.is_error });
-        }
+    if (!Array.isArray(content)) return;
+    for (const b of content) {
+      if ((b as any).type === 'tool_result') {
+        const r = b as ToolResultBlock;
+        this.emit({ kind: 'toolResult', toolUseId: r.tool_use_id, content: r.content, isError: r.is_error });
       }
     }
   }
@@ -657,46 +694,17 @@ export class Session {
   }
 }
 
-// Detecta o lançamento de uma tarefa em background: o tool `Workflow` (sempre
-// roda em background) ou qualquer tool com `run_in_background: true` (Bash, Task).
-function isBackgroundLaunch(name: string, input: unknown): boolean {
-  if (name === 'Workflow') return true;
-  const o = (input ?? {}) as Record<string, unknown>;
-  return o.run_in_background === true;
-}
-
-// Rótulo do que a tarefa em background está fazendo (mostrado ao usuário).
-// Best-effort e tolerante: nome do workflow > descrição > 1ª linha do comando > tool.
-function backgroundLabel(name: string, input: unknown): string {
-  const o = (input ?? {}) as Record<string, unknown>;
-  const desc = typeof o.description === 'string' ? o.description.trim() : '';
-  if (name === 'Workflow') {
-    // O nome do workflow mora no `meta = { name: '...' }` do script inline OU é
-    // passado por `name` (workflow salvo). Extrai o 1º que casar.
-    if (typeof o.name === 'string' && o.name.trim()) return o.name.trim();
-    const script = typeof o.script === 'string' ? o.script : '';
-    const m = /name\s*:\s*['"]([^'"]+)['"]/.exec(script);
-    if (m) return m[1];
-    return desc || 'Workflow';
+// Rótulo da tool a partir do `task_type` do engine. Usado só quando a tarefa aparece
+// sem que tenhamos visto o `tool_use` que a lançou (sessão retomada, subagente).
+function taskTool(taskType: unknown): string {
+  switch (taskType) {
+    case 'local_bash':
+      return 'Bash';
+    case 'workflow':
+      return 'Workflow';
+    default:
+      return typeof taskType === 'string' && taskType ? taskType : 'Task';
   }
-  if (desc) return desc;
-  if (typeof o.command === 'string') return o.command.split('\n')[0].slice(0, 80);
-  return name;
-}
-
-// Concatena todo o texto de um `content` de mensagem `user`, seja ele string,
-// array de blocos `text`, ou `tool_result` cujo `content` também é string/array.
-// Usado só para varrer `<task-notification>` — tolerante a shape.
-function collectUserText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  const parts: string[] = [];
-  for (const b of content) {
-    const o = b as any;
-    if (o?.type === 'text' && typeof o.text === 'string') parts.push(o.text);
-    else if (o?.type === 'tool_result') parts.push(collectUserText(o.content));
-  }
-  return parts.join('\n');
 }
 
 function safeJson(s: string): unknown {

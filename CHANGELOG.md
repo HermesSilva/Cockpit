@@ -4,6 +4,22 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.208] - 2026-07-10
+
+### Corrigido
+- **Tarefa em background ficava "executando" para sempre.** O card *Running in the
+  background* e o spinner de turno (chat e Hub) nunca desligavam depois de um comando
+  lançado com `run_in_background`. O acompanhamento lia o texto `<task-notification>`
+  das mensagens `user`, mas quando a tarefa termina **com um turno em voo** a CLI
+  enfileira a notificação e ela nunca chega ao stdout como mensagem — só como evento
+  `system`. Tarefa encerrada pelo agente (`TaskStop`) também nunca notificava. O estado
+  passa a ser reconciliado contra o `background_tasks_changed` (lista completa do que
+  roda agora, emitida pelo engine), com `task_started` / `task_updated` /
+  `task_notification` como complemento; a chave agora é o `task_id` do engine.
+- Turno iniciado **pela própria CLI** para reagir à conclusão de uma tarefa em
+  background com a sessão ociosa não era contabilizado: com `busy` desligado, o `result`
+  caía no descarte "stray/replay" e seus tokens/custo sumiam das estatísticas.
+
 ## [1.0.207] - 2026-07-10
 
 ### Adicionado

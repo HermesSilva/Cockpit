@@ -4,6 +4,18 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.211] - 2026-07-10
+
+### Corrigido
+- **DASE MCP colidia entre janelas do VS Code.** Cada janela subia o servidor MCP do
+  DASE na mesma porta fixa (`39100`) e gravava o mesmo `mcp-endpoint.json`, então a 2ª
+  janela falhava com `EADDRINUSE` e o arquivo de descoberta era sobrescrito. Agora o
+  DASE usa porta efêmera (uma por janela) e grava um discovery por janela marcado com o
+  `workspacePath`; o Cockpit casa o endpoint com a **própria janela** (normalizado —
+  case-insensitive no Windows), caindo no arquivo legado como *fallback*. Requer o DASE
+  com a mudança correspondente. `readDaseEndpoint` / `ensureDaseMcpConfig` /
+  `registerDaseInClaudeCli` passam a receber o `workspacePath`.
+
 ## [1.0.208] - 2026-07-10
 
 ### Corrigido

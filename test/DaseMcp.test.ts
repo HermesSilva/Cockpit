@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { registerDaseInClaudeCli, claudeUserConfigPath } from '../src/cli/DaseMcp';
+import { createHash } from 'node:crypto';
+import {
+  registerDaseInClaudeCli,
+  claudeUserConfigPath,
+  readDaseEndpoint,
+} from '../src/cli/DaseMcp';
 
 // Fixa o HOME visto pelo módulo sob teste: senão a varredura das raízes de
 // plataforma (linux/macOS) acharia a extensão DASE real da máquina de testes.
@@ -23,6 +28,18 @@ function writeEndpoint(ep: { url: string; token?: string }): void {
   const dir = path.join(tmp, 'globalStorage', 'hermessilva.dase');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'mcp-endpoint.json'), JSON.stringify(ep), 'utf8');
+}
+
+// Mesma derivação de nome que o DASE usa: mcp-endpoint.<sha256(workspace)[:16]>.json.
+function windowFileName(workspacePath: string): string {
+  const key = process.platform === 'win32' ? workspacePath.toLowerCase() : workspacePath;
+  return `mcp-endpoint.${createHash('sha256').update(key).digest('hex').slice(0, 16)}.json`;
+}
+
+function writeWindowEndpoint(ep: { url: string; token?: string; workspacePath: string }): void {
+  const dir = path.join(tmp, 'globalStorage', 'hermessilva.dase');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, windowFileName(ep.workspacePath)), JSON.stringify(ep), 'utf8');
 }
 
 function readClaudeJson(): Record<string, unknown> {
@@ -114,5 +131,41 @@ describe('registerDaseInClaudeCli', () => {
     writeEndpoint({ url: 'http://127.0.0.1:39100/mcp', token: 'abc' });
     expect(registerDaseInClaudeCli(ownStorage)).toBe('error');
     expect(fs.readFileSync(claudeUserConfigPath(), 'utf8')).toBe('{ not json');
+  });
+});
+
+describe('readDaseEndpoint — matching por janela', () => {
+  const wsA = path.join('C:', 'ws', 'projeto-a');
+  const wsB = path.join('C:', 'ws', 'projeto-b');
+
+  it('escolhe o endpoint da janela cujo workspace bate', () => {
+    writeWindowEndpoint({ url: 'http://127.0.0.1:50001/mcp', workspacePath: wsA });
+    writeWindowEndpoint({ url: 'http://127.0.0.1:50002/mcp', workspacePath: wsB });
+    expect(readDaseEndpoint(ownStorage, wsA)?.url).toBe('http://127.0.0.1:50001/mcp');
+    expect(readDaseEndpoint(ownStorage, wsB)?.url).toBe('http://127.0.0.1:50002/mcp');
+  });
+
+  it('casa o workspace ignorando caixa no Windows', () => {
+    if (process.platform !== 'win32') return;
+    writeWindowEndpoint({ url: 'http://127.0.0.1:50003/mcp', workspacePath: wsA });
+    expect(readDaseEndpoint(ownStorage, wsA.toUpperCase())?.url).toBe('http://127.0.0.1:50003/mcp');
+  });
+
+  it('cai no legado quando nenhuma janela casa o workspace', () => {
+    writeEndpoint({ url: 'http://127.0.0.1:39100/mcp', token: 'leg' });
+    writeWindowEndpoint({ url: 'http://127.0.0.1:50004/mcp', workspacePath: wsB });
+    const ep = readDaseEndpoint(ownStorage, wsA);
+    expect(ep?.url).toBe('http://127.0.0.1:39100/mcp');
+    expect(ep?.token).toBe('leg');
+  });
+
+  it('sem workspace informado, prefere o legado', () => {
+    writeEndpoint({ url: 'http://127.0.0.1:39100/mcp' });
+    writeWindowEndpoint({ url: 'http://127.0.0.1:50005/mcp', workspacePath: wsA });
+    expect(readDaseEndpoint(ownStorage)?.url).toBe('http://127.0.0.1:39100/mcp');
+  });
+
+  it('undefined quando não há nenhum endpoint', () => {
+    expect(readDaseEndpoint(ownStorage, wsA)).toBeUndefined();
   });
 });

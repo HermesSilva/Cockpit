@@ -1660,7 +1660,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.ensureDaseActivated();
     const storageDir = this.globalStorageDir;
     if (!storageDir) return undefined;
-    const p = ensureDaseMcpConfig(storageDir, storageDir);
+    const p = ensureDaseMcpConfig(storageDir, storageDir, this.daseWorkspacePath());
     if (!p) log('[dase] endpoint não encontrado (servidor MCP do DASE desligado?)');
     else void this.syncDaseRegistration(); // DASE reiniciado ⇒ token novo no .claude.json
     return p;
@@ -1675,7 +1675,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private daseInstalled(): boolean {
     if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
     if (this.daseExtension()) return true;
-    return !!readDaseEndpoint(this.globalStorageDir);
+    return !!readDaseEndpoint(this.globalStorageDir, this.daseWorkspacePath());
+  }
+
+  /**
+   * Workspace desta janela (1ª pasta), p/ casar o endpoint do DASE. Cada janela do
+   * DASE roda numa porta efêmera e grava um discovery próprio marcado com o
+   * workspace — assim pegamos o servidor da NOSSA janela, não o de outra.
+   */
+  private daseWorkspacePath(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 
   /** Resolve a extensão DASE por qualquer ID conhecido, ou undefined. */
@@ -1691,7 +1700,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private daseAvailable(): boolean {
     if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
     this.ensureDaseActivated();
-    return !!readDaseEndpoint(this.globalStorageDir);
+    return !!readDaseEndpoint(this.globalStorageDir, this.daseWorkspacePath());
   }
 
   // Ativação da extensão DASE já disparada (1x). DASE só ativa com .dsorm aberto/
@@ -1730,7 +1739,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.daseSyncing = true;
     try {
       for (let i = 0; i < DASE_REGISTER_TRIES; i++) {
-        const r = registerDaseInClaudeCli(this.globalStorageDir);
+        const r = registerDaseInClaudeCli(this.globalStorageDir, this.daseWorkspacePath());
         if (r !== 'unavailable') {
           if (r === 'written') log('[dase] servidor MCP registrado no .claude.json (escopo user)');
           else if (r === 'error') log('[dase] falha ao registrar o MCP no .claude.json');

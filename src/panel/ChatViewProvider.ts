@@ -48,7 +48,12 @@ import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
-import { ensureDaseMcpConfig, readDaseEndpoint, KNOWN_DASE_EXT_IDS } from '../cli/DaseMcp';
+import {
+  ensureDaseMcpConfig,
+  readDaseEndpoint,
+  registerDaseInClaudeCli,
+  KNOWN_DASE_EXT_IDS,
+} from '../cli/DaseMcp';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
@@ -81,6 +86,12 @@ const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 // Liga a integração (sticky) e é removido do prompt enviado ao agente.
 const DASE_TAG = /^\s*@dase\b\s*:?\s*/i;
 // Instrução curta injetada no prompt quando o @DASE: é usado (orienta às tools).
+// O endpoint do DASE só aparece alguns instantes depois do activate (o servidor
+// MCP sobe em background). Tentativas do registro no .claude.json.
+const DASE_REGISTER_TRIES = 10;
+const DASE_REGISTER_DELAY_MS = 500;
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 const DASE_STEER =
   'Use the DASE ORM Designer MCP tools (dase_*) to carry out this request. ' +
   'If unsure of the current model, call dase_list_documents / dase_get_model first.';
@@ -1651,6 +1662,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!storageDir) return undefined;
     const p = ensureDaseMcpConfig(storageDir, storageDir);
     if (!p) log('[dase] endpoint não encontrado (servidor MCP do DASE desligado?)');
+    else void this.syncDaseRegistration(); // DASE reiniciado ⇒ token novo no .claude.json
     return p;
   }
 
@@ -1698,10 +1710,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const ext = this.daseExtension();
     if (!ext) return;
     this.daseActivation = (ext.isActive ? Promise.resolve() : ext.activate()).then(
-      () => dlog('dase', 'extensão DASE ativada'),
+      () => {
+        dlog('dase', 'extensão DASE ativada');
+        void this.syncDaseRegistration();
+      },
       (e) => log(`[dase] activate falhou: ${String(e)}`),
     );
   }
+
+  /**
+   * Registra o DASE no `.claude.json` (escopo user) para que o Claude Code CLI
+   * enxergue as tools `dase_*` em qualquer sessão — inclusive fora do Cockpit.
+   * O endpoint surge alguns instantes após a ativação do DASE, então tentamos
+   * algumas vezes antes de desistir. Best-effort e silencioso quanto ao token.
+   */
+  private async syncDaseRegistration(): Promise<void> {
+    if (!this.cfg().get<boolean>('dase.registerInCli', true)) return;
+    if (this.daseSyncing) return; // evita loops de retry sobrepostos
+    this.daseSyncing = true;
+    try {
+      for (let i = 0; i < DASE_REGISTER_TRIES; i++) {
+        const r = registerDaseInClaudeCli(this.globalStorageDir);
+        if (r !== 'unavailable') {
+          if (r === 'written') log('[dase] servidor MCP registrado no .claude.json (escopo user)');
+          else if (r === 'error') log('[dase] falha ao registrar o MCP no .claude.json');
+          return;
+        }
+        await delay(DASE_REGISTER_DELAY_MS);
+      }
+      log('[dase] endpoint indisponível: registro no .claude.json adiado');
+    } finally {
+      this.daseSyncing = false;
+    }
+  }
+
+  // Registro no .claude.json em andamento (guard de reentrância).
+  private daseSyncing = false;
   private userName(): string {
     const set = this.cfg().get<string>('userName', '').trim();
     if (set) return set;

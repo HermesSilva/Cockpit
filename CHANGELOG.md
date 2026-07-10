@@ -4,6 +4,23 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.207] - 2026-07-10
+
+### Adicionado
+- O Cockpit passa a **registrar o servidor MCP do DASE na configuração de usuário
+  do Claude Code CLI** (`~/.claude.json`, escopo user) assim que detecta a extensão
+  DASE instalada e o servidor no ar — equivalente a `claude mcp add --scope user`,
+  sem o cold start da CLI. Antes, o DASE só era visível às abas do Cockpit com o
+  toggle ligado (via `--mcp-config`); agora as tools `dase_*` valem para qualquer
+  sessão `claude`, inclusive no terminal e em outros workspaces. A entrada é
+  reescrita quando o servidor do DASE reinicia com um endpoint novo. A gravação é
+  atômica, preserva as demais chaves e os outros servidores MCP, e nunca registra
+  o token em log. Controlado pelo setting `tootega.dase.registerInCli` (padrão ligado).
+
+### Alterado
+- O endpoint do DASE passa a aceitar **servidor sem token**: o cabeçalho
+  `Authorization` só é enviado quando o `mcp-endpoint.json` traz um token.
+
 ## [1.0.204] - 2026-07-10
 
 ### Adicionado

@@ -179,12 +179,18 @@ export class OtelReceiver {
 
   /** Snapshot agregado p/ o webview (modal Usage). undefined-safe. */
   stats(): OtelStats {
+    // A telemetria OTEL não separa cache-read do restante: cacheRead fica em 0.
     const locByModel: UsageSlice[] = [...this.state.locByModel.entries()]
-      .map(([key, lines]) => ({ key, usd: 0, tokens: lines }))
+      .map(([key, lines]) => ({ key, usd: 0, tokens: lines, cacheRead: 0 }))
       .sort((a, b) => b.tokens - a.tokens);
     // Custo REAL por modelo (cost.usage) + tokens reais (token.usage) quando houver.
     const costByModel: UsageSlice[] = [...this.state.costByModel.entries()]
-      .map(([key, usd]) => ({ key, usd, tokens: this.state.tokensByModel.get(key) ?? 0 }))
+      .map(([key, usd]) => ({
+        key,
+        usd,
+        tokens: this.state.tokensByModel.get(key) ?? 0,
+        cacheRead: 0,
+      }))
       .sort((a, b) => b.usd - a.usd);
     const toolDecisions = [...this.state.decisions.entries()]
       .map(([tool, d]) => ({ tool, accept: d.accept, reject: d.reject }))

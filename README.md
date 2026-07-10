@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.198` |
+| **Extension version** | `1.0.204` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.198`; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.206`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -86,8 +86,8 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Context-window meter (used/limit, 200K·1M) | ✅ | ✅ | limit auto-derived from the active model |
 | **Cache panel** (hit-rate, read, write, savings) | ✅ | ❌ | per-turn + cumulative; last-turn hit rate |
 | **Local cost estimate** (per turn/session) | ✅ | 🟡 | official shows plan-usage; Cockpit adds a price-table estimate labelled "estimated" |
-| 5h / 7d subscription limits (% + reset) | ✅ | ✅ | Cockpit reads the real OAuth `/usage`; official `/usage` dialog adds attribution by skill/subagent/plugin/MCP |
-| Usage attribution (skill/subagent/MCP) | ❌ | ✅ | official `/usage` breakdown |
+| Session / weekly subscription limits (% + reset) | ✅ | ✅ | Cockpit reads the real OAuth `/usage`, including the per-model weekly window labelled by the server |
+| Usage attribution (long context / subagents / cache / MCP) | ✅ | ✅ | Cockpit estimates it from local transcripts; official reads it from the CLI `/usage` dialog |
 | **Cache keep-alive meter (1h TTL)** | ✅ | ❌ | shows time-to-expiry of the prompt cache |
 | Turn timing by (model, effort, type) | ✅ | ❌ | atomic cross-process merge |
 | Context breakdown via `/context` | ⏳ | ✅ | Cockpit UI ready, data source pending |
@@ -162,7 +162,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Cache hit-rate + read/write + savings | ✅ | ❌ | per-turn **and** cumulative |
 | Cost per turn / per session (estimate) | ✅ | 🟡 | labelled "estimated" |
 | Tokens in / out / cache-create / cache-read | ✅ | 🟡 | dedicated block |
-| 5h / 7d limits with reset time | ✅ | ✅ | official adds attribution |
+| Session / weekly limits with reset time | ✅ | ✅ | includes the per-model weekly window |
 | Cache TTL countdown (keep-alive) | ✅ | ❌ | time-to-expiry of the 1h cache |
 | Turn timing by model/effort/type | ✅ | ❌ | sample counts |
 | Active model / effort / permission mode | ✅ | ✅ | dropdowns + status bar |
@@ -220,7 +220,6 @@ onboarding checklist, and remote control (📱 on the session card).
 | Gap | Effort | Why it's not done / approach |
 |---|:--:|---|
 | Context breakdown via `/context` | 🟡 blocked | No clean source in stream-json — only running `/context` (pollutes the transcript, costs a turn) yields a brittle text block. UI is ready; needs a stable data source. |
-| Usage attribution (skill/subagent/plugin/MCP) | 🟡 blocked | Same: the attribution lives in the CLI `/usage` dialog, not exposed in stream mode. |
 | Chat in the **secondary sidebar** | 🟡→large | Our chat is a `WebviewPanel` (editor area); VS Code only puts `WebviewView`s in the sidebar. Needs a dedicated chat-view provider with its own streaming/replay — a focused PR. |
 
 Heavy/out-of-scope (official-only): file-restoring checkpoints, built-in IDE MCP server,
@@ -539,7 +538,8 @@ automatically resumes the most recent session for that directory.
 | **Cache**: hit-rate, read, write | ✅ | **Cache** block in the panel | — |
 | **Cost** per turn and session | 🟡 | Cost block ("estimated" label) | Estimate, not the official invoice |
 | Tokens in / out / cache-create / cache-read | ✅/🟡 | **Tokens** block | Full breakdown partial |
-| **Subscription limits** (5h and 7d, % used) | ✅ | Meters in the panel, fed by the real OAuth `/usage` API (same source as `/usage`) | Statusline complements it during low usage — see [statusline](#real-account-usage-statusline) |
+| **Subscription limits** (current session, weekly, per-model weekly) | ✅ | Meters in the panel, fed by the real OAuth `/usage` API (same source as `/usage`) | Statusline complements it during low usage — see [statusline](#real-account-usage-statusline) |
+| **Usage attribution** (long context, subagents, cache hit-rate, context per tool/MCP) | ✅ | "Where your tokens went" section in the Usage dialog | Estimated from local transcripts; `tool_result` tokens approximated at ~4 chars/token |
 | **Turn timing** segmented by (model, effort, type) | ✅ | Sample counts per segment; debounced flush with a cross-process lock (atomic merge) | — |
 | Context-near-limit alert | ✅ | Automatic warning above ~85% | — |
 | Context **breakdown** via `/context` | ⏳ | — | UI ready, data source pending |
@@ -608,7 +608,7 @@ context, and **never** write or log credentials.
 | ⏪ **Prompt rewind** | Rewind to an earlier prompt: truncates the transcript and re-arms `--resume` | Local |
 | ✏️ **Rename context** | Rename a saved session from its card; updates the open webview title | Local |
 | ⏱️ **Per-turn elapsed time** | Live on the gauge and again at the end of each turn | Local |
-| 📊 **Real account usage** | 5h / 7d meters fed by the real OAuth `/usage` API (no manual budgets) | OAuth `/usage`; **no** token spend |
+| 📊 **Real account usage** | Session / weekly / per-model meters fed by the real OAuth `/usage` API (no manual budgets) | OAuth `/usage`; **no** token spend |
 | 🪟 **Statusline real-usage wrapper** | Reversible wrapper that caches `rate_limits` / `context_window` and re-invokes your original statusline — see [statusline](#real-account-usage-statusline) | Local (Windows) |
 
 > **Why the exception is safe:** these calls are *clean and isolated* and sit outside agent
@@ -738,7 +738,7 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `dase.enabled` | boolean | `true` | Allow connecting the [DASE ORM Designer](https://marketplace.visualstudio.com/items?itemName=HermesSilva.dase) as an MCP server; the per-session **DASE** toggle only appears when that extension is installed |
 | `dase.model` | string | `""` | Model to run on while the DASE toggle is on for a tab; empty = keep the current model |
 
-> The 5h / 7d meters now read **real** account usage via the OAuth `/usage` API
+> The limit meters now read **real** account usage via the OAuth `/usage` API
 > (same source as the CLI's `/usage`), so no manual budgets are needed. The context
 > meter limit is auto-derived from the active model (1M for `[1m]` variants, else 200K).
 
@@ -802,9 +802,15 @@ falls under **Other**.
 
 ## Real account usage (statusline)
 
-The 5h / 7d meters need real `rate_limits` data. The automatic channel
+The limit meters need real `rate_limits` data. The automatic channel
 (`rate_limit_event` in the stream) already works; the **statusline** complements it during
 low usage.
+
+Claude Code now reports these limits as a `limits[]` array — one entry per window, with
+`kind` = `session` | `weekly_all` | `weekly_scoped` and the model name in
+`scope.model.display_name`. The Cockpit reads that array and labels the per-model window
+with whatever the server calls it (today, Fable). The older fixed fields
+(`five_hour`, `seven_day`, `seven_day_<model>`) are still accepted as a fallback.
 
 The **Enable real usage tracking** command installs a statusline *wrapper* that:
 
@@ -917,7 +923,8 @@ encoded by mapping `:` `\` `/` → `-`).
 | "CLI not found" on activation | `claude` not on the PATH | Set `tootega.claudePath`; confirm `claude --version` |
 | Chat does not respond / auth error | CLI not authenticated | Run **Sign in** or `claude` in a terminal and log in |
 | Model selector shows only aliases | Subscription account (no API key) | Expected — use an alias, the active model, or **Custom…** |
-| 5h/7d meters empty | No real usage source | Enable **Real usage tracking** and run a `claude` session |
+| Limit meters empty | No real usage source | Enable **Real usage tracking** and run a `claude` session |
+| Stop button does nothing | CLI older than `2.1.162` | Run `claude update` — older versions drop the interrupt in `stream-json` sessions |
 | Statusline does not update | `settings.json` has comments | Edit `~/.claude/settings.json` manually |
 | New events do not render | The CLI version changed the contract | The parser ignores unknown ones; open an issue with the CLI version |
 | Changed model/effort and the session restarted | Expected behavior (overrides restart) | — |
@@ -932,7 +939,11 @@ Host logs: *Output → Tootega Cockpit*.
   **Git checkpoints / file-restore**, and the **context breakdown via `/context`** are still
   planned. **Rewind** today restores the *conversation* (transcript truncation + `--resume`),
   not the files on disk.
-- **Cost** is an estimate ("estimated" label), not Anthropic's official invoice.
+- **Cost** is an estimate ("estimated" label), not Anthropic's official invoice: it is the
+  equivalent API price, which a subscription does not charge you.
+- **Usage attribution** is estimated from local transcripts: `tool_result` sizes are
+  approximated at ~4 characters per token, and a tool call whose result landed in another
+  transcript file is not attributed to it.
 - **Statusline** real-usage wrapper is **Windows-only** for now (the OAuth `/usage` meters
   themselves are cross-platform); **voice capture** needs **ffmpeg** on the host.
 - The **event contract** is not yet frozen against real fixtures of a target `claude`

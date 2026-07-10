@@ -37,8 +37,8 @@ describe('OtelReceiver — ingestMetrics', () => {
     expect(s.linesAdded).toBe(170);
     expect(s.linesRemoved).toBe(30);
     expect(s.locByModel).toEqual([
-      { key: 'claude-opus-4-8[1m]', usd: 0, tokens: 120 },
-      { key: 'claude-sonnet-4-6', usd: 0, tokens: 50 },
+      { key: 'claude-opus-4-8[1m]', usd: 0, tokens: 120, cacheRead: 0 },
+      { key: 'claude-sonnet-4-6', usd: 0, tokens: 50, cacheRead: 0 },
     ]);
   });
 
@@ -61,7 +61,12 @@ describe('OtelReceiver — ingestMetrics', () => {
       ]),
     );
     const s = r.stats();
-    expect(s.costByModel?.[0]).toEqual({ key: 'claude-opus-4-8', usd: 0.42, tokens: 1500 });
+    expect(s.costByModel?.[0]).toEqual({
+      key: 'claude-opus-4-8',
+      usd: 0.42,
+      tokens: 1500,
+      cacheRead: 0,
+    });
     expect(s.costByModel?.[1]).toMatchObject({ key: 'claude-sonnet-4-6', usd: 0.08 });
   });
 

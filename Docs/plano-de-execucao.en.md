@@ -32,7 +32,7 @@ Define **what**, **in which order**, and **with which definition of done** to bu
 | Engine → UI | `claude -p --output-format stream-json --verbose` (stdout NDJSON) | messages, thinking, tool_use, tool_result, usage, session events |
 | UI → Engine | `--input-format stream-json` (stdin) | user messages, answers to questions, permission decisions |
 | Session | `--resume <id>` / `--continue` | resume conversations |
-| Stats/account | **statusline** hook (JSON) | `model`, `context_window`, `cost`, `rate_limits.{five_hour,seven_day}`, `workspace` |
+| Stats/account | **statusline** hook (JSON) | `model`, `context_window`, `cost`, `rate_limits.limits[]` (`session`, `weekly_all`, `weekly_scoped`), `workspace` |
 | On-demand stats | `/usage`, `/context`, `/cost` | context breakdown, cost, limits |
 | Persistence | `~/.claude/` (sessions, settings, projects) | history, configs, CLAUDE.md |
 
@@ -190,7 +190,7 @@ Each phase has **entry**, **deliverables**, and **definition of done (DoD)**.
 
 ### 4.4. Subscription / account limits (S6, S7)
 
-- **Windows** `five_hour` and `seven_day` (from the statusline `rate_limits` / `/usage`): % used, absolute value, and **reset time**.
+- **Windows** from `limits[]` (statusline `rate_limits` / `/usage`): `session` (current session), `weekly_all` (weekly, all models), and `weekly_scoped` (weekly per model, labelled by `scope.model.display_name` — e.g. Fable). For each: % used, absolute value, and **reset time**. Legacy `five_hour`/`seven_day`/`seven_day_<model>` fields are still accepted as a fallback.
 - **Pacing:** current consumption rate projected against the reset — alert if the user "will hit the ceiling" before the window turns over.
 - Show the subscription **plan** when available.
 

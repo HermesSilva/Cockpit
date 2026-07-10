@@ -154,17 +154,37 @@ export interface UsageBucket {
   tokens?: number; // estimativa local (quando não há % real)
   usd?: number;
 }
+/** Janela semanal restrita a um escopo (ex.: um modelo). O rótulo vem do servidor. */
+export interface ScopedBucket extends UsageBucket {
+  label: string; // display_name do escopo (ex.: "Fable", "Sonnet")
+}
 /** Uma fatia do detalhamento de uso (por modelo ou por origem). */
 export interface UsageSlice {
   key: string; // id do modelo, ou 'main' | 'subagent'
   usd: number;
-  tokens: number;
+  tokens: number; // tokens NOVOS: input + output + cache-create
+  cacheRead: number; // contexto relido do cache (domina o total; exibido à parte)
 }
 
 /** Detalhamento local da janela de 7 dias (sempre estimativa de tabela). */
 export interface UsageBreakdown {
   byModel: UsageSlice[];
   bySource: UsageSlice[]; // main vs. subagent (sidechain)
+}
+
+/** Contexto injetado por uma ferramenta (soma estimada dos tool_result). */
+export interface ToolContextSlice {
+  key: string; // nome da tool; "mcp:<servidor>" ou "skill:<nome>" quando agrupada
+  calls: number;
+  tokens: number;
+}
+
+/** Atribuição do uso de 7 dias: para onde foram os tokens. */
+export interface UsageAttribution {
+  longContextPct: number; // 0..1 — parcela gerada com contexto > 150k
+  subagentPct: number; // 0..1 — parcela vinda de subagentes
+  cacheHitPct?: number; // 0..1 — cache_read / (cache_read + cache_creation)
+  byTool: ToolContextSlice[]; // maior primeiro
 }
 
 /** Tokens de um único dia (chave local YYYY-MM-DD). */
@@ -184,11 +204,15 @@ export interface TokenTotals {
 
 export interface UsageData {
   account: UsageAccount;
-  buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; sevenDaySonnet?: UsageBucket };
+  // fiveHour = janela da sessão atual; sevenDay = semanal "todos os modelos";
+  // weeklyScoped = janelas semanais por modelo (ex.: Fable), rotuladas pelo servidor.
+  buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; weeklyScoped?: ScopedBucket[] };
   source: 'api' | 'statusline' | 'stream' | 'estimate'; // origem dos %
   trackingEnabled: boolean; // wrapper de statusline instalado (captura rate_limits real)
   // Detalhamento local 7d (por modelo / origem) — estimativa, sempre presente.
   breakdown?: UsageBreakdown;
+  // Atribuição local 7d: long context, subagentes, cache hit-rate, tools/MCP.
+  attribution?: UsageAttribution;
   // Contador global de tokens (enviado/recebido/total) por dia — toda a máquina.
   tokens?: TokenTotals;
   // Telemetria OTEL (opt-in) agregada pelo receiver local — ausente se desligado.

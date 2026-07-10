@@ -32,7 +32,7 @@ Definir **o quê**, **em que ordem** e **com qual critério de pronto** construi
 | Motor → UI | `claude -p --output-format stream-json --verbose` (stdout NDJSON) | mensagens, thinking, tool_use, tool_result, usage, eventos de sessão |
 | UI → Motor | `--input-format stream-json` (stdin) | mensagens do usuário, respostas a perguntas, decisões de permissão |
 | Sessão | `--resume <id>` / `--continue` | retomar conversas |
-| Stats/conta | hook de **statusline** (JSON) | `model`, `context_window`, `cost`, `rate_limits.{five_hour,seven_day}`, `workspace` |
+| Stats/conta | hook de **statusline** (JSON) | `model`, `context_window`, `cost`, `rate_limits.limits[]` (`session`, `weekly_all`, `weekly_scoped`), `workspace` |
 | Stats sob demanda | `/usage`, `/context`, `/cost` | breakdown de contexto, custo, limites |
 | Persistência | `~/.claude/` (sessões, settings, projetos) | histórico, configs, CLAUDE.md |
 
@@ -190,7 +190,7 @@ Cada fase tem **entrada**, **entregáveis** e **critério de pronto (DoD)**.
 
 ### 4.4. Limites da assinatura / conta (S6, S7)
 
-- **Janelas** `five_hour` e `seven_day` (do `rate_limits` da statusline / `/usage`): % usado, valor absoluto e **horário de reset**.
+- **Janelas** vindas de `limits[]` (`rate_limits` da statusline / `/usage`): `session` (sessão atual), `weekly_all` (semanal, todos os modelos) e `weekly_scoped` (semanal por modelo, rotulada por `scope.model.display_name` — ex.: Fable). Para cada uma: % usado, valor absoluto e **horário de reset**. Campos legados `five_hour`/`seven_day`/`seven_day_<modelo>` seguem aceitos como fallback.
 - **Pacing:** ritmo atual de consumo projetado contra o reset — alerta se o usuário "vai bater o teto" antes da janela virar.
 - Exibir **plano** da assinatura quando disponível.
 

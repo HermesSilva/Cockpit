@@ -1,7 +1,14 @@
 import { useEffect } from 'react';
 import { Portal } from './Portal';
 import type { Translator } from '../i18n';
-import type { UsageData, UsageBucket, UsageSlice, OtelStats, TokenTotals } from '../../../shared/protocol';
+import type {
+  UsageData,
+  UsageBucket,
+  UsageSlice,
+  UsageAttribution,
+  OtelStats,
+  TokenTotals,
+} from '../../../shared/protocol';
 import { fmtUsdShort, fmtCompact, fmtInt } from '../util/format';
 
 interface Props {
@@ -63,11 +70,11 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                   {live ? t('usage.badge.live') : t('usage.badge.est')}
                 </span>
               </div>
-              <Meter t={t} locale={locale} label={t('usage.session5h')} tone="warm" live={live} b={usage.buckets.fiveHour} />
-              <Meter t={t} locale={locale} label={t('usage.weekly7d')} tone="cool" live={live} b={usage.buckets.sevenDay} />
-              {usage.buckets.sevenDaySonnet && (
-                <Meter t={t} locale={locale} label={t('usage.weeklySonnet')} tone="cool" live={live} b={usage.buckets.sevenDaySonnet} />
-              )}
+              <Meter t={t} locale={locale} label={t('usage.currentSession')} tone="warm" live={live} b={usage.buckets.fiveHour} />
+              <Meter t={t} locale={locale} label={t('usage.weeklyAll')} tone="cool" live={live} b={usage.buckets.sevenDay} />
+              {usage.buckets.weeklyScoped?.map((b) => (
+                <Meter key={b.label} t={t} locale={locale} label={t('usage.weeklyModel', b.label)} tone="cool" live={live} b={b} />
+              ))}
               {!live && (
                 <div className="usage-est-note">
                   <span>{t(usage.trackingEnabled ? 'usage.est.waiting' : 'usage.est.note')}</span>
@@ -83,6 +90,9 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
               {usage.breakdown && (usage.breakdown.byModel.length > 0 || usage.breakdown.bySource.length > 0) && (
                 <Breakdown t={t} b={usage.breakdown} />
               )}
+
+              {/* ATRIBUIÇÃO 7d: long context, subagentes, cache, tools/MCP */}
+              {usage.attribution && <Attribution t={t} locale={locale} a={usage.attribution} />}
 
               {/* CONTADOR GLOBAL DE TOKENS (enviado/recebido/total) por dia */}
               {usage.tokens && usage.tokens.total > 0 && (
@@ -115,19 +125,38 @@ function modelLabel(id: string): string {
 }
 
 // Barra proporcional de uma fatia (USD) dentro do total da categoria.
-function SliceRow({ label, usd, tokens, frac }: { label: string; usd: number; tokens: number; frac: number }) {
+function SliceRow({
+  t,
+  label,
+  usd,
+  tokens,
+  cacheRead,
+  frac,
+}: {
+  t: Translator;
+  label: string;
+  usd: number;
+  tokens: number;
+  cacheRead: number;
+  frac: number;
+}) {
   return (
     <div className="usage-slice">
       <div className="usage-slice-head">
         <span className="usage-slice-label">{label}</span>
         <span className="usage-slice-val">
           {fmtUsdShort(usd)}
-          <span className="usage-muted"> · {fmtCompact(tokens)} tok</span>
+          <span className="usage-muted"> · {t('usage.slice.newTokens', fmtCompact(tokens))}</span>
         </span>
       </div>
       <div className="usage-bar">
         <span className="usage-bar-fill warm" style={{ width: `${Math.max(2, frac * 100)}%` }} />
       </div>
+      {cacheRead > 0 && (
+        <div className="usage-slice-sub usage-muted">
+          {t('usage.slice.cacheRead', fmtCompact(cacheRead))}
+        </div>
+      )}
     </div>
   );
 }
@@ -145,7 +174,15 @@ function Breakdown({ t, b }: { t: Translator; b: { byModel: UsageSlice[]; bySour
       </div>
       <div className="usage-sub-label">{t('usage.breakdown.byModel')}</div>
       {b.byModel.map((s) => (
-        <SliceRow key={s.key} label={modelLabel(s.key)} usd={s.usd} tokens={s.tokens} frac={s.usd / totalModel} />
+        <SliceRow
+          key={s.key}
+          t={t}
+          label={modelLabel(s.key)}
+          usd={s.usd}
+          tokens={s.tokens}
+          cacheRead={s.cacheRead}
+          frac={s.usd / totalModel}
+        />
       ))}
       {b.bySource.length > 1 && (
         <>
@@ -153,15 +190,89 @@ function Breakdown({ t, b }: { t: Translator; b: { byModel: UsageSlice[]; bySour
           {b.bySource.map((s) => (
             <SliceRow
               key={s.key}
+              t={t}
               label={t(s.key === 'subagent' ? 'usage.source.subagent' : 'usage.source.main')}
               usd={s.usd}
               tokens={s.tokens}
+              cacheRead={s.cacheRead}
               frac={s.usd / totalSrc}
             />
           ))}
         </>
       )}
       <div className="usage-muted usage-breakdown-note">{t('usage.breakdown.note')}</div>
+    </>
+  );
+}
+
+// Rótulo legível p/ um bucket de tool: "mcp:dase" -> "MCP · dase".
+function toolLabel(key: string): string {
+  if (key.startsWith('mcp:')) return `MCP · ${key.slice(4)}`;
+  if (key.startsWith('skill:')) return `Skill · ${key.slice(6)}`;
+  return key;
+}
+
+// Um insight: título com o número em destaque + explicação do que fazer com ele.
+function Insight({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="usage-insight">
+      <div className="usage-insight-title">{title}</div>
+      <div className="usage-muted usage-insight-desc">{desc}</div>
+    </div>
+  );
+}
+
+// Atribuição 7d: responde "para onde foram meus tokens". Percentuais sobre os
+// tokens NOVOS da janela. O contexto por tool é estimado a partir dos tool_result.
+function Attribution({ t, locale, a }: { t: Translator; locale: string; a: UsageAttribution }) {
+  const pct = (v: number) => Math.round(v * 100);
+  const top = a.byTool.slice(0, 6);
+  const maxTok = top.reduce((m, s) => Math.max(m, s.tokens), 0) || 1;
+  const hasInsight = a.longContextPct > 0 || a.subagentPct > 0 || a.cacheHitPct != null;
+  if (!hasInsight && top.length === 0) return null;
+  return (
+    <>
+      <div className="usage-section-label">
+        {t('usage.attribution')}
+        <span className="usage-badge est">{t('usage.badge.est')}</span>
+      </div>
+      {a.longContextPct > 0 && (
+        <Insight
+          title={t('usage.i.context', pct(a.longContextPct))}
+          desc={t('usage.i.context.desc')}
+        />
+      )}
+      {a.subagentPct > 0 && (
+        <Insight
+          title={t('usage.i.subagents', pct(a.subagentPct))}
+          desc={t('usage.i.subagents.desc')}
+        />
+      )}
+      {a.cacheHitPct != null && (
+        <Insight title={t('usage.i.cache', pct(a.cacheHitPct))} desc={t('usage.i.cache.desc')} />
+      )}
+      {top.length > 0 && (
+        <>
+          <div className="usage-sub-label">{t('usage.attr.byTool')}</div>
+          {top.map((s) => (
+            <div key={s.key} className="usage-slice">
+              <div className="usage-slice-head">
+                <span className="usage-slice-label">{toolLabel(s.key)}</span>
+                <span className="usage-slice-val usage-muted">
+                  {t('usage.attr.tool.calls', fmtInt(s.calls, locale), fmtCompact(s.tokens))}
+                </span>
+              </div>
+              <div className="usage-bar">
+                <span
+                  className="usage-bar-fill cool"
+                  style={{ width: `${Math.max(2, (s.tokens / maxTok) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+          <div className="usage-muted usage-breakdown-note">{t('usage.attr.note')}</div>
+        </>
+      )}
     </>
   );
 }
@@ -239,9 +350,11 @@ function Otel({ t, locale, o }: { t: Translator; locale: string; o: OtelStats })
           {o.costByModel.map((s) => (
             <SliceRow
               key={s.key}
+              t={t}
               label={modelLabel(s.key)}
               usd={s.usd}
               tokens={s.tokens}
+              cacheRead={s.cacheRead}
               frac={s.usd / (o.costByModel!.reduce((a, x) => a + x.usd, 0) || 1)}
             />
           ))}

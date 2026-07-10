@@ -127,17 +127,29 @@ export function HubView({
         {cockpitVersion && <span className="hub-ver">v{cockpitVersion}</span>}
         {cliVersion ? (
           <>
-            <Tooltip text={t('about.cliReleaseNotes')}>
+            <Tooltip
+              text={
+                cliBelowMin(cliVersion)
+                  ? t('about.cliBelowMin', MIN_CLI_VERSION)
+                  : t('about.cliReleaseNotes')
+              }
+            >
               <button
                 type="button"
-                className={`hub-cli ${cliOutdated(cliVersion, cliLatest) ? 'outdated' : ''}`}
+                className={`hub-cli ${cliOutdated(cliVersion, cliLatest) || cliBelowMin(cliVersion) ? 'outdated' : ''}`}
                 onClick={() => onOpenLink(CLI_RELEASES_URL)}
               >
                 Claude CLI {semver(cliVersion) ?? cliVersion}
               </button>
             </Tooltip>
-            {cliOutdated(cliVersion, cliLatest) && (
-              <Tooltip text={t('about.cliOutdated', semver(cliLatest) ?? cliLatest ?? '')}>
+            {(cliOutdated(cliVersion, cliLatest) || cliBelowMin(cliVersion)) && (
+              <Tooltip
+                text={
+                  cliBelowMin(cliVersion)
+                    ? t('about.cliBelowMin', MIN_CLI_VERSION)
+                    : t('about.cliOutdated', semver(cliLatest) ?? cliLatest ?? '')
+                }
+              >
                 <button type="button" className="hub-update" onClick={onUpdate}>
                   ↑ {t('about.update')}
                 </button>
@@ -707,17 +719,32 @@ function semver(s?: string): string | undefined {
 // Lista de releases do Claude CLI no GitHub.
 const CLI_RELEASES_URL = 'https://github.com/anthropics/claude-code/releases';
 
-function cliOutdated(installed?: string, latest?: string): boolean {
-  const a = semver(installed);
-  const b = semver(latest);
-  if (!a || !b) return false;
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+// Versão mínima do CLI para o Cockpit funcionar direito: a 2.1.162 corrigiu o
+// Esc (interromper) sendo descartado no início do turno em sessões stream-json,
+// que é exatamente o canal que usamos. Abaixo disso, o botão Stop pode não pegar.
+const MIN_CLI_VERSION = '2.1.162';
+
+/** a < b (semver de 3 partes). false quando alguma versão não é reconhecida. */
+function semverLt(a?: string, b?: string): boolean {
+  const x = semver(a);
+  const y = semver(b);
+  if (!x || !y) return false;
+  const pa = x.split('.').map(Number);
+  const pb = y.split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     if (pa[i] < pb[i]) return true;
     if (pa[i] > pb[i]) return false;
   }
   return false;
+}
+
+function cliOutdated(installed?: string, latest?: string): boolean {
+  return semverLt(installed, latest);
+}
+
+/** CLI velho a ponto de quebrar o Stop — aviso mais forte que "desatualizado". */
+function cliBelowMin(installed?: string): boolean {
+  return semverLt(installed, MIN_CLI_VERSION);
 }
 
 function prettyChip(id: string): string {

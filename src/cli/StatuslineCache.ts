@@ -2,12 +2,12 @@
 // extrai os limites reais da conta. Parser tolerante a variações de campo.
 import * as fs from 'node:fs';
 import { USAGE_CACHE } from './StatuslineInstaller';
-import type { LimitWindow } from '../../shared/protocol';
+import type { LimitWindow, ScopedBucket } from '../../shared/protocol';
 
 export interface RealLimits {
-  fiveHour?: LimitWindow;
-  sevenDay?: LimitWindow;
-  sevenDaySonnet?: LimitWindow; // janela semanal específica de Sonnet (quando existe)
+  fiveHour?: LimitWindow; // janela da sessão atual
+  sevenDay?: LimitWindow; // janela semanal de todos os modelos
+  weeklyScoped?: ScopedBucket[]; // janelas semanais por modelo (quando existem)
   ageMs?: number; // idade do cache (now - ts); undefined se ts ausente
   raw?: unknown; // rate_limits cru, para depuração
 }
@@ -22,13 +22,50 @@ export function readUsageCache(): RealLimits | undefined {
   const ageMs = cacheAge(obj?.ts);
   const rl = obj?.rate_limits;
   if (!rl || typeof rl !== 'object') return { ageMs, raw: rl };
-  const fiveHour = parseWindow(rl.five_hour ?? rl.fiveHour ?? rl['5h']);
-  const sevenDay = parseWindow(rl.seven_day ?? rl.sevenDay ?? rl['7d'] ?? rl.weekly);
-  const sevenDaySonnet = parseWindow(
-    rl.seven_day_sonnet ?? rl.sevenDaySonnet ?? rl.weekly_sonnet ?? rl.sonnet,
-  );
-  if (!fiveHour && !sevenDay && !sevenDaySonnet) return { ageMs, raw: rl };
-  return { fiveHour, sevenDay, sevenDaySonnet, ageMs, raw: rl };
+  const byKind = parseKinds(rl.limits);
+  const fiveHour = byKind.fiveHour ?? parseWindow(rl.five_hour ?? rl.fiveHour ?? rl['5h']);
+  const sevenDay =
+    byKind.sevenDay ?? parseWindow(rl.seven_day ?? rl.sevenDay ?? rl['7d'] ?? rl.weekly);
+  const weeklyScoped = byKind.weeklyScoped ?? legacyScoped(rl);
+  if (!fiveHour && !sevenDay && !weeklyScoped) return { ageMs, raw: rl };
+  return { fiveHour, sevenDay, weeklyScoped, ageMs, raw: rl };
+}
+
+/** Formato atual: `limits[]` com kind session|weekly_all|weekly_scoped + scope.model.display_name. */
+function parseKinds(limits: unknown): Omit<RealLimits, 'ageMs' | 'raw'> {
+  if (!Array.isArray(limits)) return {};
+  const out: Omit<RealLimits, 'ageMs' | 'raw'> = {};
+  const scoped: ScopedBucket[] = [];
+  for (const l of limits) {
+    const w = parseWindow(l);
+    if (!w) continue;
+    if (l.kind === 'session') out.fiveHour = w;
+    else if (l.kind === 'weekly_all') out.sevenDay = w;
+    else if (l.kind === 'weekly_scoped') {
+      const label = l?.scope?.model?.display_name;
+      if (typeof label === 'string' && label) scoped.push({ ...w, label });
+    }
+  }
+  if (scoped.length) out.weeklyScoped = scoped;
+  return out;
+}
+
+/** Legado: janelas semanais por modelo em campos fixos. */
+function legacyScoped(rl: any): ScopedBucket[] | undefined {
+  const scoped: ScopedBucket[] = [];
+  for (const [label, ...keys] of [
+    ['Opus', 'seven_day_opus', 'sevenDayOpus', 'weekly_opus', 'opus'],
+    ['Sonnet', 'seven_day_sonnet', 'sevenDaySonnet', 'weekly_sonnet', 'sonnet'],
+  ] as const) {
+    for (const k of keys) {
+      const w = parseWindow(rl[k]);
+      if (w) {
+        scoped.push({ ...w, label });
+        break;
+      }
+    }
+  }
+  return scoped.length ? scoped : undefined;
 }
 
 /** Idade (ms) do cache a partir do campo `ts` (ISO). undefined se ausente/inválido. */

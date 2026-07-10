@@ -6,13 +6,13 @@ import * as https from 'node:https';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { LimitWindow } from '../../shared/protocol';
+import type { LimitWindow, ScopedBucket } from '../../shared/protocol';
 import { dlog } from '../util/logger';
 
 export interface ApiUsage {
-  fiveHour?: LimitWindow;
-  sevenDay?: LimitWindow;
-  sevenDaySonnet?: LimitWindow;
+  fiveHour?: LimitWindow; // kind:'session'
+  sevenDay?: LimitWindow; // kind:'weekly_all'
+  weeklyScoped?: ScopedBucket[]; // kind:'weekly_scoped' (um por modelo escopado)
 }
 
 const CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
@@ -30,11 +30,50 @@ function readToken(): string | undefined {
   }
 }
 
-/** Janela da API ({utilization:0..100, resets_at}) -> LimitWindow (usedPct 0..1). */
+/** Janela da API ({utilization|percent:0..100, resets_at}) -> LimitWindow (usedPct 0..1). */
 function win(w: any): LimitWindow | undefined {
-  if (!w || typeof w !== 'object' || typeof w.utilization !== 'number') return undefined;
+  if (!w || typeof w !== 'object') return undefined;
+  const pct = typeof w.utilization === 'number' ? w.utilization : w.percent;
+  if (typeof pct !== 'number' || !Number.isFinite(pct)) return undefined;
   const resetsAt = typeof w.resets_at === 'string' ? w.resets_at : undefined;
-  return { usedPct: Math.max(0, Math.min(1, w.utilization / 100)), resetsAt };
+  return { usedPct: Math.max(0, Math.min(1, pct / 100)), resetsAt };
+}
+
+/**
+ * Extrai as janelas do payload. Formato atual: array `limits[]` com
+ * `kind` = session | weekly_all | weekly_scoped, e `scope.model.display_name`
+ * nomeando o modelo da janela escopada (era `seven_day_opus`/`_sonnet` fixos).
+ * Cai nos campos legados de topo quando `limits[]` não vem.
+ */
+export function parseUsage(j: any): ApiUsage {
+  const out: ApiUsage = {};
+  const scoped: ScopedBucket[] = [];
+  if (Array.isArray(j?.limits)) {
+    for (const l of j.limits) {
+      const w = win(l);
+      if (!w) continue;
+      if (l.kind === 'session') out.fiveHour = w;
+      else if (l.kind === 'weekly_all') out.sevenDay = w;
+      else if (l.kind === 'weekly_scoped') {
+        const label = l?.scope?.model?.display_name;
+        if (typeof label === 'string' && label) scoped.push({ ...w, label });
+      }
+    }
+  }
+  out.fiveHour ??= win(j?.five_hour);
+  out.sevenDay ??= win(j?.seven_day);
+  if (!scoped.length) {
+    // Legado: janelas semanais por modelo em campos fixos de topo.
+    for (const [label, key] of [
+      ['Opus', 'seven_day_opus'],
+      ['Sonnet', 'seven_day_sonnet'],
+    ] as const) {
+      const w = win(j?.[key]);
+      if (w) scoped.push({ ...w, label });
+    }
+  }
+  if (scoped.length) out.weeklyScoped = scoped;
+  return out;
 }
 
 /**
@@ -74,12 +113,7 @@ export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> 
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try {
-              const j = JSON.parse(body);
-              done({
-                fiveHour: win(j.five_hour),
-                sevenDay: win(j.seven_day),
-                sevenDaySonnet: win(j.seven_day_sonnet),
-              });
+              done(parseUsage(JSON.parse(body)));
             } catch (e) {
               dlog('usage-api', `200 mas JSON inválido: ${String(e)}`);
               done(undefined);

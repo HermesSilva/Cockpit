@@ -59,7 +59,7 @@ claude -p --output-format stream-json --input-format stream-json --verbose
 - Resumable sessions via `--resume <session_id>` / `--continue`.
 
 **Complementary data sources** (statistics/account), described in the execution plan:
-- **Statusline** hook (JSON with `model`, `context_window`, `cost`, `rate_limits.five_hour`, `rate_limits.seven_day`).
+- **Statusline** hook (JSON with `model`, `context_window`, `cost`, `rate_limits` — current format: `limits[]` with `kind` = `session` | `weekly_all` | `weekly_scoped` and `scope.model.display_name`; legacy `five_hour`/`seven_day`/`seven_day_<model>` still parsed as a fallback).
 - `/usage`, `/context`, `/cost` commands (or their programmatic equivalents).
 - Session/transcript files in `~/.claude/`.
 

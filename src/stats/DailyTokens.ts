@@ -17,6 +17,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { log } from '../util/logger';
+import { usageKey } from './usageKey';
 import type { Usage } from '../../shared/events';
 
 /** Tokens de um único dia (chave local YYYY-MM-DD). */
@@ -34,7 +35,9 @@ export interface TokenTotals {
   days: DailyTokens[]; // limitado p/ exibição; total é all-time
 }
 
-const ROLLUP_VERSION = 1;
+// v2: linhas da mesma resposta deixaram de ser somadas repetidamente (usageKey).
+// Bump força o descarte do rollup antigo, que guarda totais inflados.
+const ROLLUP_VERSION = 2;
 const ROLLUP = path.join(os.homedir(), '.claude', 'tootega', 'tokens-rollup.json');
 
 /** Mapa dia→{s:sent, r:received} de UM arquivo. */
@@ -82,6 +85,7 @@ function saveRollup(r: Rollup): void {
 /** Lê um .jsonl e devolve o mapa dia→{s,r} das linhas assistant com usage. */
 function parseFile(content: string): FileDays {
   const days: FileDays = {};
+  const counted = new Set<string>(); // ids já contados neste arquivo (ver usageKey)
   for (const line of content.split('\n')) {
     if (!line.includes('"assistant"') || !line.includes('usage')) continue;
     let o: any;
@@ -93,6 +97,11 @@ function parseFile(content: string): FileDays {
     if (o.type !== 'assistant' || !o.message?.usage || !o.timestamp) continue;
     const ts = Date.parse(o.timestamp);
     if (Number.isNaN(ts)) continue;
+    const key = usageKey(o);
+    if (key) {
+      if (counted.has(key)) continue; // mesma resposta, outro bloco: usage já somada
+      counted.add(key);
+    }
     const u = o.message.usage as Usage;
     const sent =
       (u.input_tokens ?? 0) +

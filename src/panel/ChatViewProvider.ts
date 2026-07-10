@@ -46,7 +46,7 @@ import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/S
 import { fetchAccountUsage } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
-import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
+import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { ensureDaseMcpConfig, readDaseEndpoint, KNOWN_DASE_EXT_IDS } from '../cli/DaseMcp';
 import { resolveLocale } from '../i18n/host';
@@ -507,7 +507,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private lastLimitsSource: 'real' | 'estimate' = 'estimate';
   // Origem detalhada p/ o modal Usage (api > statusline > estimate).
   private lastUsageSource: 'api' | 'statusline' | 'estimate' = 'estimate';
-  private lastApiSonnet?: LimitWindow;
+  private lastScoped?: ScopedBucket[];
   private usageStarted = false;
 
   /** Inicia (uma vez) o cálculo periódico do uso local (5h/7d). */
@@ -525,7 +525,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const api = await fetchAccountUsage(force);
       if (api && (api.fiveHour || api.sevenDay)) {
         this.lastLimits = { fiveHour: api.fiveHour, sevenDay: api.sevenDay };
-        this.lastApiSonnet = api.sevenDaySonnet;
+        this.lastScoped = api.weeklyScoped;
         this.lastLimitsSource = 'real';
         this.lastUsageSource = 'api';
       } else {
@@ -534,7 +534,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const fresh = real != null && (real.ageMs == null || real.ageMs < USAGE_CACHE_MAX_AGE_MS);
         if (real && fresh && (real.fiveHour || real.sevenDay)) {
           this.lastLimits = { fiveHour: real.fiveHour, sevenDay: real.sevenDay };
-          this.lastApiSonnet = real.sevenDaySonnet;
+          this.lastScoped = real.weeklyScoped;
           this.lastLimitsSource = 'real';
           this.lastUsageSource = 'statusline';
         } else {
@@ -552,7 +552,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               usedPct: undefined,
             },
           };
-          this.lastApiSonnet = undefined;
+          this.lastScoped = undefined;
           this.lastLimitsSource = 'estimate';
           this.lastUsageSource = 'estimate';
         }
@@ -1041,7 +1041,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       await this.refreshUsage(true); // força API fresca (dado quente ao clicar)
       const account = await fetchAuthStatus(this.claudePath());
-      const sonnet = this.lastApiSonnet ?? readUsageCache()?.sevenDaySonnet;
+      const scoped = this.lastScoped ?? readUsageCache()?.weeklyScoped;
       // Detalhamento local 7d (por modelo / origem) — sempre estimativa de tabela,
       // independente do % real da conta. Varre os transcripts desta máquina.
       const [local, tokens] = await Promise.all([
@@ -1055,11 +1055,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           buckets: {
             fiveHour: toBucket(this.lastLimits?.fiveHour),
             sevenDay: toBucket(this.lastLimits?.sevenDay),
-            sevenDaySonnet: toBucket(sonnet),
+            weeklyScoped: scoped,
           },
           source: this.lastUsageSource,
           trackingEnabled: usageTrackingEnabled(),
           breakdown: local.breakdown,
+          attribution: local.attribution,
           tokens,
           otel: this.otel.stats(),
           generatedAt: new Date().toISOString(),

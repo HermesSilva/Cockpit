@@ -234,7 +234,20 @@ function summarize(file: string): Summary {
       model = o.model;
     }
   }
-  return { title: aiTitle || firstUser, count, userCount, assistantCount, toolCount, model };
+  // Título estilo web: prioriza o `ai-title` gerado pela CLI (mesmo do picker do
+  // /resume); sem ele, usa o 1º prompt do usuário TRUNCADO — um prompt cru pode
+  // ser um parágrafo inteiro e não serve como rótulo de sessão.
+  const title = aiTitle || truncateTitle(firstUser);
+  return { title, count, userCount, assistantCount, toolCount, model };
+}
+
+/** Corta o fallback na 1ª quebra de sentença/linha e limita ~60 chars. */
+function truncateTitle(s: string, max = 60): string {
+  const t = clean(s);
+  if (!t) return '';
+  const head = t.split(/(?<=[.!?])\s|\n/)[0] ?? t;
+  const base = head.length <= max ? head : t;
+  return base.length <= max ? base : base.slice(0, max).replace(/\s+\S*$/, '') + '…';
 }
 
 /** Reconstrói os itens do transcript para renderizar o histórico ao retomar. */

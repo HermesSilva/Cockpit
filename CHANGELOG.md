@@ -4,6 +4,16 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.212] - 2026-07-10
+
+### Melhorado
+- **Título das sessões estilo web.** O card de contexto prioriza o `ai-title`
+  gerado pela CLI (o mesmo rótulo curto que o picker do `/resume` mostra). Quando a
+  sessão ainda não tem `ai-title`, o *fallback* passa a truncar o 1º prompt do
+  usuário (1ª sentença/linha, ~60 chars + `…`) em vez de despejar o parágrafo cru —
+  a lista fica legível como no histórico da versão web. Sem gasto de tokens: só
+  reflete o que a CLI já produz.
+
 ## [1.0.211] - 2026-07-10
 
 ### Corrigido

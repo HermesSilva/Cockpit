@@ -4,6 +4,17 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.214] - 2026-07-11
+
+### Removido
+- **DASE deixa de ter tratamento especial — vira MCP comum.** O DASE agora é um
+  servidor MCP padrão (plugin `dase-mcp`), descoberto sozinho pela CLI. Removidos: o
+  checkbox por sessão **DASE**, a tag `@DASE:`, a descoberta de endpoint por janela, a
+  geração de `--mcp-config` dedicado, o registro automático no `~/.claude.json` e os
+  settings `tootega.dase.enabled` / `dase.registerInCli` / `dase.model`. Sem perda de
+  função: as tools `dase_*` continuam disponíveis como qualquer outro MCP. Settings
+  antigos `tootega.dase.*` viram órfãos inertes (o VS Code ignora chaves desconhecidas).
+
 ## [1.0.212] - 2026-07-10
 
 ### Melhorado

@@ -34,12 +34,7 @@ export interface SessionHooks {
   claudePath: () => string;
   cwd: () => string;
   // Defaults vindos das settings (o que 'default' resolve quando não há override).
-  // `daseModel` = modelo preferido p/ sessões com a integração DASE ligada
-  // ('default' = sem override; usa o `model`).
-  settings: () => { model: string; effort: string; permission: string; allowAgents: boolean; daseModel: string };
-  // Caminho do `--mcp-config` do DASE (ou undefined se indisponível). Consultado
-  // só quando a aba liga a integração — assim as tools só pesam quando pedidas.
-  mcpConfigPath?: () => string | undefined;
+  settings: () => { model: string; effort: string; permission: string; allowAgents: boolean };
   // Idioma (código curto: pt, en…) p/ as perguntas do agente (AskUserQuestion).
   askLanguage: () => string;
 }
@@ -73,10 +68,6 @@ export class Session {
   permissionOverride?: string;
   // Liberar agentes (Task) e workflows (Workflow). undefined = usa o default das settings.
   allowAgentsOverride?: boolean;
-  // Integração DASE (servidor MCP do ORM Designer) ligada nesta aba. Opt-in:
-  // quando ligada, injeta o --mcp-config do DASE e (se houver) troca p/ o modelo
-  // de integração. Default OFF — sem custo de contexto das tools.
-  daseEnabledOverride?: boolean;
 
   // Estado de streaming
   private currentAssistantId?: string;
@@ -95,12 +86,6 @@ export class Session {
   // Valores efetivos (override da aba ?? default das settings).
   model(): string {
     if (this.modelOverride) return this.modelOverride;
-    // Integração DASE ligada: usa o modelo de integração (econômico) quando
-    // configurado, salvo override explícito da aba acima.
-    if (this.daseEnabled()) {
-      const dm = this.hooks.settings().daseModel;
-      if (dm && dm !== 'default') return dm;
-    }
     return this.hooks.settings().model;
   }
   effort(): string {
@@ -111,9 +96,6 @@ export class Session {
   }
   allowAgents(): boolean {
     return this.allowAgentsOverride ?? this.hooks.settings().allowAgents;
-  }
-  daseEnabled(): boolean {
-    return this.daseEnabledOverride ?? false;
   }
 
   setModel(m: string): void {
@@ -132,10 +114,6 @@ export class Session {
     this.allowAgentsOverride = v;
     this.stop();
   }
-  setDaseEnabled(v: boolean): void {
-    this.daseEnabledOverride = v;
-    this.stop(); // respawna o CLI com/sem o --mcp-config do DASE
-  }
 
   ensureCli(): void {
     if (this.cli) return;
@@ -149,9 +127,6 @@ export class Session {
       permissionMode: this.permission(),
       // Bloqueia subagentes/workflows quando desligado (economia de tokens).
       disallowedTools: this.allowAgents() ? undefined : ['Task', 'Workflow'],
-      // DASE só entra quando a aba pede (opt-in) E o endpoint existe. Sem isto,
-      // as ~40 tools do DASE não entram no contexto.
-      mcpConfigPath: this.daseEnabled() ? this.hooks.mcpConfigPath?.() : undefined,
       // resumeId ?? sessionId: defesa contra qualquer caminho que conheça o
       // sessionId mas não tenha fixado o resumeId — evita spawn sem --resume
       // (que duplicaria o contexto). clearConversation() zera ambos p/ nova conversa.

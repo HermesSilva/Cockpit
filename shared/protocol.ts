@@ -247,9 +247,6 @@ export interface SessionConfig {
   permissionMode: string;
   permissionModes: string[];
   allowAgents: boolean; // liberar agentes (Task) e workflows (Workflow); off economiza tokens
-  daseEnabled: boolean; // integração DASE (MCP do ORM Designer) ligada nesta aba
-  daseInstalled: boolean; // extensão tootega.dase instalada (gate de VISIBILIDADE do checkbox)
-  daseAvailable: boolean; // endpoint do DASE encontrado (servidor MCP ligado no DASE)
   showThinking: boolean; // expandir thinking por padrão
   spellCheck: boolean; // corretor ortográfico ao digitar (overlay do compositor)
   expandToolCards: boolean; // expandir cards de tool por padrão na timeline
@@ -492,7 +489,6 @@ export type WebviewToHost =
   | { kind: 'setEffort'; effort: string }
   | { kind: 'setPermissionMode'; mode: string }
   | { kind: 'setAllowAgents'; value: boolean }
-  | { kind: 'setDaseEnabled'; value: boolean }
   | { kind: 'renameSession'; sessionId: string; name: string }
   | { kind: 'openSettings' }
   | { kind: 'listSessions' }

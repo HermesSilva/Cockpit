@@ -735,8 +735,6 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `voiceCorrect` | boolean | `false` | After stopping dictation, run a spelling/grammar pass with the internal model (clean one-shot). Opt-in |
 | `voiceLanguage` | string | `""` | Dictation language (speech-to-text); empty follows the UI language |
 | `ffmpegPath` | string | `""` | Path to ffmpeg used for voice capture; empty = `ffmpeg` from PATH |
-| `dase.enabled` | boolean | `true` | Allow connecting the [DASE ORM Designer](https://marketplace.visualstudio.com/items?itemName=HermesSilva.dase) as an MCP server; the per-session **DASE** toggle only appears when that extension is installed |
-| `dase.model` | string | `""` | Model to run on while the DASE toggle is on for a tab; empty = keep the current model |
 
 > The limit meters now read **real** account usage via the OAuth `/usage` API
 > (same source as the CLI's `/usage`), so no manual budgets are needed. The context

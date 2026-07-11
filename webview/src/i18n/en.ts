@@ -232,8 +232,6 @@ export const en = {
     'Permission mode: how tool calls are approved — ask each time, auto-accept edits, or bypass prompts. Applies on next message.',
   'tip.ctrl.agents':
     'Allow the agent to spawn subagents (Task) and workflows. These run extra parallel agents and can burn a lot of tokens. Turn off to save tokens. Applies on next message.',
-  'tip.ctrl.dase':
-    'Connect the ORM Designer (DASE) as an MCP server for this session. Turn on only when designing/editing a .dsorm model — the DASE tools add context weight. Can run on a dedicated model (setting tootega.dase.model). Applies on next message.',
 
   'role.user': 'You',
   'role.assistant': 'Claude',
@@ -360,7 +358,6 @@ export const en = {
   'controls.effort': 'Effort',
   'controls.permission': 'Permission',
   'controls.agents': 'Agents & workflows',
-  'controls.dase': 'DASE (ORM)',
   'controls.applies': 'Applied on the next message (restarts the session).',
   // O CLI renomeou o modo "default" para "Manual" (2.1.131). O valor interno
   // segue 'default' (= sem flag --permission-mode), compatível com CLIs antigos.

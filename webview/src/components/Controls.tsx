@@ -13,10 +13,9 @@ interface Props {
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
   onAllowAgents: (value: boolean) => void;
-  onDaseEnabled: (value: boolean) => void;
 }
 
-export function Controls({ t, config, activeModel, onModel, onEffort, onPermission, onAllowAgents, onDaseEnabled }: Props) {
+export function Controls({ t, config, activeModel, onModel, onEffort, onPermission, onAllowAgents }: Props) {
   const [customMode, setCustomMode] = useState(false);
   const [customText, setCustomText] = useState('');
 
@@ -101,19 +100,6 @@ export function Controls({ t, config, activeModel, onModel, onEffort, onPermissi
           <span className="ctrl-label">{t('controls.agents')}</span>
         </label>
       </Tooltip>
-
-      {config.daseInstalled && (
-        <Tooltip className="tt-block" title={t('controls.dase')} text={t('tip.ctrl.dase')}>
-          <label className="ctrl ctrl-check">
-            <input
-              type="checkbox"
-              checked={config.daseEnabled}
-              onChange={(e) => onDaseEnabled(e.target.checked)}
-            />
-            <span className="ctrl-label">{t('controls.dase')}</span>
-          </label>
-        </Tooltip>
-      )}
 
       {customMode && (
         <div className="ctrl-custom">

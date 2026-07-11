@@ -18,9 +18,6 @@ export interface CliOptions {
   // p/ bloquear subagentes/workflows (que gastam muitos tokens). Vazio = nada.
   disallowedTools?: string[];
   resumeSessionId?: string;
-  // Caminho de um arquivo `--mcp-config` extra (ex.: integração DASE). Some quando
-  // a aba desliga a integração — sem custo de contexto das tools quando ausente.
-  mcpConfigPath?: string;
   // Código curto do idioma (pt, en…) p/ as perguntas do AskUserQuestion. Quando
   // setado, injeta um append-system-prompt que força o idioma SÓ das perguntas.
   askLanguage?: string;
@@ -139,13 +136,6 @@ export class CliProcessManager extends EventEmitter {
       args.push('--disallowedTools', this.opts.disallowedTools.join(','));
     }
     if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
-    if (this.opts.mcpConfigPath) {
-      // Sem aspas aqui: o shellSafe abaixo cuida do caso com espaços (mesma
-      // estratégia do claudePath). NÃO usa --strict-mcp-config: mantém os MCP
-      // servers do usuário e só ADICIONA o DASE.
-      const useShellMcp = process.platform === 'win32';
-      args.push('--mcp-config', shellSafe(this.opts.mcpConfigPath, useShellMcp));
-    }
     if (this.opts.askLanguage) {
       args.push('--append-system-prompt', askLanguagePrompt(this.opts.askLanguage));
     }

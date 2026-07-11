@@ -48,12 +48,6 @@ import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
-import {
-  ensureDaseMcpConfig,
-  readDaseEndpoint,
-  registerDaseInClaudeCli,
-  KNOWN_DASE_EXT_IDS,
-} from '../cli/DaseMcp';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
@@ -82,26 +76,11 @@ const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', '
 // Cache da statusline mais velho que isto não é confiável como % "real" (engana).
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
-// Tag de endereçamento ao DASE no início da mensagem: "@DASE:" / "@dase " etc.
-// Liga a integração (sticky) e é removido do prompt enviado ao agente.
-const DASE_TAG = /^\s*@dase\b\s*:?\s*/i;
-// Instrução curta injetada no prompt quando o @DASE: é usado (orienta às tools).
-// O endpoint do DASE só aparece alguns instantes depois do activate (o servidor
-// MCP sobe em background). Tentativas do registro no .claude.json.
-const DASE_REGISTER_TRIES = 10;
-const DASE_REGISTER_DELAY_MS = 500;
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const DASE_STEER =
-  'Use the DASE ORM Designer MCP tools (dase_*) to carry out this request. ' +
-  'If unsure of the current model, call dase_list_documents / dase_get_model first.';
-
 // Preferências por sessão persistidas em globalState (override da aba).
 interface SessionPrefs {
   model?: string;
   effort?: string;
   allowAgents?: boolean;
-  daseEnabled?: boolean;
 }
 
 // --- Watchdog de renderização ---
@@ -208,8 +187,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // modelos cifrada — nunca em texto plano nas settings. Ausente em testes.
   private readonly secrets?: vscode.SecretStorage;
 
-  // Diretório de globalStorage da própria extensão. Usado p/ (a) localizar o
-  // a pasta *.dase irmã (descoberta do MCP) e (b) gravar o arquivo --mcp-config.
+  // Diretório de globalStorage da própria extensão.
   private readonly globalStorageDir?: string;
 
   constructor(
@@ -233,7 +211,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.reloadBar.command = 'tootega.reloadView';
     this.updateReloadBar();
     setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
-    this.ensureDaseActivated(); // sobe o servidor MCP do DASE cedo (endpoint pronto antes do uso)
     void resolveAccountKey(this.claudePath()); // resolve a conta cedo (chave do dicionário de ditado)
     // Seleção ativa do editor → ref @file#a-b compartilhável no composer.
     this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
@@ -348,9 +325,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
         allowAgents: this.cfg().get<boolean>('allowAgents', false),
-        daseModel: this.cfg().get<string>('dase.model', '') || 'default',
       }),
-      mcpConfigPath: () => this.daseMcpConfigPath(),
       askLanguage: () => this.askLanguageCode(),
     };
   }
@@ -1208,7 +1183,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       model: s.modelOverride,
       effort: s.effortOverride,
       allowAgents: s.allowAgentsOverride,
-      daseEnabled: s.daseEnabledOverride,
     };
     void this.memory.update('sessionModels', map);
   }
@@ -1221,7 +1195,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (o.model) s.modelOverride = o.model;
     if (o.effort) s.effortOverride = o.effort;
     if (typeof o.allowAgents === 'boolean') s.allowAgentsOverride = o.allowAgents;
-    if (typeof o.daseEnabled === 'boolean') s.daseEnabledOverride = o.daseEnabled;
   }
 
   /**
@@ -1646,115 +1619,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private currentAllowAgents(): boolean {
     return this.active().allowAgents();
   }
-  private currentDaseEnabled(): boolean {
-    return this.active().daseEnabled();
-  }
 
-  /**
-   * Caminho do `--mcp-config` do DASE p/ a sessão atual, ou undefined. Gera o
-   * arquivo na hora (token do DASE muda a cada start, então sempre relê). Gated
-   * pelo setting `tootega.dase.enabled`.
-   */
-  private daseMcpConfigPath(): string | undefined {
-    if (!this.cfg().get<boolean>('dase.enabled', true)) return undefined;
-    this.ensureDaseActivated();
-    const storageDir = this.globalStorageDir;
-    if (!storageDir) return undefined;
-    const p = ensureDaseMcpConfig(storageDir, storageDir, this.daseWorkspacePath());
-    if (!p) log('[dase] endpoint não encontrado (servidor MCP do DASE desligado?)');
-    else void this.syncDaseRegistration(); // DASE reiniciado ⇒ token novo no .claude.json
-    return p;
-  }
-
-  /**
-   * Extensão DASE instalada? Gate de VISIBILIDADE do checkbox: sem a extensão, o
-   * toggle nem aparece. Tenta os IDs conhecidos (publishers variam) e, como
-   * fallback, considera instalado se o endpoint de descoberta já existe (servidor
-   * ligado). Respeita o setting `dase.enabled`.
-   */
-  private daseInstalled(): boolean {
-    if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
-    if (this.daseExtension()) return true;
-    return !!readDaseEndpoint(this.globalStorageDir, this.daseWorkspacePath());
-  }
-
-  /**
-   * Workspace desta janela (1ª pasta), p/ casar o endpoint do DASE. Cada janela do
-   * DASE roda numa porta efêmera e grava um discovery próprio marcado com o
-   * workspace — assim pegamos o servidor da NOSSA janela, não o de outra.
-   */
-  private daseWorkspacePath(): string | undefined {
-    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  }
-
-  /** Resolve a extensão DASE por qualquer ID conhecido, ou undefined. */
-  private daseExtension(): vscode.Extension<unknown> | undefined {
-    for (const id of KNOWN_DASE_EXT_IDS) {
-      const ext = vscode.extensions.getExtension(id);
-      if (ext) return ext;
-    }
-    return undefined;
-  }
-
-  /** Endpoint do DASE existe (servidor MCP ligado no DASE)? P/ habilitar o toggle. */
-  private daseAvailable(): boolean {
-    if (!this.cfg().get<boolean>('dase.enabled', true)) return false;
-    this.ensureDaseActivated();
-    return !!readDaseEndpoint(this.globalStorageDir, this.daseWorkspacePath());
-  }
-
-  // Ativação da extensão DASE já disparada (1x). DASE só ativa com .dsorm aberto/
-  // no workspace; sem isto, num workspace sem modelo o servidor MCP nunca sobe.
-  private daseActivation?: Thenable<unknown>;
-
-  /**
-   * Garante que a extensão DASE seja ativada. Ela registra o watcher de config e
-   * sobe o servidor MCP (se dase.mcp.enabled). Best-effort, idempotente: no-op se
-   * a extensão não estiver instalada. O endpoint aparece de forma assíncrona logo
-   * após — por isso ativamos cedo (na construção).
-   */
-  private ensureDaseActivated(): void {
-    if (this.daseActivation) return;
-    if (!this.cfg().get<boolean>('dase.enabled', true)) return;
-    const ext = this.daseExtension();
-    if (!ext) return;
-    this.daseActivation = (ext.isActive ? Promise.resolve() : ext.activate()).then(
-      () => {
-        dlog('dase', 'extensão DASE ativada');
-        void this.syncDaseRegistration();
-      },
-      (e) => log(`[dase] activate falhou: ${String(e)}`),
-    );
-  }
-
-  /**
-   * Registra o DASE no `.claude.json` (escopo user) para que o Claude Code CLI
-   * enxergue as tools `dase_*` em qualquer sessão — inclusive fora do Cockpit.
-   * O endpoint surge alguns instantes após a ativação do DASE, então tentamos
-   * algumas vezes antes de desistir. Best-effort e silencioso quanto ao token.
-   */
-  private async syncDaseRegistration(): Promise<void> {
-    if (!this.cfg().get<boolean>('dase.registerInCli', true)) return;
-    if (this.daseSyncing) return; // evita loops de retry sobrepostos
-    this.daseSyncing = true;
-    try {
-      for (let i = 0; i < DASE_REGISTER_TRIES; i++) {
-        const r = registerDaseInClaudeCli(this.globalStorageDir, this.daseWorkspacePath());
-        if (r !== 'unavailable') {
-          if (r === 'written') log('[dase] servidor MCP registrado no .claude.json (escopo user)');
-          else if (r === 'error') log('[dase] falha ao registrar o MCP no .claude.json');
-          return;
-        }
-        await delay(DASE_REGISTER_DELAY_MS);
-      }
-      log('[dase] endpoint indisponível: registro no .claude.json adiado');
-    } finally {
-      this.daseSyncing = false;
-    }
-  }
-
-  // Registro no .claude.json em andamento (guard de reentrância).
-  private daseSyncing = false;
   private userName(): string {
     const set = this.cfg().get<string>('userName', '').trim();
     if (set) return set;
@@ -1841,9 +1706,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         permissionMode: this.currentPermissionMode(),
         permissionModes: PERMISSION_MODES,
         allowAgents: this.currentAllowAgents(),
-        daseEnabled: this.currentDaseEnabled(),
-        daseInstalled: this.daseInstalled(),
-        daseAvailable: this.daseAvailable(),
         showThinking: this.cfg().get<boolean>('showThinking', false),
         spellCheck: this.cfg().get<boolean>('spellCheck', false),
         expandToolCards: this.cfg().get<boolean>('expandToolCards', false),
@@ -2083,32 +1945,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ kind: 'effortGate', selected: eff, min }, srcTab);
           break; // bloqueia: webview confirma e reenvia com force
         }
-        // Tag @DASE: liga a integração DASE (sticky) e orienta o agente às tools
-        // dase_*. O tag é removido do prompt. 1ª vez respawna o CLI com o
-        // --mcp-config; depois fica ligado (cache quente).
-        let body = m.text;
-        let daseSteer = '';
-        if (DASE_TAG.test(body)) {
-          body = body.replace(DASE_TAG, '');
-          if (!s.daseEnabled() && this.daseAvailable()) {
-            s.setDaseEnabled(true); // stop() → respawn no s.send() abaixo com DASE
-            this.saveSessionModel(s);
-            this.sendConfig(); // reflete o toggle ligado na UI
-          }
-          if (s.daseEnabled()) {
-            daseSteer = `${DASE_STEER}\n\n`;
-          } else {
-            this.post(
-              {
-                kind: 'error',
-                message: vscode.l10n.t(
-                  '@DASE ignored — the DASE MCP server is not running (enable dase.mcp.enabled in the DASE extension).',
-                ),
-              },
-              srcTab,
-            );
-          }
-        }
+        const body = m.text;
         if (!this.tabMeta.get(srcTab)?.title && body.trim()) {
           this.setTabTitle(srcTab, body.replace(/\s+/g, ' ').trim().slice(0, 28));
         }
@@ -2122,7 +1959,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
         // Compartilha a seleção do editor como contexto, se o composer pediu.
         const sel = m.selection ? `${m.selection}\n` : '';
-        const text = `${daseSteer}${sel}${body}`;
+        const text = `${sel}${body}`;
         s.send(text, m.images);
         this.draftByTab.delete(srcTab); // enviado: descarta o rascunho espelhado
         break;
@@ -2180,12 +2017,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'setAllowAgents':
         this.snapComboBaseline(srcTab);
         srcSession().setAllowAgents(m.value);
-        this.saveSessionModel(srcSession()); // persiste por contexto
-        this.pendingRestart = true;
-        this.sendConfig();
-        break;
-      case 'setDaseEnabled':
-        srcSession().setDaseEnabled(m.value);
         this.saveSessionModel(srcSession()); // persiste por contexto
         this.pendingRestart = true;
         this.sendConfig();

@@ -4,6 +4,45 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.215] - 2026-07-13
+
+> Alinhamento com a **CLI 2.1.207** (varredura do changelog oficial da CLI, da 2.1.191
+> à 2.1.207, atrás do que precisávamos implementar, melhorar ou corrigir).
+
+### Adicionado
+- **Painel MCP (🔌 MCP no Hub).** Um card por servidor com o estado ao vivo, o comando/URL
+  e as **ferramentas que ele expõe** — colapsáveis. Funde as duas fontes da CLI, porque
+  nenhuma basta sozinha: o `system/init` da sessão diz *quais tools* cada servidor traz
+  (o `mcp list` não informa isso), e o `claude mcp list` revela o que o init nunca vê —
+  servidores de `.mcp.json` **ainda não aprovados** (`⏸ Pending approval`, CLI 2.1.196),
+  que a CLI se recusa a subir. Pendentes e falhos aparecem no topo, com a explicação do
+  que fazer. Aprovar/conectar continua sendo da CLI (`/mcp`).
+- **Aviso de login prestes a vencer** (a CLI passou a avisar na 2.1.203). O painel Usage
+  mostra a validade do login e, a menos de 7 dias, um alerta pedindo `/login` — um login
+  vencido interrompe sessões longas e tarefas em background. A validade sai do
+  `refreshTokenExpiresAt` do `~/.claude/.credentials.json` (o `auth status --json` não a
+  expõe); o `expiresAt` do accessToken **não** serve: dura horas e a CLI o renova sozinho.
+  Só leitura — nunca gravamos nem registramos credenciais.
+- **Negações feitas pela própria CLI** entram no log de auditoria (E5) com o **motivo**,
+  marcadas com o chip `auto` para não se confundirem com as que *você* negou no modal.
+  A CLI 2.1.193 passou a explicar por que o modo auto negou: o `result` lista as negações
+  do turno (`permission_denials[]`, sem motivo) e o motivo vem no `tool_result` de erro —
+  cruzamos os dois pelo `tool_use_id`.
+- **Runs de workflow no painel Usage** (telemetria OTEL, opt-in): custo e tokens **reais**
+  somados por run, reconstruídos dos atributos `workflow.run_id` / `workflow.name` que a
+  CLI 2.1.202 passou a emitir. O stream-json não expõe esse recorte.
+- **Claude Sonnet 5** no seletor de modelos e no setting `tootega.model`. É o default da
+  CLI desde a 2.1.197, com janela de 1M **nativa** — por isso entra como `claude-sonnet-5`,
+  sem a variante `[1m]`.
+
+### Segurança
+- **Telemetria OTEL não carrega mais conteúdo de conversa.** A CLI 2.1.193 criou o evento
+  `claude_code.assistant_response` com o **texto da resposta**, e ele herda o
+  `OTEL_LOG_USER_PROMPTS` quando `OTEL_LOG_ASSISTANT_RESPONSES` não está definido — quem já
+  logava prompt passaria a logar resposta ao atualizar. O receiver local já descartava
+  `/v1/logs`; agora cravamos as duas variáveis em `0` no spawn, então o texto **nem sai** do
+  processo `claude`.
+
 ## [1.0.214] - 2026-07-11
 
 ### Removido

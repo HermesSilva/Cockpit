@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.214",
+  "version": "1.0.215",
   "publisher": "HermesSilva",
   "license": "MIT",
   "author": {
@@ -207,6 +207,7 @@
           "enum": [
             "default",
             "claude-opus-4-8[1m]",
+            "claude-sonnet-5",
             "claude-opus-4-7[1m]",
             "claude-opus-4-6",
             "claude-sonnet-4-6[1m]",
@@ -218,6 +219,7 @@
           "enumDescriptions": [
             "Account default (the CLI chooses)",
             "Claude Opus 4.8 · 1M context",
+            "Claude Sonnet 5 · 1M context (CLI default)",
             "Claude Opus 4.7 · 1M context",
             "Claude Opus 4.6",
             "Claude Sonnet 4.6 · 1M context",

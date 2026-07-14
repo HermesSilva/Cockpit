@@ -32,6 +32,49 @@ export interface McpInventory {
   nativeTools: string[];
 }
 
+// --- `claude mcp list` -------------------------------------------------------
+// O init só conhece servidores que a sessão CONECTOU: um servidor de `.mcp.json`
+// ainda não aprovado (2.1.196) não aparece lá — o CLI não o sobe. O `mcp list` é
+// quem revela esses ("⏸ Pending approval") e o comando/URL de cada um. Não há
+// `--json`: a saída é texto no formato
+//   <nome>: <comando ou url> - <✓ Connected | ✗ Failed to connect | ⏸ Pending approval>
+// Parsing tolerante: linha que não casar é ignorada (nunca lança).
+
+export type McpListStatus = 'connected' | 'failed' | 'pending' | 'unknown';
+
+export interface McpListEntry {
+  name: string;
+  /** Comando (stdio) ou URL (http/sse) configurado, como o CLI imprime. */
+  target?: string;
+  status: McpListStatus;
+}
+
+const LIST_RE = /^(.+?):\s(.*?)\s+-\s+(.+)$/;
+
+function listStatus(tail: string): McpListStatus {
+  const s = tail.toLowerCase();
+  if (s.includes('pending')) return 'pending';
+  if (s.includes('fail') || s.includes('error')) return 'failed';
+  if (s.includes('connected')) return 'connected';
+  return 'unknown';
+}
+
+/** Converte o stdout do `claude mcp list` em entradas. Lógica pura (testável). */
+export function parseMcpList(stdout: string): McpListEntry[] {
+  const out: McpListEntry[] = [];
+  for (const raw of (stdout ?? '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = LIST_RE.exec(line);
+    if (!m) continue; // cabeçalho ("Checking MCP server health…"), rodapé, ruído
+    const name = m[1].trim();
+    const target = m[2].trim();
+    if (!name) continue;
+    out.push({ name, target: target || undefined, status: listStatus(m[3]) });
+  }
+  return out;
+}
+
 /** Sanitiza um nome de servidor para a forma usada no prefixo do tool. */
 function sanitize(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, '_');

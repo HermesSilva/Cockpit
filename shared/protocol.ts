@@ -25,7 +25,13 @@ export interface ToolDecision {
 export interface DenialEvent {
   tool: string;
   ts: number; // epoch ms
-  reason?: string; // feedback do usuário ao negar (quando houver)
+  // 'user' = negada no modal; 'engine' = negada pelo próprio CLI (regra de auto
+  // mode, tool não permitida, caminho fora do workspace…). Ausente = 'user' (dado
+  // antigo, gravado antes da distinção existir).
+  source?: 'user' | 'engine';
+  // Motivo. No 'user': o feedback digitado. No 'engine': a mensagem do CLI (desde
+  // a 2.1.193 o auto mode explica por que negou).
+  reason?: string;
 }
 
 /** Uso acumulado segmentado por modelo (a sessão pode trocar de modelo). */
@@ -147,6 +153,7 @@ export interface UsageAccount {
   email?: string;
   orgName?: string;
   plan?: string; // subscriptionType ('max' | 'pro' | …)
+  loginExpiresAt?: number; // epoch ms — validade do login (refresh token)
 }
 export interface UsageBucket {
   usedPct?: number; // 0..1
@@ -233,6 +240,31 @@ export interface OtelStats {
   commitCount?: number; // claude_code.commit.count
   prCount?: number; // claude_code.pull_request.count
   toolDecisions?: { tool: string; accept: number; reject: number }[]; // claude_code.code_edit_tool.decision
+  workflows?: WorkflowRun[]; // custo/tokens por run de workflow (maior custo primeiro)
+}
+
+/** Uma run de workflow reconstruída da telemetria (atributos `workflow.*`, CLI 2.1.202). */
+export interface WorkflowRun {
+  runId: string;
+  name: string;
+  usd: number; // custo REAL somado dos agentes da run
+  tokens: number;
+}
+
+// --- MCP (painel 🔌 Servers) ---
+/** Um servidor MCP: estado agora + tools que ele expõe nesta sessão. */
+export interface McpServerInfo {
+  name: string;
+  // 'pending' = `.mcp.json` não aprovado (o CLI nem sobe o servidor — 2.1.196).
+  status: 'connected' | 'failed' | 'pending' | 'unknown';
+  connected: boolean;
+  target?: string; // comando (stdio) ou URL (http/sse), como o CLI o imprime
+  tools: string[]; // nomes curtos, sem o prefixo `mcp__<server>__`
+}
+
+export interface McpData {
+  servers: McpServerInfo[];
+  generatedAt: string; // ISO 8601
 }
 
 export interface SessionConfig {
@@ -424,6 +456,8 @@ type HostMsg =
   | { kind: 'pluginsData'; data: PluginsData } // lista de plugins/marketplaces (modal)
   | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operação em andamento
   | { kind: 'pluginsError'; message: string } // falha numa ação de plugin
+  | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
+  | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }
   // Corretor ortográfico (host via hunspell-asm): resultado de checagem (palavras
   // erradas) e de sugestões (por idioma).
@@ -525,6 +559,7 @@ export type WebviewToHost =
   | { kind: 'voiceStop' } // ditado: finaliza a captura
   | { kind: 'voiceCorrect'; text: string } // ditado: corrige o texto via Haiku (one-shot)
   | { kind: 'pluginsRefresh'; force?: boolean } // modal Plugins: (re)carrega; force = re-valida URLs via Haiku
+  | { kind: 'mcpRefresh' } // modal MCP: (re)carrega init + `claude mcp list`
   | {
       kind: 'pluginAction';
       action: 'install' | 'uninstall' | 'enable' | 'disable' | 'update' | 'marketAdd' | 'marketRemove';

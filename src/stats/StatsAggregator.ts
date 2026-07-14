@@ -26,6 +26,10 @@ const COLD_READ_FRAC = 0.1;
 const COMPACT_FRAC = 0.6;
 // Negações guardadas no log (E5): as últimas N, o suficiente p/ auditar a sessão.
 const DENIAL_CAP = 50;
+// Teto do mapa tool_use_id → texto do erro (quase todo erro NÃO é negação).
+const DENIAL_REASON_CAP = 200;
+// Motivo é rótulo de UI, não log: corta antes de virar parágrafo.
+const REASON_MAX = 300;
 
 // Preços por 1M tokens (USD). Estimativa — rotulada como tal na Ui.
 interface Price {
@@ -104,6 +108,25 @@ function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
 }
 
+/**
+ * Texto de um `tool_result` de erro. O `content` pode ser string ou os blocos
+ * ricos da API (`[{type:'text', text}]`) — aceita ambos e ignora o resto.
+ */
+function toolErrorText(content: unknown): string {
+  let raw = '';
+  if (typeof content === 'string') {
+    raw = content;
+  } else if (Array.isArray(content)) {
+    raw = content
+      .map((b) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
+      .filter(Boolean)
+      .join(' ');
+  }
+  raw = raw.replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  return raw.length > REASON_MAX ? `${raw.slice(0, REASON_MAX - 1)}…` : raw;
+}
+
 export class StatsAggregator {
   private model?: string;
   private mode?: string;
@@ -132,6 +155,10 @@ export class StatsAggregator {
   private toolDecisions = new Map<string, { allow: number; allowAlways: number; deny: number }>();
   // Log das negações (E5): últimas DENIAL_CAP, mais recentes no fim.
   private denials: DenialEvent[] = [];
+  // Motivo de erro por tool_use_id, aguardando o `result` dizer se foi negação.
+  private denialReasons = new Map<string, string>();
+  // tool_use_id já contabilizado como negação do engine (o `result` pode repetir).
+  private seenDenials = new Set<string>();
 
   // --- Contadores que sobrevivem ao reopen do contexto ---
   private turnCount = 0;
@@ -235,11 +262,51 @@ export class StatsAggregator {
     else if (decision === 'allow_always') entry.allowAlways++;
     else {
       entry.deny++;
-      const clean = typeof reason === 'string' ? reason.trim() : '';
-      this.denials.push({ tool, ts: Date.now(), reason: clean || undefined });
-      if (this.denials.length > DENIAL_CAP) this.denials = this.denials.slice(-DENIAL_CAP);
+      this.pushDenial(tool, 'user', reason);
     }
     this.toolDecisions.set(tool, entry);
+  }
+
+  /** Acrescenta ao log de negações, respeitando o teto. */
+  private pushDenial(tool: string, source: 'user' | 'engine', reason?: string): void {
+    const clean = typeof reason === 'string' ? reason.trim() : '';
+    this.denials.push({ tool, ts: Date.now(), source, reason: clean || undefined });
+    if (this.denials.length > DENIAL_CAP) this.denials = this.denials.slice(-DENIAL_CAP);
+  }
+
+  /**
+   * Negações decididas pelo ENGINE (auto mode, tool fora do allowlist, escrita fora
+   * do workspace). Chegam no evento `result` como `permission_denials[]`, que traz a
+   * tool mas NÃO o motivo — este vem no texto do `tool_result` de erro do mesmo
+   * `tool_use_id` (desde a 2.1.193 o auto mode explica por que negou). Dedup por
+   * `tool_use_id`: o `result` de um turno pode repetir denials já contabilizadas.
+   */
+  private recordEngineDenials(denials: unknown): void {
+    if (!Array.isArray(denials)) return;
+    for (const d of denials) {
+      const id = typeof d?.tool_use_id === 'string' ? d.tool_use_id : '';
+      const tool = typeof d?.tool_name === 'string' && d.tool_name ? d.tool_name : 'unknown';
+      if (id && this.seenDenials.has(id)) continue;
+      if (id) this.seenDenials.add(id);
+      const entry = this.toolDecisions.get(tool) ?? { allow: 0, allowAlways: 0, deny: 0 };
+      entry.deny++;
+      this.toolDecisions.set(tool, entry);
+      this.pushDenial(tool, 'engine', id ? this.denialReasons.get(id) : undefined);
+      if (id) this.denialReasons.delete(id);
+    }
+  }
+
+  /**
+   * Guarda o texto de um `tool_result` de erro por `tool_use_id`. A maioria é erro
+   * comum de execução e nunca será usada — só é consumida se o `result` do turno
+   * listar aquele `tool_use_id` em `permission_denials`. Teto p/ não vazar memória.
+   */
+  private noteToolError(id: unknown, content: unknown): void {
+    if (typeof id !== 'string' || !id) return;
+    const text = toolErrorText(content);
+    if (!text) return;
+    if (this.denialReasons.size > DENIAL_REASON_CAP) this.denialReasons.clear();
+    this.denialReasons.set(id, text);
   }
 
   /** Processa um evento e devolve o snapshot atualizado. */
@@ -269,6 +336,17 @@ export class StatsAggregator {
         if (usage) this.applyPromptUsage(usage, true);
         break;
       }
+      case 'user': {
+        // tool_result de erro: guarda o texto — vira o MOTIVO se o `result` do turno
+        // disser que este tool_use_id foi negado (auto mode).
+        const content = (ev as any).message?.content;
+        if (Array.isArray(content)) {
+          for (const b of content) {
+            if (b?.type === 'tool_result' && b.is_error) this.noteToolError(b.tool_use_id, b.content);
+          }
+        }
+        break;
+      }
       case 'result': {
         const r = ev as any;
         if (typeof r.total_cost_usd === 'number') {
@@ -277,6 +355,7 @@ export class StatsAggregator {
           this.sessionCostUsd = r.total_cost_usd;
           this.costIsEstimate = false;
         }
+        this.recordEngineDenials(r.permission_denials);
         break;
       }
     }

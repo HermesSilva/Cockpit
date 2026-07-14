@@ -2,6 +2,7 @@
 // Equivale ao bloco ACCOUNT do /usage: método de auth, e-mail, org e plano.
 // Assíncrono p/ não bloquear o host da extensão.
 import { spawn } from 'node:child_process';
+import { readLoginExpiry } from './AiClient';
 
 export interface AccountInfo {
   loggedIn: boolean;
@@ -10,6 +11,10 @@ export interface AccountInfo {
   email?: string;
   orgName?: string;
   plan?: string; // subscriptionType ('max' | 'pro' | …)
+  // Validade do login (epoch ms). NÃO vem do `auth status --json` — é lida do
+  // ~/.claude/.credentials.json. Serve p/ avisar antes do login vencer (o CLI
+  // passou a avisar na 2.1.203) e não interromper sessões longas/background.
+  loginExpiresAt?: number;
 }
 
 /** Busca a conta ao vivo (dado quente). Tolerante: falha/timeout → { loggedIn:false }. */
@@ -64,6 +69,7 @@ function parse(out: string): AccountInfo {
       email: str(j.email),
       orgName: str(j.orgName),
       plan: str(j.subscriptionType),
+      loginExpiresAt: readLoginExpiry(),
     };
   } catch {
     return { loggedIn: false };

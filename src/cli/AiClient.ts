@@ -38,6 +38,24 @@ export function readOauthToken(): string | undefined {
   }
 }
 
+/**
+ * Validade do LOGIN (epoch ms), só leitura. É o `refreshTokenExpiresAt`: o
+ * `expiresAt` é do accessToken (horas) e o CLI o renova sozinho pelo refresh —
+ * quem realmente vence o login, e obriga a rodar `/login`, é o refresh token.
+ * Cai no `expiresAt` só quando o campo do refresh não existe. undefined se
+ * ausente/ilegível (ex.: conta por API key, credencial em keychain do SO).
+ */
+export function readLoginExpiry(): number | undefined {
+  try {
+    const o = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
+    const oauth = o?.claudeAiOauth;
+    const ms = oauth?.refreshTokenExpiresAt ?? oauth?.expiresAt;
+    return typeof ms === 'number' && ms > 0 ? ms : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface AskOpts {
   prompt: string; // conteúdo da mensagem do usuário
   system?: string; // instrução de sistema (opcional)

@@ -41,6 +41,7 @@ interface Props {
   onSettings: () => void;
   onUsage: () => void;
   onPlugins: () => void;
+  onMcp: () => void;
   onCredentials: () => void;
   onLogin: () => void;
   onLogout: () => void;
@@ -83,6 +84,7 @@ export function HubView({
   onSettings,
   onUsage,
   onPlugins,
+  onMcp,
   onCredentials,
   onLogin,
   onLogout,
@@ -186,6 +188,11 @@ export function HubView({
         <Tooltip title={t('plugins.title')} text={t('plugins.desc')}>
           <button type="button" className="ctx-link" onClick={onPlugins}>
             🧩 {t('plugins.title')}
+          </button>
+        </Tooltip>
+        <Tooltip title={t('mcp.title')} text={t('mcp.desc')}>
+          <button type="button" className="ctx-link" onClick={onMcp}>
+            🔌 {t('mcp.title')}
           </button>
         </Tooltip>
         <Tooltip title={t('creds.title')} text={t('creds.open')}>
@@ -664,6 +671,12 @@ function ContextInfo({
             <div key={`${d.ts}-${i}`} className="stat-row stat-denial">
               <span className="stat-k stat-tool-name" title={d.reason || undefined}>
                 <span className="stat-denial-x">✕</span> {d.tool}
+                {/* Negada pelo próprio CLI (regra de auto mode), não por você. */}
+                {d.source === 'engine' && (
+                  <span className="stat-denial-src" title={t('tip.ctx.denials.engine')}>
+                    {t('stats.denials.engine')}
+                  </span>
+                )}
                 {d.reason && <span className="muted stat-denial-reason"> · {d.reason}</span>}
               </span>
               <span className="stat-v muted">{fmtClock(d.ts)}</span>

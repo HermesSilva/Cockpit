@@ -10,6 +10,7 @@ import { reducer, initialState, activeTab } from './store';
 import type {
   HostToWebview,
   ImageAttachment,
+  McpData,
   PluginsData,
   SessionInfo,
   UsageData,
@@ -24,6 +25,7 @@ import { Composer } from './components/Composer';
 import { HubView } from './components/HubView';
 import { UsageModal } from './components/UsageModal';
 import { PluginsModal } from './components/PluginsModal';
+import { McpModal } from './components/McpModal';
 import { VoiceDictModal } from './components/VoiceDictModal';
 import { CredentialsModal } from './components/CredentialsModal';
 import { PermissionModal } from './components/PermissionModal';
@@ -49,6 +51,9 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [showPlugins, setShowPlugins] = useState(false);
   const [plugins, setPlugins] = useState<PluginsData | null>(null);
+  const [showMcp, setShowMcp] = useState(false);
+  const [mcp, setMcp] = useState<McpData | null>(null);
+  const [mcpBusy, setMcpBusy] = useState(false);
   const [showVoiceDict, setShowVoiceDict] = useState(false);
   const [voiceDict, setVoiceDict] = useState<VoiceDictData | null>(null);
   // Cofre de credenciais (TOTP 2FA).
@@ -118,6 +123,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         if (data.busy) setPluginsError(undefined);
       }
       if (data?.kind === 'pluginsError') setPluginsError(data.message);
+      if (data?.kind === 'mcpData') setMcp(data.data);
+      if (data?.kind === 'mcpBusy') setMcpBusy(data.busy);
       if (data?.kind === 'credsData') {
         setCredsData({ enrolled: data.enrolled, items: data.items });
         setCredsSetup(null); // dado fresco: encerra qualquer enrollment em curso
@@ -193,6 +200,11 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const onPlugins = () => {
     setShowPlugins(true);
     send({ kind: 'pluginsRefresh' }); // carrega ao abrir
+  };
+  const onMcp = () => {
+    setMcp(null); // estado quente: re-checa a saúde dos servidores a cada abertura
+    setShowMcp(true);
+    send({ kind: 'mcpRefresh' });
   };
   const onVoiceDict = () => {
     setVoiceDict(null); // mostra carregando até o host responder
@@ -337,6 +349,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onSettings={onSettings}
           onUsage={onUsage}
           onPlugins={onPlugins}
+          onMcp={onMcp}
           onCredentials={onCredentials}
           onLogin={() => send({ kind: 'loginCli' })}
           onLogout={() => send({ kind: 'logoutCli' })}
@@ -400,6 +413,15 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             onRefresh={() => send({ kind: 'pluginsRefresh', force: true })}
             onOpenLink={(href) => send({ kind: 'openLink', href })}
             onClose={() => setShowPlugins(false)}
+          />
+        )}
+        {showMcp && (
+          <McpModal
+            t={t}
+            data={mcp}
+            busy={mcpBusy}
+            onRefresh={() => send({ kind: 'mcpRefresh' })}
+            onClose={() => setShowMcp(false)}
           />
         )}
         {credsModalEl}

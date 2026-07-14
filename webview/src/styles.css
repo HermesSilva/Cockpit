@@ -4155,6 +4155,18 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Chip "auto": negação decidida pelo CLI (modo auto), não pelo usuário. */
+.stat-denial-src {
+  flex: none;
+  padding: 0 4px;
+  font-size: 9.5px;
+  line-height: 14px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-badge-foreground, #e0e0e0);
+  background: var(--vscode-badge-background, #4d4d4d);
+}
 
 /* Aviso de erro/abort do turno (banner acima do composer) */
 .turn-error {
@@ -4533,6 +4545,103 @@ body {
   font-size: 12.5px;
   color: var(--vscode-descriptionForeground, #8a8a8a);
   padding: 4px 0;
+}
+/* Aviso de login prestes a vencer (avisa antes de o CLI derrubar a sessão). */
+.usage-alert {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  border-radius: 4px;
+  border-left: 3px solid var(--vscode-inputValidation-warningBorder, #cca700);
+  background: var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.12));
+  color: var(--vscode-foreground, #e0e0e0);
+}
+/* Painel MCP (X4): um card por servidor, tools colapsáveis. */
+.mcp-refresh {
+  margin-left: auto;
+  margin-right: 6px;
+}
+.mcp-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+}
+.mcp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.mcp-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.mcp-dot.connected {
+  background: var(--vscode-testing-iconPassed, #3fb950);
+}
+.mcp-dot.failed {
+  background: var(--vscode-errorForeground, #f14c4c);
+}
+.mcp-dot.pending {
+  background: var(--vscode-inputValidation-warningBorder, #cca700);
+}
+.mcp-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-status {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.mcp-status.failed {
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+.mcp-status.pending {
+  color: var(--vscode-inputValidation-warningBorder, #cca700);
+}
+.mcp-target {
+  margin-top: 3px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  overflow-wrap: anywhere;
+}
+.mcp-tools-toggle {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--vscode-textLink-foreground, #4da3ff);
+}
+.mcp-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.mcp-tool {
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  border-radius: 3px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #e0e0e0);
+}
+.mcp-notools {
+  margin-top: 4px;
+  font-size: 11.5px;
 }
 .usage-stamp {
   margin-top: 14px;

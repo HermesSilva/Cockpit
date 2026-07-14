@@ -58,9 +58,21 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                   {usage.account.email && <Row k={t('usage.email')} v={usage.account.email} />}
                   {usage.account.orgName && <Row k={t('usage.org')} v={usage.account.orgName} />}
                   {usage.account.plan && <Row k={t('usage.plan')} v={planLabel(usage.account.plan)} accent />}
+                  {usage.account.loginExpiresAt && (
+                    <Row
+                      k={t('usage.loginExpires')}
+                      v={relExpiry(usage.account.loginExpiresAt, locale)}
+                      accent={expiringSoon(usage.account.loginExpiresAt)}
+                    />
+                  )}
                 </div>
               ) : (
                 <div className="usage-muted">{t('usage.notLoggedIn')}</div>
+              )}
+              {usage.account.loggedIn && expiringSoon(usage.account.loginExpiresAt) && (
+                <div className="usage-alert">
+                  {t('usage.loginExpiringSoon', relExpiry(usage.account.loginExpiresAt!, locale))}
+                </div>
               )}
 
               {/* USAGE WINDOWS */}
@@ -380,6 +392,18 @@ function Otel({ t, locale, o }: { t: Translator; locale: string; o: OtelStats })
           ))}
         </>
       )}
+      {o.workflows && o.workflows.length > 0 && (
+        <>
+          <div className="usage-sub-label">{t('usage.otel.workflows')}</div>
+          {o.workflows.map((w) => (
+            <Row
+              key={w.runId}
+              k={w.name}
+              v={`${fmtUsdShort(w.usd)} · ${fmtCompact(w.tokens)} tok`}
+            />
+          ))}
+        </>
+      )}
       {o.toolDecisions && o.toolDecisions.length > 0 && (
         <>
           <div className="usage-sub-label">{t('usage.otel.decisions')}</div>
@@ -455,6 +479,29 @@ function planLabel(p?: string): string {
 }
 
 // "Resets in 3h" / "3d" / "12m" a partir do ISO de reset.
+// Janela de aviso do login (dias). O refresh token dura semanas: avisar antes
+// dá tempo de rodar /login sem interromper sessão longa ou tarefa em background.
+const LOGIN_WARN_DAYS = 7;
+
+function expiringSoon(expiresAt?: number): boolean {
+  if (!expiresAt) return false;
+  return expiresAt - Date.now() < LOGIN_WARN_DAYS * 86400_000;
+}
+
+/** Validade do login: "expirado", "3d", "16d" — data absoluta quando distante. */
+function relExpiry(expiresAt: number, locale: string): string {
+  const ms = expiresAt - Date.now();
+  if (ms <= 0) return locale.startsWith('pt') ? 'expirado' : 'expired';
+  const days = Math.floor(ms / 86400_000);
+  if (days < 1) return `${Math.max(1, Math.round(ms / 3600_000))}h`;
+  if (days <= 30) return `${days}d`;
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(expiresAt));
+  } catch {
+    return `${days}d`;
+  }
+}
+
 function relReset(iso: string, _locale: string): string {
   const ms = Date.parse(iso) - Date.now();
   if (Number.isNaN(ms) || ms <= 0) return '0m';

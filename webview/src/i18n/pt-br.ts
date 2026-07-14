@@ -90,6 +90,22 @@ export const ptBR: Strings = {
   'voicedict.save': 'Salvar',
   'plugins.title': 'Plugins',
   'plugins.desc': 'Pesquisar, instalar e remover plugins do Claude Code',
+  // Painel MCP (X4)
+  'mcp.title': 'MCP',
+  'mcp.desc': 'Servidores MCP: saúde, conexão e as ferramentas que cada um expõe',
+  'mcp.servers': 'Servidores',
+  'mcp.count': '{0} servidores · {1} ferramentas',
+  'mcp.checking': 'Checando a saúde dos servidores…',
+  'mcp.none': 'Nenhum servidor MCP configurado.',
+  'mcp.tools': '{0} ferramentas',
+  'mcp.noTools': 'Conectado, mas não expõe nenhuma ferramenta.',
+  'mcp.stamp': 'Checado às {0}',
+  'mcp.status.connected': 'Conectado',
+  'mcp.status.failed': 'Falhou',
+  'mcp.status.pending': 'Aguardando aprovação',
+  'mcp.status.unknown': 'Desconhecido',
+  'mcp.pendingHelp':
+    'Declarado no .mcp.json do repositório, mas ainda não aprovado — a CLI não o sobe, e as ferramentas dele ficam indisponíveis. Aprove o servidor na CLI (/mcp) para usá-lo.',
   'plugins.searchPlaceholder': 'Pesquisar plugins…',
   'plugins.filter.all': 'Todos',
   'plugins.filter.installed': 'Instalados',
@@ -211,7 +227,9 @@ export const ptBR: Strings = {
   'tip.ctx.resets':
     'Quantas vezes o cache de prompt expirou por ociosidade (>1h) e o prefixo precisou ser re-escrito, mais o custo re-pago.',
   'tip.ctx.denials':
-    'Solicitações de ferramenta que você negou nesta sessão, da mais recente para a mais antiga (com a razão, quando informada). Auditoria de controle.',
+    'Solicitações de ferramenta negadas nesta sessão — por você, no modal, ou pelo próprio CLI (chip “auto”) — da mais recente para a mais antiga, com a razão quando informada. Auditoria de controle.',
+  'tip.ctx.denials.engine':
+    'Negada pelo CLI, não por você: uma regra do modo auto (ou a falta de permissão) barrou a chamada.',
   // Rodapé de procedência dos hints (chips coloridos).
   'meta.origin.label': 'Origem',
   'meta.origin.server': 'Servidor (via CLI)',
@@ -281,6 +299,9 @@ export const ptBR: Strings = {
   'usage.email': 'E-mail',
   'usage.org': 'Organização',
   'usage.plan': 'Plano',
+  'usage.loginExpires': 'Login válido por',
+  'usage.loginExpiringSoon':
+    'Seu login expira em {0}. Rode /login para reautenticar — um login vencido interrompe sessões longas ou em background.',
   'usage.notLoggedIn': 'Não autenticado.',
   'usage.usage': 'Uso',
   'usage.currentSession': 'Sessão atual',
@@ -347,6 +368,7 @@ export const ptBR: Strings = {
   'usage.otel.commits': 'Commits',
   'usage.otel.prs': 'Pull requests',
   'usage.otel.decisions': 'Decisões de edição',
+  'usage.otel.workflows': 'Runs de workflow',
   'tip.stop.title': 'Interromper',
   'tip.stop.desc': 'Para o agente agora. O turno atual encerra e a sessão continua aberta.',
 
@@ -440,6 +462,7 @@ export const ptBR: Strings = {
   'stats.activity.resets': 'Resets de cache',
   'stats.activity.recache': 'Re-cache pago',
   'stats.denials': 'Negações recentes',
+  'stats.denials.engine': 'auto',
   'alert.compacted': 'Contexto compactado ({0}): {1} tokens condensados para liberar espaço.',
 
   'ctxPanel.title': 'Contexto',

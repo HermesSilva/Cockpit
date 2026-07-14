@@ -26,6 +26,10 @@ interface OtelState {
   commitCount: number;
   prCount: number;
   decisions: Map<string, { accept: number; reject: number }>; // tool -> contagens
+  // Custo/tokens por RUN de workflow. Desde a CLI 2.1.202 os agentes gerados por um
+  // workflow carregam `workflow.run_id` / `workflow.name` nos atributos — é o que
+  // permite somar o que uma run inteira gastou (o stream-json não expõe isso).
+  workflows: Map<string, { name: string; usd: number; tokens: number }>; // run_id -> agregado
 }
 
 function emptyState(now: number): OtelState {
@@ -40,7 +44,20 @@ function emptyState(now: number): OtelState {
     commitCount: 0,
     prCount: 0,
     decisions: new Map(),
+    workflows: new Map(),
   };
+}
+
+/** Soma no agregado da run de workflow do data point, se ele pertencer a uma. */
+function addWorkflow(st: OtelState, a: Record<string, string>, usd: number, tokens: number): void {
+  const runId = a['workflow.run_id'];
+  if (!runId) return;
+  const cur = st.workflows.get(runId) ?? { name: a['workflow.name'] || runId, usd: 0, tokens: 0 };
+  // O nome pode chegar só em parte dos pontos; o 1º não-vazio vence.
+  if (!cur.name || cur.name === runId) cur.name = a['workflow.name'] || cur.name;
+  cur.usd += usd;
+  cur.tokens += tokens;
+  st.workflows.set(runId, cur);
 }
 
 /** Valor numérico de um data point OTLP (asInt vem como string no JSON). */
@@ -98,17 +115,18 @@ export function ingestMetrics(body: any, st: OtelState): void {
               }
               break;
             }
-            case 'claude_code.cost.usage':
+            case 'claude_code.cost.usage': {
               // Custo REAL (USD) reportado pela própria CLI, por modelo.
-              st.costByModel.set(
-                normalizeModel(a.model) ?? 'unknown',
-                (st.costByModel.get(normalizeModel(a.model) ?? 'unknown') ?? 0) + v,
-              );
+              const mk = normalizeModel(a.model) ?? 'unknown';
+              st.costByModel.set(mk, (st.costByModel.get(mk) ?? 0) + v);
+              addWorkflow(st, a, v, 0);
               break;
+            }
             case 'claude_code.token.usage': {
               // Tokens REAIS por modelo (todas as categorias somadas).
               const mk = normalizeModel(a.model) ?? 'unknown';
               st.tokensByModel.set(mk, (st.tokensByModel.get(mk) ?? 0) + v);
+              addWorkflow(st, a, 0, v);
               break;
             }
             case 'claude_code.session.count':
@@ -195,6 +213,9 @@ export class OtelReceiver {
     const toolDecisions = [...this.state.decisions.entries()]
       .map(([tool, d]) => ({ tool, accept: d.accept, reject: d.reject }))
       .sort((a, b) => b.accept + b.reject - (a.accept + a.reject));
+    const workflows = [...this.state.workflows.entries()]
+      .map(([runId, w]) => ({ runId, name: w.name, usd: w.usd, tokens: w.tokens }))
+      .sort((a, b) => b.usd - a.usd);
     return {
       enabled: this.running,
       endpoint: `http://${LOOPBACK}:${this.port}`,
@@ -207,6 +228,7 @@ export class OtelReceiver {
       commitCount: this.state.commitCount || undefined,
       prCount: this.state.prCount || undefined,
       toolDecisions: toolDecisions.length ? toolDecisions : undefined,
+      workflows: workflows.length ? workflows : undefined,
     };
   }
 
@@ -247,6 +269,13 @@ export class OtelReceiver {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://${LOOPBACK}:${this.port}`;
     // Export rápido p/ o dado aparecer no modal sem esperar o batch padrão (60s).
     process.env.OTEL_METRIC_EXPORT_INTERVAL = '10000';
+    // Conteúdo da conversa NÃO entra na telemetria. Desde a CLI 2.1.193 o evento
+    // `claude_code.assistant_response` carrega o texto da resposta, e ele segue o
+    // `OTEL_LOG_USER_PROMPTS` quando `OTEL_LOG_ASSISTANT_RESPONSES` não está setado
+    // — quem já logava prompt passaria a logar resposta. Cravamos ambos em 0: o
+    // receiver já descarta /v1/logs, mas assim o texto nem sai do processo `claude`.
+    process.env.OTEL_LOG_USER_PROMPTS = '0';
+    process.env.OTEL_LOG_ASSISTANT_RESPONSES = '0';
   }
 
   private clearEnv(): void {
@@ -257,6 +286,8 @@ export class OtelReceiver {
       'OTEL_EXPORTER_OTLP_PROTOCOL',
       'OTEL_EXPORTER_OTLP_ENDPOINT',
       'OTEL_METRIC_EXPORT_INTERVAL',
+      'OTEL_LOG_USER_PROMPTS',
+      'OTEL_LOG_ASSISTANT_RESPONSES',
     ]) {
       delete process.env[k];
     }

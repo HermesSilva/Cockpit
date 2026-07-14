@@ -46,6 +46,10 @@ export class Session {
   busy = false;
   slashCommands: string[] = [];
   sessionId?: string;
+  // Último inventário do `system/init` (tools + servidores MCP). Fonte do painel MCP:
+  // diz quais tools cada servidor expõe — algo que o `claude mcp list` não informa.
+  lastTools?: string[];
+  lastMcpServers?: { name: string; status: string }[];
 
   // Tarefas em background ainda rodando (Workflow / tool com run_in_background).
   // O turno que as lança termina (`result` zera o busy), mas o trabalho continua;
@@ -412,6 +416,10 @@ export class Session {
         }
         if (s.subtype === 'init') {
           if (Array.isArray(s.slash_commands)) this.slashCommands = s.slash_commands;
+          // Guarda o inventário do init: o painel MCP precisa dele a qualquer momento,
+          // não só no instante em que o evento passa.
+          this.lastTools = Array.isArray(s.tools) ? s.tools : undefined;
+          this.lastMcpServers = Array.isArray(s.mcp_servers) ? s.mcp_servers : undefined;
           this.sessionId = s.session_id;
           if (s.session_id) {
             this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão

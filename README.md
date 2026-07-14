@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.208` |
+| **Extension version** | `1.0.215` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (tested with `2.1.206`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.207`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -341,7 +341,7 @@ The stream parser ([`src/cli/StreamParser.ts`](src/cli/StreamParser.ts)) is
 | Claude Code CLI | recent | `claude` on the `PATH`, **authenticated** |
 | Git | any | Recommended for checkpoints (planned) |
 
-Tested against Claude CLI **2.1.x** (latest `2.1.198`; screenshots show `2.1.177`). The
+Tested against Claude CLI **2.1.x** (aligned with `2.1.207`; screenshots show `2.1.177`). The
 parser is version-tolerant — unknown stream events are ignored gracefully — but the event
 contract can vary between versions, see [Known limitations](#known-limitations).
 
@@ -558,7 +558,7 @@ automatically resumes the most recent session for that directory.
 | **Plugins manager** (browse / install / remove / enable / disable / update + marketplaces) | ✅ | 🧩 **Plugins** in the Hub — see [Plugins](#plugins) |
 | Skills: list / trigger | 🟡 | Via slash commands when exposed |
 | Custom subagents: list / select | ⏳ | — |
-| MCP servers: status / tools / connect | 🟡 | `/mcp` forwarded to the CLI |
+| **MCP servers: health / tools / pending approval** | ✅ | 🔌 **MCP** in the Hub: a card per server with its live status and the tools it exposes; `⏸ Pending approval` (unapproved `.mcp.json`) is surfaced. Connecting/approving is still done in the CLI (`/mcp`) |
 | Hooks: view configured ones | 🟡 | `/hooks` forwarded to the CLI |
 | `CLAUDE.md` / settings editor | ⏳ | — |
 

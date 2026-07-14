@@ -70,6 +70,57 @@ describe('OtelReceiver — ingestMetrics', () => {
     expect(s.costByModel?.[1]).toMatchObject({ key: 'claude-sonnet-4-6', usd: 0.08 });
   });
 
+  it('reconstrói o custo/tokens de uma RUN de workflow (atributos workflow.*, CLI 2.1.202)', () => {
+    const r = new OtelReceiver();
+    r.ingest(
+      body([
+        {
+          name: 'claude_code.cost.usage',
+          sum: {
+            dataPoints: [
+              {
+                asDouble: 0.3,
+                attributes: [
+                  { key: 'model', value: { stringValue: 'claude-opus-4-8' } },
+                  { key: 'workflow.run_id', value: { stringValue: 'run-1' } },
+                  { key: 'workflow.name', value: { stringValue: 'code-review' } },
+                ],
+              },
+              // 2º agente da MESMA run: soma no mesmo balde.
+              {
+                asDouble: 0.2,
+                attributes: [
+                  { key: 'model', value: { stringValue: 'claude-haiku-4-5' } },
+                  { key: 'workflow.run_id', value: { stringValue: 'run-1' } },
+                ],
+              },
+              // Turno normal, fora de workflow: não cria run.
+              {
+                asDouble: 0.9,
+                attributes: [{ key: 'model', value: { stringValue: 'claude-opus-4-8' } }],
+              },
+            ],
+          },
+        },
+        metric('claude_code.token.usage', [
+          { value: 900, attrs: { model: 'claude-opus-4-8', 'workflow.run_id': 'run-1' } },
+        ]),
+      ]),
+    );
+    const s = r.stats();
+    expect(s.workflows).toHaveLength(1);
+    expect(s.workflows?.[0]).toMatchObject({ runId: 'run-1', name: 'code-review', tokens: 900 });
+    expect(s.workflows?.[0].usd).toBeCloseTo(0.5, 6);
+    // O custo por modelo continua contando tudo (workflow + turno normal).
+    expect(s.costByModel?.find((m) => m.key === 'claude-opus-4-8')?.usd).toBeCloseTo(1.2, 6);
+  });
+
+  it('sem workflow nenhum, `workflows` fica ausente', () => {
+    const r = new OtelReceiver();
+    r.ingest(body([metric('claude_code.session.count', [{ value: 1 }])]));
+    expect(r.stats().workflows).toBeUndefined();
+  });
+
   it('agrega sessões, commits, PRs e decisões de edição', () => {
     const r = new OtelReceiver();
     r.ingest(

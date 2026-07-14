@@ -71,6 +71,13 @@ export interface UserEvent {
   };
 }
 
+/** Uma negação feita pelo ENGINE (auto mode / falta de permissão), não pelo usuário. */
+export interface PermissionDenial {
+  tool_name?: string;
+  tool_use_id?: string;
+  tool_input?: unknown;
+}
+
 export interface ResultEvent {
   type: 'result';
   subtype: string; // 'success' | 'error_max_turns' | 'error_during_execution' | ...
@@ -81,6 +88,10 @@ export interface ResultEvent {
   usage?: Usage;
   num_turns?: number;
   duration_ms?: number;
+  // Negações do turno decididas pelo próprio engine (regra de auto mode, tool fora
+  // do allowlist, escrita fora do workspace…). Só a tool e o input — o MOTIVO vem
+  // no texto do `tool_result` de erro com o mesmo `tool_use_id`.
+  permission_denials?: PermissionDenial[];
 }
 
 // Deltas crus da API (quando --include-partial-messages está ativo).

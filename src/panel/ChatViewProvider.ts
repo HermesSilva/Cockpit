@@ -34,6 +34,7 @@ import {
 } from '../cli/VoiceDictionary';
 import { setInternalModel } from '../cli/AiClient';
 import { listPlugins, pluginAction } from '../cli/PluginManager';
+import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
@@ -61,6 +62,9 @@ import { log, dlog } from '../util/logger';
 const MODEL_LIST = [
   'default',
   'claude-opus-4-8[1m]',
+  // Sonnet 5: default do CLI desde 2.1.197. Janela de 1M é NATIVA — não tem
+  // variante `[1m]` (por isso fica fora do BASE_OF_1M).
+  'claude-sonnet-5',
   'claude-opus-4-7[1m]',
   'claude-opus-4-6',
   'claude-sonnet-4-6[1m]',
@@ -1019,6 +1023,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ kind: 'pluginsError', message: String(e) });
     } finally {
       this.post({ kind: 'pluginsBusy', busy: false });
+    }
+  }
+
+  /**
+   * Servidores MCP (botão MCP): funde o inventário do `init` da sessão (tools por
+   * servidor) com o `claude mcp list` (pendentes de aprovação + comando/URL).
+   * Se a sessão ainda não fez init (aba nova), o painel mostra só o `mcp list`.
+   */
+  private async sendMcp(s: Session): Promise<void> {
+    this.post({ kind: 'mcpBusy', busy: true });
+    try {
+      const list = await fetchMcpList(this.claudePath());
+      const servers = mergeMcpStatus(s.lastTools, s.lastMcpServers, list);
+      this.post({ kind: 'mcpData', data: { servers, generatedAt: new Date().toISOString() } });
+    } catch (e) {
+      log(`sendMcp: ${String(e)}`);
+      this.post({ kind: 'mcpData', data: { servers: [], generatedAt: new Date().toISOString() } });
+    } finally {
+      this.post({ kind: 'mcpBusy', busy: false });
     }
   }
 
@@ -2169,6 +2192,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'pluginsRefresh':
         void this.sendPlugins(m.force);
+        break;
+      case 'mcpRefresh':
+        void this.sendMcp(srcSession());
         break;
       case 'pluginAction':
         void this.runPluginAction(m.action, m.arg, m.scope);

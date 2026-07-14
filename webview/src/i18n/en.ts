@@ -88,6 +88,22 @@ export const en = {
   'voicedict.save': 'Save',
   'plugins.title': 'Plugins',
   'plugins.desc': 'Search, install and remove Claude Code plugins',
+  // Painel MCP (X4)
+  'mcp.title': 'MCP',
+  'mcp.desc': 'MCP servers: health, connection and the tools each one exposes',
+  'mcp.servers': 'Servers',
+  'mcp.count': '{0} servers · {1} tools',
+  'mcp.checking': 'Checking server health…',
+  'mcp.none': 'No MCP server configured.',
+  'mcp.tools': '{0} tools',
+  'mcp.noTools': 'Connected, but exposes no tool.',
+  'mcp.stamp': 'Checked at {0}',
+  'mcp.status.connected': 'Connected',
+  'mcp.status.failed': 'Failed',
+  'mcp.status.pending': 'Pending approval',
+  'mcp.status.unknown': 'Unknown',
+  'mcp.pendingHelp':
+    'Declared in the repo’s .mcp.json but not approved yet — the CLI does not start it, and its tools are unavailable. Approve the server in the CLI (/mcp) to use it.',
   'plugins.searchPlaceholder': 'Search plugins…',
   'plugins.filter.all': 'All',
   'plugins.filter.installed': 'Installed',
@@ -211,7 +227,9 @@ export const en = {
   'tip.ctx.resets':
     'How many times the prompt cache expired from idleness (>1h) and the prefix had to be re-written, plus the cost re-paid.',
   'tip.ctx.denials':
-    'Tool requests you denied this session, newest first (with the reason when given). Access-control audit.',
+    'Tool requests denied this session — by you, in the modal, or by the CLI itself (“auto” chip) — newest first, with the reason when given. Access-control audit.',
+  'tip.ctx.denials.engine':
+    'Denied by the CLI, not by you: an auto-mode rule (or a missing permission) blocked the call.',
   // Hint provenance footer (colored chips).
   'meta.origin.label': 'Source',
   'meta.origin.server': 'Server (via CLI)',
@@ -281,6 +299,9 @@ export const en = {
   'usage.email': 'Email',
   'usage.org': 'Organization',
   'usage.plan': 'Plan',
+  'usage.loginExpires': 'Login valid for',
+  'usage.loginExpiringSoon':
+    'Your login expires in {0}. Run /login to re-authenticate — an expired login interrupts long or background sessions.',
   'usage.notLoggedIn': 'Not signed in.',
   'usage.usage': 'Usage',
   'usage.currentSession': 'Current session',
@@ -347,6 +368,7 @@ export const en = {
   'usage.otel.commits': 'Commits',
   'usage.otel.prs': 'Pull requests',
   'usage.otel.decisions': 'Edit decisions',
+  'usage.otel.workflows': 'Workflow runs',
   'tip.stop.title': 'Interrupt',
   'tip.stop.desc': 'Stop the agent now. The current turn ends and the session stays open.',
 
@@ -440,6 +462,7 @@ export const en = {
   'stats.activity.resets': 'Cache resets',
   'stats.activity.recache': 'Re-cache paid',
   'stats.denials': 'Recent denials',
+  'stats.denials.engine': 'auto',
   'alert.compacted': 'Context compacted ({0}): {1} tokens condensed to free up room.',
 
   'ctxPanel.title': 'Context',

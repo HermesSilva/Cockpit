@@ -89,6 +89,8 @@ export function mergeMcpStatus(
     if (cur) {
       cur.status = e.status;
       cur.target = e.target;
+      cur.transport = e.transport;
+      cur.notConfigured = e.notConfigured;
       cur.connected = e.status === 'connected';
     } else {
       // Só no `mcp list`: tipicamente um servidor pendente de aprovação — a sessão
@@ -97,6 +99,8 @@ export function mergeMcpStatus(
         name: e.name,
         status: e.status,
         target: e.target,
+        transport: e.transport,
+        notConfigured: e.notConfigured,
         tools: [],
         connected: e.status === 'connected',
       });

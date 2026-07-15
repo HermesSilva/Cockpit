@@ -97,6 +97,7 @@ export const en = {
   'mcp.none': 'No MCP server configured.',
   'mcp.tools': '{0} tools',
   'mcp.noTools': 'Connected, but exposes no tool.',
+  'mcp.notConfigured': 'Not configured (no URL)',
   'mcp.stamp': 'Checked at {0}',
   'mcp.status.connected': 'Connected',
   'mcp.status.failed': 'Failed',

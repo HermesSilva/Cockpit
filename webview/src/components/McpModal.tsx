@@ -87,9 +87,15 @@ function ServerCard({ t, s }: { t: Translator; s: McpServerInfo }) {
         <span className="mcp-name" title={s.target || undefined}>
           {s.name}
         </span>
+        {s.transport && <span className="mcp-transport">{s.transport}</span>}
         <span className={`mcp-status ${s.status}`}>{t(`mcp.status.${s.status}`)}</span>
       </div>
-      {s.target && <div className="mcp-target">{s.target}</div>}
+      {/* Remoto sem URL: a CLI 2.1.208 rotula "not configured" — espelhamos. */}
+      {s.notConfigured ? (
+        <div className="mcp-target mcp-unconfigured">{t('mcp.notConfigured')}</div>
+      ) : (
+        s.target && <div className="mcp-target">{s.target}</div>
+      )}
       {/* Servidor pendente não é falha: o CLI está esperando você aprovar o workspace. */}
       {s.status === 'pending' && <div className="usage-alert">{t('mcp.pendingHelp')}</div>}
       {s.tools.length > 0 ? (

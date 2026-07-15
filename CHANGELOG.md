@@ -4,7 +4,19 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
-## [1.0.215] - 2026-07-13
+## [1.0.216] - 2026-07-15
+
+> Adequação à **CLI 2.1.210** (changelog 2.1.208→2.1.210). O grosso das releases é
+> correção interna da CLI que não tocamos; só o painel MCP precisou de ajuste.
+
+### Corrigido
+- **Painel MCP: formato do `claude mcp list` mudou.** A CLI passou a anexar o
+  transporte ao alvo dos servidores remotos (`<url> (HTTP)` / `<url> (SSE)`) e o glyph
+  de status virou `✔` (era `√`). Agora separamos o `(HTTP)`/`(SSE)` da URL — o card
+  mostra a URL limpa e um chip de transporte — e o status continua sendo casado pela
+  **palavra**, não pelo símbolo, então a troca de glyph não afeta nada.
+- **Servidor remoto sem URL** (a CLI 2.1.208 rotula "not configured"): antes o card
+  exibia um alvo falso (`(HTTP)`); agora mostra **"Não configurado (sem URL)"**.
 
 > Alinhamento com a **CLI 2.1.207** (varredura do changelog oficial da CLI, da 2.1.191
 > à 2.1.207, atrás do que precisávamos implementar, melhorar ou corrigir).

@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.215` |
+| **Extension version** | `1.0.216` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.207`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.210`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -341,7 +341,7 @@ The stream parser ([`src/cli/StreamParser.ts`](src/cli/StreamParser.ts)) is
 | Claude Code CLI | recent | `claude` on the `PATH`, **authenticated** |
 | Git | any | Recommended for checkpoints (planned) |
 
-Tested against Claude CLI **2.1.x** (aligned with `2.1.207`; screenshots show `2.1.177`). The
+Tested against Claude CLI **2.1.x** (aligned with `2.1.210`; screenshots show `2.1.177`). The
 parser is version-tolerant — unknown stream events are ignored gracefully — but the event
 contract can vary between versions, see [Known limitations](#known-limitations).
 

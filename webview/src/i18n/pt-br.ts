@@ -99,6 +99,7 @@ export const ptBR: Strings = {
   'mcp.none': 'Nenhum servidor MCP configurado.',
   'mcp.tools': '{0} ferramentas',
   'mcp.noTools': 'Conectado, mas não expõe nenhuma ferramenta.',
+  'mcp.notConfigured': 'Não configurado (sem URL)',
   'mcp.stamp': 'Checado às {0}',
   'mcp.status.connected': 'Conectado',
   'mcp.status.failed': 'Falhou',

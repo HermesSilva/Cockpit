@@ -25,6 +25,34 @@ describe('parseMcpList', () => {
     expect(rows[0].target).toBe('https://mcp.example.com/sse');
   });
 
+  it('casa o status pela palavra, não pelo glyph (√ virou ✔ na 2.1.208)', () => {
+    expect(parseMcpList('a: node x.js - ✔ Connected')[0].status).toBe('connected');
+    expect(parseMcpList('a: node x.js - √ Connected')[0].status).toBe('connected');
+    expect(parseMcpList('a: node x.js - ✗ Failed to connect')[0].status).toBe('failed');
+  });
+
+  it('separa o sufixo de transporte (HTTP/SSE) da URL', () => {
+    const http = parseMcpList('withurl: https://mcp.example.com/api (HTTP) - ⏸ Pending approval')[0];
+    expect(http).toMatchObject({ target: 'https://mcp.example.com/api', transport: 'HTTP' });
+    expect(http.notConfigured).toBeUndefined();
+
+    const sse = parseMcpList('s: https://s.example.com/sse (SSE) - ✔ Connected')[0];
+    expect(sse).toMatchObject({ target: 'https://s.example.com/sse', transport: 'SSE' });
+  });
+
+  it('remoto sem URL vira notConfigured (2.1.208), sem alvo falso', () => {
+    const row = parseMcpList('emptyurl:  (HTTP) - ⏸ Pending approval (run `claude` to approve)')[0];
+    expect(row).toMatchObject({ name: 'emptyurl', transport: 'HTTP', notConfigured: true });
+    expect(row.target).toBeUndefined();
+  });
+
+  it('stdio não tem sufixo de transporte', () => {
+    const row = parseMcpList('local: node ./scripts/mcp.js - ✔ Connected')[0];
+    expect(row.target).toBe('node ./scripts/mcp.js');
+    expect(row.transport).toBeUndefined();
+    expect(row.notConfigured).toBeUndefined();
+  });
+
   it('entrada vazia/ruído não quebra', () => {
     expect(parseMcpList('')).toEqual([]);
     expect(parseMcpList('Checking MCP server health…')).toEqual([]);
@@ -57,6 +85,17 @@ describe('mergeMcpStatus', () => {
     expect(servers).toHaveLength(1);
     expect(servers[0]).toMatchObject({ name: 'repo-tool', status: 'pending', connected: false });
     expect(servers[0].tools).toEqual([]);
+  });
+
+  it('propaga transport/notConfigured de um remoto sem URL ao card', () => {
+    const servers = mergeMcpStatus([], [], parseMcpList('emptyurl:  (HTTP) - ⏸ Pending approval'));
+    expect(servers[0]).toMatchObject({
+      name: 'emptyurl',
+      status: 'pending',
+      transport: 'HTTP',
+      notConfigured: true,
+    });
+    expect(servers[0].target).toBeUndefined();
   });
 
   it('o status do mcp list prevalece sobre o do init (é medido agora)', () => {

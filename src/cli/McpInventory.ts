@@ -36,20 +36,30 @@ export interface McpInventory {
 // O init só conhece servidores que a sessão CONECTOU: um servidor de `.mcp.json`
 // ainda não aprovado (2.1.196) não aparece lá — o CLI não o sobe. O `mcp list` é
 // quem revela esses ("⏸ Pending approval") e o comando/URL de cada um. Não há
-// `--json`: a saída é texto no formato
-//   <nome>: <comando ou url> - <✓ Connected | ✗ Failed to connect | ⏸ Pending approval>
-// Parsing tolerante: linha que não casar é ignorada (nunca lança).
+// `--json`: a saída é texto (confirmado na CLI 2.1.209) nos formatos:
+//   <nome>: <comando>                       - <status>   (stdio)
+//   <nome>: <url> (HTTP|SSE)                 - <status>   (remoto configurado)
+//   <nome>:  (HTTP|SSE)                      - <status>   (remoto SEM url → 2.1.208)
+// onde <status> = "✔ Connected" | "✗ Failed to connect" | "⏸ Pending approval …".
+// O glyph do status varia entre versões (era `√`, virou `✔`) — por isso casamos a
+// PALAVRA, nunca o símbolo. Parsing tolerante: linha que não casar é ignorada.
 
 export type McpListStatus = 'connected' | 'failed' | 'pending' | 'unknown';
 
 export interface McpListEntry {
   name: string;
-  /** Comando (stdio) ou URL (http/sse) configurado, como o CLI imprime. */
+  /** Comando (stdio) ou URL (http/sse), já SEM o sufixo `(HTTP)`/`(SSE)`. */
   target?: string;
+  /** Transporte remoto declarado ('HTTP' | 'SSE'). Ausente = stdio. */
+  transport?: string;
+  /** Remoto declarado sem URL — a CLI 2.1.208 o rotula "not configured". */
+  notConfigured?: boolean;
   status: McpListStatus;
 }
 
 const LIST_RE = /^(.+?):\s(.*?)\s+-\s+(.+)$/;
+// Sufixo de transporte que a CLI anexa a servidores remotos: "… (HTTP)" / "… (SSE)".
+const TRANSPORT_RE = /^(.*?)\s*\(([A-Za-z]+)\)$/;
 
 function listStatus(tail: string): McpListStatus {
   const s = tail.toLowerCase();
@@ -68,9 +78,26 @@ export function parseMcpList(stdout: string): McpListEntry[] {
     const m = LIST_RE.exec(line);
     if (!m) continue; // cabeçalho ("Checking MCP server health…"), rodapé, ruído
     const name = m[1].trim();
-    const target = m[2].trim();
     if (!name) continue;
-    out.push({ name, target: target || undefined, status: listStatus(m[3]) });
+
+    let target = m[2].trim();
+    let transport: string | undefined;
+    // Servidor remoto: separa a URL do sufixo "(HTTP)"/"(SSE)". stdio não tem sufixo.
+    const tm = TRANSPORT_RE.exec(target);
+    if (tm) {
+      target = tm[1].trim();
+      transport = tm[2].toUpperCase();
+    }
+    // Remoto declarado mas sem URL: só sobrou o "(TYPE)", target vazio.
+    const notConfigured = !!transport && !target;
+
+    out.push({
+      name,
+      target: target || undefined,
+      transport,
+      notConfigured: notConfigured || undefined,
+      status: listStatus(m[3]),
+    });
   }
   return out;
 }

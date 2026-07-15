@@ -258,7 +258,9 @@ export interface McpServerInfo {
   // 'pending' = `.mcp.json` não aprovado (o CLI nem sobe o servidor — 2.1.196).
   status: 'connected' | 'failed' | 'pending' | 'unknown';
   connected: boolean;
-  target?: string; // comando (stdio) ou URL (http/sse), como o CLI o imprime
+  target?: string; // comando (stdio) ou URL (http/sse), sem o sufixo `(HTTP)`/`(SSE)`
+  transport?: string; // 'HTTP' | 'SSE' — só p/ servidores remotos; ausente = stdio
+  notConfigured?: boolean; // remoto declarado sem URL (a CLI 2.1.208 mostra "not configured")
   tools: string[]; // nomes curtos, sem o prefixo `mcp__<server>__`
 }
 

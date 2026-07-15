@@ -4592,16 +4592,32 @@ body {
   background: var(--vscode-inputValidation-warningBorder, #cca700);
 }
 .mcp-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mcp-transport {
+  flex: none;
+  padding: 0 5px;
+  font-size: 9.5px;
+  line-height: 15px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  color: var(--vscode-badge-foreground, #e0e0e0);
+  background: var(--vscode-badge-background, #4d4d4d);
 }
 .mcp-status {
   margin-left: auto;
   flex: none;
   font-size: 11px;
   color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.mcp-unconfigured {
+  font-style: italic;
+  color: var(--vscode-inputValidation-warningBorder, #cca700);
 }
 .mcp-status.failed {
   color: var(--vscode-errorForeground, #f14c4c);

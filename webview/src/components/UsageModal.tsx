@@ -398,7 +398,7 @@ function Otel({ t, locale, o }: { t: Translator; locale: string; o: OtelStats })
           {o.workflows.map((w) => (
             <Row
               key={w.runId}
-              k={w.name}
+              k={w.effort ? `${w.name} · ${w.effort}` : w.name}
               v={`${fmtUsdShort(w.usd)} · ${fmtCompact(w.tokens)} tok`}
             />
           ))}

@@ -249,6 +249,7 @@ export interface WorkflowRun {
   name: string;
   usd: number; // custo REAL somado dos agentes da run
   tokens: number;
+  effort?: string; // effort(s) dos agentes da run (low…max), CLI 2.1.214; ausente se o modelo não suporta
 }
 
 // --- MCP (painel 🔌 Servers) ---

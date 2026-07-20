@@ -28,8 +28,9 @@ interface OtelState {
   decisions: Map<string, { accept: number; reject: number }>; // tool -> contagens
   // Custo/tokens por RUN de workflow. Desde a CLI 2.1.202 os agentes gerados por um
   // workflow carregam `workflow.run_id` / `workflow.name` nos atributos — é o que
-  // permite somar o que uma run inteira gastou (o stream-json não expõe isso).
-  workflows: Map<string, { name: string; usd: number; tokens: number }>; // run_id -> agregado
+  // permite somar o que uma run inteira gastou (o stream-json não expõe isso). O
+  // `effort` (low…max) veio na 2.1.214/215, também em cost.usage/token.usage.
+  workflows: Map<string, { name: string; usd: number; tokens: number; efforts: Set<string> }>;
 }
 
 function emptyState(now: number): OtelState {
@@ -52,12 +53,26 @@ function emptyState(now: number): OtelState {
 function addWorkflow(st: OtelState, a: Record<string, string>, usd: number, tokens: number): void {
   const runId = a['workflow.run_id'];
   if (!runId) return;
-  const cur = st.workflows.get(runId) ?? { name: a['workflow.name'] || runId, usd: 0, tokens: 0 };
+  const cur =
+    st.workflows.get(runId) ??
+    { name: a['workflow.name'] || runId, usd: 0, tokens: 0, efforts: new Set<string>() };
   // O nome pode chegar só em parte dos pontos; o 1º não-vazio vence.
   if (!cur.name || cur.name === runId) cur.name = a['workflow.name'] || cur.name;
   cur.usd += usd;
   cur.tokens += tokens;
+  // Um run pode ter agentes com efforts diferentes — coletamos o conjunto.
+  if (a.effort) cur.efforts.add(a.effort);
   st.workflows.set(runId, cur);
+}
+
+// Ordem canônica p/ exibir os efforts de um run (menor → maior).
+const EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+function sortEfforts(efforts: Set<string>): string[] {
+  return [...efforts].sort((a, b) => {
+    const ia = EFFORT_ORDER.indexOf(a);
+    const ib = EFFORT_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
 }
 
 /** Valor numérico de um data point OTLP (asInt vem como string no JSON). */
@@ -214,7 +229,13 @@ export class OtelReceiver {
       .map(([tool, d]) => ({ tool, accept: d.accept, reject: d.reject }))
       .sort((a, b) => b.accept + b.reject - (a.accept + a.reject));
     const workflows = [...this.state.workflows.entries()]
-      .map(([runId, w]) => ({ runId, name: w.name, usd: w.usd, tokens: w.tokens }))
+      .map(([runId, w]) => ({
+        runId,
+        name: w.name,
+        usd: w.usd,
+        tokens: w.tokens,
+        effort: w.efforts.size ? sortEfforts(w.efforts).join(' · ') : undefined,
+      }))
       .sort((a, b) => b.usd - a.usd);
     return {
       enabled: this.running,
@@ -276,6 +297,11 @@ export class OtelReceiver {
     // receiver já descarta /v1/logs, mas assim o texto nem sai do processo `claude`.
     process.env.OTEL_LOG_USER_PROMPTS = '0';
     process.env.OTEL_LOG_ASSISTANT_RESPONSES = '0';
+    // Traz o `workflow.name` REAL nas métricas: sem isto a CLI substitui nomes de
+    // workflow autorais por "custom" (doc oficial de monitoring). Só afeta o rótulo
+    // do painel de workflows — os detalhes de tool que este flag também expõe vão
+    // para /v1/logs, que descartamos por completo. Nenhum conteúdo é retido.
+    process.env.OTEL_LOG_TOOL_DETAILS = '1';
   }
 
   private clearEnv(): void {
@@ -288,6 +314,7 @@ export class OtelReceiver {
       'OTEL_METRIC_EXPORT_INTERVAL',
       'OTEL_LOG_USER_PROMPTS',
       'OTEL_LOG_ASSISTANT_RESPONSES',
+      'OTEL_LOG_TOOL_DETAILS',
     ]) {
       delete process.env[k];
     }

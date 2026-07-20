@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.216",
+  "version": "1.0.217",
   "publisher": "HermesSilva",
   "license": "MIT",
   "author": {

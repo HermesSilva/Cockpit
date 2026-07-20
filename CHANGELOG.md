@@ -4,6 +4,31 @@ Todas as mudanças notáveis desta extensão são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e o projeto adota versionamento semântico.
 
+## [1.0.217] - 2026-07-15
+
+> Alinhamento com a **CLI 2.1.215** (changelog 2.1.211→2.1.215). O grosso é correção
+> interna da CLI que não tocamos; o que valia surfacear, veio da telemetria OTEL.
+
+### Adicionado
+- **Reasoning effort por run de workflow** no painel Usage. A CLI 2.1.214/215 passou a
+  anexar o atributo `effort` (low…max) às métricas `cost.usage`/`token.usage` — as duas
+  que já agregamos por run. O card do workflow agora mostra o(s) effort(s) dos agentes,
+  ordenados do menor ao maior (ex.: `deep-research · low · max`). Ausente quando o modelo
+  não suporta effort. Shape confirmado na doc oficial de monitoring da Anthropic.
+
+### Melhorado
+- **Nome real do workflow** no painel (não mais `custom`). Sem `OTEL_LOG_TOOL_DETAILS=1`,
+  a CLI substitui o nome de workflows autorais por `custom` nas métricas; agora ligamos
+  esse flag no receiver local. É seguro: os detalhes extras que ele expõe vão para
+  `/v1/logs`, que **descartamos por completo** — só o nome chega às métricas, nenhum
+  conteúdo é retido.
+
+### Notas (correções da CLI que nos beneficiam sem mexer em nada)
+- Truncamento do motivo de negação do auto mode corrigido na CLI (2.1.212): o texto que
+  capturamos para o log de negações agora vem inteiro.
+- Double-counting de deltas cumulativos na telemetria corrigido na CLI (2.1.214/215): o
+  custo/tokens OTEL exibidos no Usage passam a bater com a fonte.
+
 ## [1.0.216] - 2026-07-15
 
 > Adequação à **CLI 2.1.210** (changelog 2.1.208→2.1.210). O grosso das releases é

@@ -84,14 +84,16 @@ describe('OtelReceiver — ingestMetrics', () => {
                   { key: 'model', value: { stringValue: 'claude-opus-4-8' } },
                   { key: 'workflow.run_id', value: { stringValue: 'run-1' } },
                   { key: 'workflow.name', value: { stringValue: 'code-review' } },
+                  { key: 'effort', value: { stringValue: 'high' } },
                 ],
               },
-              // 2º agente da MESMA run: soma no mesmo balde.
+              // 2º agente da MESMA run, effort menor: soma no balde, coleta o effort.
               {
                 asDouble: 0.2,
                 attributes: [
                   { key: 'model', value: { stringValue: 'claude-haiku-4-5' } },
                   { key: 'workflow.run_id', value: { stringValue: 'run-1' } },
+                  { key: 'effort', value: { stringValue: 'medium' } },
                 ],
               },
               // Turno normal, fora de workflow: não cria run.
@@ -111,6 +113,8 @@ describe('OtelReceiver — ingestMetrics', () => {
     expect(s.workflows).toHaveLength(1);
     expect(s.workflows?.[0]).toMatchObject({ runId: 'run-1', name: 'code-review', tokens: 900 });
     expect(s.workflows?.[0].usd).toBeCloseTo(0.5, 6);
+    // Efforts distintos da run, ordenados do menor ao maior (2.1.214).
+    expect(s.workflows?.[0].effort).toBe('medium · high');
     // O custo por modelo continua contando tudo (workflow + turno normal).
     expect(s.costByModel?.find((m) => m.key === 'claude-opus-4-8')?.usd).toBeCloseTo(1.2, 6);
   });
@@ -119,6 +123,14 @@ describe('OtelReceiver — ingestMetrics', () => {
     const r = new OtelReceiver();
     r.ingest(body([metric('claude_code.session.count', [{ value: 1 }])]));
     expect(r.stats().workflows).toBeUndefined();
+  });
+
+  it('workflow sem atributo effort: campo effort fica ausente (modelo sem effort)', () => {
+    const r = new OtelReceiver();
+    r.ingest(
+      body([metric('claude_code.token.usage', [{ value: 100, attrs: { 'workflow.run_id': 'r9' } }])]),
+    );
+    expect(r.stats().workflows?.[0].effort).toBeUndefined();
   });
 
   it('agrega sessões, commits, PRs e decisões de edição', () => {

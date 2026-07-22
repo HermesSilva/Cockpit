@@ -691,7 +691,9 @@ from VS Code theme tokens, so light, dark and high-contrast all work.
   called by the model shows up as a `Skill` tool call whose result is `Launching skill: <name>`,
   followed by a synthetic message carrying the body — the size estimate comes from **that
   message** (~4 chars/token), i.e. what actually entered the context, not from the file on
-  disk. The other engine path,
+  disk. That message is taken **by position**, not by a header: a skill with its own directory
+  opens with `Base directory for this skill: …`, a built-in ships the `SKILL.md` raw, and
+  matching a header would leave the built-ins with no number. The other engine path,
   `Execute skill: <name>`, loads **nothing** into the context and is therefore not marked.
   A skill triggered by `/name` **from the Cockpit** is marked too (we sent it), but the engine
   reports no size, so no number is shown rather than a made-up one.

@@ -32,7 +32,15 @@ function report(line: string): void {
 }
 
 function spawnCli(skillOverrides?: Record<string, string>, resumeSessionId?: string) {
-  const cli = new CliProcessManager({ claudePath: 'claude', cwd: CWD, skillOverrides, resumeSessionId });
+  // bypassPermissions: ninguém responde `can_use_tool` aqui, e uma skill que toca em
+  // arquivo (keybindings-help lê ~/.claude/keybindings.json) travaria o turno até o timeout.
+  const cli = new CliProcessManager({
+    claudePath: 'claude',
+    cwd: CWD,
+    skillOverrides,
+    resumeSessionId,
+    permissionMode: 'bypassPermissions',
+  });
   const stats = new StatsAggregator(0);
   const seen = { sessionId: '' };
   let onResult: (() => void) | undefined;
@@ -70,9 +78,12 @@ describe.skipIf(!LIVE)('skills contra o CLI real', () => {
     expect(before, 'get_context_usage não devolveu skills').toBeTruthy();
     a.stats.applyContextUsage(before!);
     const snap0 = a.stats.snapshot();
-    // `caveman` é do tipo prompt: acionar CARREGA o SKILL.md no contexto (o built-in
-    // `dataviz` responde "Execute skill:" e não injeta corpo — outro caminho do engine).
-    const target = before!.skills.find((s) => s.name === 'caveman') ?? before!.skills[0];
+    // `keybindings-help` é do tipo prompt: acionar CARREGA o SKILL.md no contexto (o
+    // built-in `dataviz` responde "Execute skill:" e não injeta corpo — outro caminho do
+    // engine). NÃO usar `caveman` como alvo: um hook SessionStart pode já ter injetado o
+    // conteúdo dela, e aí o modelo responde "já ativo" sem nunca chamar a tool `Skill`.
+    const target =
+      before!.skills.find((s) => s.name === 'keybindings-help') ?? before!.skills[0];
     report(
       `[1] listing=${snap0.skillsListingTokens} tk · ${snap0.skillsListed}/${snap0.skillsTotal} skills · sem turno` +
         `\n[1] alvo: ${target.name} (${target.source}) = ${target.tokens} tk de metadados` +
@@ -81,7 +92,10 @@ describe.skipIf(!LIVE)('skills contra o CLI real', () => {
     expect(snap0.skills!.find((s) => s.name === target.name)!.active).toBeUndefined();
 
     // --- 2. acionar a skill ---
-    await a.turn(`Invoke the ${target.name} skill. Then reply OK.`);
+    await a.turn(
+      `Use the Skill tool to invoke the ${target.name} skill. Do not skip the tool call. ` +
+        `Do not act on what the skill says — reply OK and stop.`,
+    );
     const rawAfter = (await a.raw()) as any;
     const messagesBefore = catTokens(rawAfter, 'Messages');
     const after = parseContextUsage(rawAfter);
@@ -93,6 +107,9 @@ describe.skipIf(!LIVE)('skills contra o CLI real', () => {
         `\n[2] listing continua ${snap1.skillsListingTokens} tk (o corpo não entra no listing)`,
     );
     expect(row1.active).toBe(true);
+    // O corpo tem que ser MEDIDO, não só detectado: uma skill built-in manda o SKILL.md
+    // sem cabeçalho, e foi exatamente isso que já derrubou a estimativa uma vez.
+    expect(row1.activeTokens).toBeGreaterThan(0);
     expect(snap1.skillsListingTokens).toBe(snap0.skillsListingTokens);
     a.cli.stop();
 

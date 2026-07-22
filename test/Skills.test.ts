@@ -82,11 +82,27 @@ describe('acionamento de skill no stream', () => {
     expect(sk.activeTokens).toBe(Math.round(text.length / 4));
   });
 
-  it('sem o corpo esperado, fica ativa mas sem inventar tokens', () => {
+  // Skill built-in manda o SKILL.md cru, sem o "Base directory for this skill:" que só
+  // existe em skill com diretório próprio. A janela é posicional, não por cabeçalho.
+  it('mede o corpo de uma built-in, que vem sem cabeçalho', () => {
     const st = new StatsAggregator(0);
     st.ingest(toolUse);
     st.ingest(result('Launching skill: caveman'));
-    const snap = st.ingest(body('outra coisa qualquer'));
+    const text = '# Skill\n\n' + 'a'.repeat(400);
+    const snap = st.ingest(body(text));
+    const sk = snap.skills!.find((s) => s.name === 'caveman')!;
+    expect(sk.active).toBe(true);
+    expect(sk.activeTokens).toBe(Math.round(text.length / 4));
+  });
+
+  // O corpo chega antes de o modelo voltar a falar. Depois disso a janela fecha, senão
+  // uma mensagem enfileirada pela UI viraria "corpo da skill".
+  it('não mede uma mensagem que chega depois do modelo voltar a falar', () => {
+    const st = new StatsAggregator(0);
+    st.ingest(toolUse);
+    st.ingest(result('Launching skill: caveman'));
+    st.ingest({ type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } } as any);
+    const snap = st.ingest(body('mensagem do usuário, não o SKILL.md'));
     const sk = snap.skills!.find((s) => s.name === 'caveman')!;
     expect(sk.active).toBe(true);
     expect(sk.activeTokens).toBeUndefined();

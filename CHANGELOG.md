@@ -4,6 +4,18 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.226] - 2026-07-22
+
+### Fixed
+- **A built-in skill loaded without a token estimate.** The size of an activated skill was
+  only measured when the injected body started with `Base directory for this skill:`, a
+  header that exists only for skills with their own directory (user/plugin). A built-in
+  ships the `SKILL.md` raw, so it showed up as active with no number — no `⚡ +N tk` seal in
+  the timeline and no weight in the panel. The body is now taken by position (the first
+  `text` block after `Launching skill:`), and the window closes on the next `assistant`
+  message so a queued user message is never measured as a skill body.
+  Measured against the real CLI: `keybindings-help` = ~3012 tk of body.
+
 ## [1.0.225] - 2026-07-22
 
 ### Fixed

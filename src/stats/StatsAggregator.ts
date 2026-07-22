@@ -33,10 +33,6 @@ const DENIAL_CAP = 50;
 const DENIAL_REASON_CAP = 200;
 // The reason is a UI label, not a log: truncated before it becomes a paragraph.
 const REASON_MAX = 300;
-// Prefixo da mensagem `user` sintética que o CLI injeta com o corpo do SKILL.md logo
-// depois do tool_result do `Skill`. É o único vestígio do corpo no stream — daí sai a
-// ESTIMATIVA de tokens da skill ativa (o CLI não atribui esses tokens por skill).
-const SKILL_BODY_PREFIX = 'Base directory for this skill:';
 // tool_result do `Skill` quando o CLI de fato CARREGA o SKILL.md no contexto. Existe um
 // segundo caminho ("Execute skill: <nome>", usado por skills built-in do tipo execute) que
 // NÃO injeta corpo nenhum — nesse caso nada entra no contexto e nada é marcado.
@@ -350,12 +346,14 @@ export class StatsAggregator {
   }
 
   /**
-   * Dois sinais na mensagem `user` que fecha o acionamento:
+   * Dois sinais na mensagem `user` que fecham o acionamento:
    *  - tool_result "Launching skill: X" → o corpo do SKILL.md ENTROU no contexto;
-   *  - a mensagem sintética "Base directory for this skill: …" + corpo, logo em seguida,
-   *    de onde sai a ESTIMATIVA de tokens.
-   * Sem o segundo (versão de CLI diferente) a skill fica ativa sem número — melhor faltar
-   * o dado do que exibir um valor inventado.
+   *  - a mensagem sintética seguinte, só com o corpo, de onde sai a ESTIMATIVA de tokens.
+   * O corpo NÃO tem um cabeçalho fixo: uma skill com diretório próprio (user/plugin) abre
+   * com "Base directory for this skill: …", uma built-in vem crua. Por isso a janela é
+   * posicional — o primeiro bloco `text` depois do "Launching skill:" —, e não um prefixo.
+   * A janela fecha no próximo `assistant` (ver ingest): o corpo sempre chega antes de o
+   * modelo voltar a falar, então uma mensagem enfileirada pela UI não é lida como corpo.
    */
   private noteSkillBody(content: unknown[]): void {
     for (const b of content) {
@@ -374,7 +372,7 @@ export class StatsAggregator {
       }
       if (type !== 'text' || !this.skillAwaitingBody) continue;
       const text = (b as any).text;
-      if (typeof text !== 'string' || !text.startsWith(SKILL_BODY_PREFIX)) continue;
+      if (typeof text !== 'string' || text.length === 0) continue;
       const { name, toolUseId } = this.skillAwaitingBody;
       const tokens = Math.round(text.length / CHARS_PER_TOKEN);
       this.markSkillActive(name, 'model', tokens);
@@ -504,6 +502,9 @@ export class StatsAggregator {
         const usage = (ev as any).message?.usage as Usage | undefined;
         this.setModel((ev as any).message?.model, false); // API id, without [1m]
         if (usage) this.applyPromptUsage(usage, true);
+        // O modelo voltou a falar: se o corpo não veio até aqui, não vem mais — fecha a
+        // janela para não medir uma mensagem posterior como se fosse o SKILL.md.
+        this.skillAwaitingBody = undefined;
         this.noteSkillToolUse((ev as any).message?.content);
         break;
       }

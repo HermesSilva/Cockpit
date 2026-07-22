@@ -4557,6 +4557,19 @@ body {
   background: var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.12));
   color: var(--vscode-foreground, #e0e0e0);
 }
+/* Selo no card do Skill: o corpo entrou no contexto agora, com o custo estimado. */
+.tool-skill-load {
+  flex: none;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--vscode-charts-blue, #3794ff);
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 16%, transparent);
+}
+
 /* Painel Skills (X2). Dois eixos: o select CONFIGURA o listing, o rótulo à direita
    OBSERVA o que já está no contexto. Cor só por token do tema (charts-*), usada para
    distinguir ORIGEM e ESTADO — nunca como enfeite. */

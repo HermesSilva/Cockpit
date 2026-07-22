@@ -60,6 +60,8 @@ export class Session {
   lastSkills?: string[];
   // Overrides de listing por skill desta aba. Vão para o CLI via --settings no spawn.
   skillOverrides: Record<string, SkillOverride> = {};
+  // `/nome` enviados antes de o init dizer quais nomes são skills.
+  private pendingSlashSkills: string[] = [];
 
   // Background tasks still running (Workflow / tool with run_in_background).
   // The turn that launches them ends (`result` clears busy), but the work goes on;
@@ -211,8 +213,24 @@ export class Session {
     const m = /^\/([A-Za-z0-9_:-]+)/.exec(text.trim());
     if (!m) return;
     const name = m[1];
-    if (!this.lastSkills?.includes(name)) return;
-    this.stats.markSkillActive(name, 'user');
+    // O init (que traz a lista de skills) só chega DEPOIS da primeira mensagem: numa aba
+    // nova ainda não sabemos se `/foo` é skill. Guarda e confirma quando o init chegar —
+    // sem isso, um /skill como primeira mensagem da aba nunca era marcado.
+    if (!this.lastSkills) {
+      this.pendingSlashSkills.push(name);
+      return;
+    }
+    if (this.lastSkills.includes(name)) this.stats.markSkillActive(name, 'user');
+  }
+
+  /** Resolve os `/nome` enviados antes de o init revelar quais são skills. */
+  private resolvePendingSlashSkills(): void {
+    if (this.pendingSlashSkills.length === 0) return;
+    const pending = this.pendingSlashSkills;
+    this.pendingSlashSkills = [];
+    for (const name of pending) {
+      if (this.lastSkills?.includes(name)) this.stats.markSkillActive(name, 'user');
+    }
   }
 
   interrupt(): void {
@@ -444,6 +462,10 @@ export class Session {
   private onCliEvent(ev: ClaudeEvent): void {
     const snap = this.stats.ingest(ev);
     this.emit({ kind: 'stats', stats: snap });
+    // Corpo de skill que acabou de entrar no contexto: vira selo no card do Skill.
+    for (const load of this.stats.takeSkillLoads()) {
+      this.emit({ kind: 'skillLoaded', toolUseId: load.toolUseId, name: load.name, tokens: load.tokens });
+    }
 
     switch (ev.type) {
       case 'system': {
@@ -482,6 +504,7 @@ export class Session {
           this.lastMcpServers = Array.isArray(s.mcp_servers) ? s.mcp_servers : undefined;
           // `skills` existe desde 2.1.x; ausente em versões antigas → segue sem o painel.
           this.lastSkills = Array.isArray(s.skills) ? s.skills.filter((x: unknown) => typeof x === 'string') : undefined;
+          this.resolvePendingSlashSkills();
           this.sessionId = s.session_id;
           if (s.session_id) {
             this.cli?.setResumeId(s.session_id); // a silent respawn continues THIS session

@@ -233,7 +233,9 @@ export class StatsAggregator {
   // tool_use_id do `Skill` → nome, para ler o tool_result correspondente.
   private skillByToolUse = new Map<string, string>();
   // Skill que já teve o "Launching skill:" e espera a mensagem com o corpo.
-  private skillAwaitingBody?: string;
+  private skillAwaitingBody?: { name: string; toolUseId: string };
+  // Cargas detectadas neste ingest, para a Session mostrar no timeline (drenado depois).
+  private skillLoads: { name: string; toolUseId: string; tokens?: number }[] = [];
   // Overrides em vigor (só para exibir na UI; quem aplica é o spawn do CLI).
   private skillOverrides: Record<string, SkillOverride> = {};
 
@@ -359,20 +361,37 @@ export class StatsAggregator {
     for (const b of content) {
       const type = (b as any)?.type;
       if (type === 'tool_result') {
-        const name = this.skillByToolUse.get((b as any).tool_use_id);
+        const toolUseId = (b as any).tool_use_id;
+        const name = this.skillByToolUse.get(toolUseId);
         if (!name) continue;
-        this.skillByToolUse.delete((b as any).tool_use_id);
+        this.skillByToolUse.delete(toolUseId);
         if (!resultText(b).startsWith(SKILL_LAUNCH_PREFIX)) continue; // "Execute skill:" não carrega nada
         this.markSkillActive(name, 'model');
-        this.skillAwaitingBody = name;
+        this.skillAwaitingBody = { name, toolUseId };
+        // Já registra a carga: o tamanho pode não vir, mas o FATO de ter carregado veio.
+        this.skillLoads.push({ name, toolUseId });
         continue;
       }
       if (type !== 'text' || !this.skillAwaitingBody) continue;
       const text = (b as any).text;
       if (typeof text !== 'string' || !text.startsWith(SKILL_BODY_PREFIX)) continue;
-      this.markSkillActive(this.skillAwaitingBody, 'model', Math.round(text.length / CHARS_PER_TOKEN));
+      const { name, toolUseId } = this.skillAwaitingBody;
+      const tokens = Math.round(text.length / CHARS_PER_TOKEN);
+      this.markSkillActive(name, 'model', tokens);
+      this.skillLoads.push({ name, toolUseId, tokens });
       this.skillAwaitingBody = undefined;
     }
+  }
+
+  /**
+   * Cargas de skill detectadas desde a última chamada (esvazia a fila). A Session usa
+   * isso para marcar no timeline o momento em que o corpo entrou no contexto.
+   */
+  takeSkillLoads(): { name: string; toolUseId: string; tokens?: number }[] {
+    if (this.skillLoads.length === 0) return [];
+    const out = this.skillLoads;
+    this.skillLoads = [];
+    return out;
   }
 
   /** Skills conhecidas (listadas + ativas), maior custo de metadados primeiro. */

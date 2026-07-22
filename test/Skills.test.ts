@@ -99,6 +99,22 @@ describe('acionamento de skill no stream', () => {
     st.ingest(toolUse);
     const snap = st.ingest(result('Execute skill: caveman'));
     expect(snap.skills).toBeUndefined();
+    expect(st.takeSkillLoads()).toEqual([]);
+  });
+
+  // A carga vira selo no card do Skill no timeline: sai já no "Launching skill:" (sem
+  // tamanho) e de novo quando o corpo chega (com a estimativa).
+  it('publica as cargas para o timeline e esvazia a fila', () => {
+    const st = new StatsAggregator(0);
+    st.ingest(toolUse);
+    st.ingest(result('Launching skill: caveman'));
+    st.ingest(body('Base directory for this skill: C:\\x\n\n' + 'a'.repeat(400)));
+    const loads = st.takeSkillLoads();
+    expect(loads.map((l) => l.name)).toEqual(['caveman', 'caveman']);
+    expect(loads[0].toolUseId).toBe('tu1');
+    expect(loads[0].tokens).toBeUndefined(); // ainda não media
+    expect(loads[1].tokens).toBeGreaterThan(50);
+    expect(st.takeSkillLoads()).toEqual([]); // drenada
   });
 
   it('junta metadados do get_context_usage com o estado de ativação', () => {

@@ -19,6 +19,13 @@ export function fmtCompact(n: number): string {
   return String(Math.round(v));
 }
 
+// Tokens com uma casa no milhar (1928 -> "1.9k"). Diferente de fmtCompact, que arredonda
+// para "2k": aqui a casa decimal importa para comparar o custo entre skills. "—" = sem valor.
+export function fmtTk(n?: number): string {
+  if (n == null) return '—';
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 // Relative reset ("in 7 min" / "in 5 days"), locale-sensitive. undefined when past/absent.
 export function fmtReset(iso: string | undefined, locale: string): string | undefined {
   if (!iso) return undefined;

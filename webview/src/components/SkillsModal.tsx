@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Translator } from '../i18n';
 import type { SkillState, SkillOverride } from '../../../shared/protocol';
 import { Portal } from './Portal';
+import { fmtTk } from '../util/format';
 
 interface Props {
   t: Translator;
@@ -277,8 +278,3 @@ function SkillRow({
   );
 }
 
-/** 1928 → "1.9k". Sem valor conhecido → "—". */
-function fmtTk(n?: number): string {
-  if (n == null) return '—';
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}

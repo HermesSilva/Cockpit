@@ -490,6 +490,9 @@ type HostMsg =
   | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operation in progress
   | { kind: 'pluginsError'; message: string } // a plugin action failed
   | { kind: 'skillsBusy'; busy: boolean } // leitura do get_context_usage em curso
+  // Corpo de um SKILL.md entrou no contexto: marca isso no card do Skill no timeline.
+  // `tokens` é ESTIMATIVA (tamanho da mensagem injetada); ausente = engine não informou.
+  | { kind: 'skillLoaded'; toolUseId: string; name: string; tokens?: number }
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
   | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }

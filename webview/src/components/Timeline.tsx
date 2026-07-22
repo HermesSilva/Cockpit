@@ -13,6 +13,7 @@ import { Tooltip, type TooltipRow } from './Tooltip';
 import { languageFromPath, stripLineNumbers, richHighlight } from '../util/highlight';
 import {
   fmtCompact,
+  fmtTk,
   fmtBytes,
   fmtMs,
   fmtUsdShort,
@@ -653,6 +654,13 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
             }}
           >
             {basename(filePath)}
+          </span>
+        )}
+        {/* Skill cujo corpo entrou no contexto: o custo fica visível no momento em que
+            acontece, não só no painel. Sem tamanho informado, mostra só o selo. */}
+        {item.skillLoaded && (
+          <span className="tool-skill-load" title={t('skills.legend.active')}>
+            ⚡ {item.skillTokens != null ? t('skills.activeTokens', fmtTk(item.skillTokens)) : t('skills.obs.active')}
           </span>
         )}
         {last.ts && <span className="tool-time">{fmtStamp(last.ts)}</span>}

@@ -40,6 +40,10 @@ export interface ToolItem {
   done: boolean;
   ts?: number; // epoch ms of the tool_use
   endTs?: number; // epoch ms of the tool_result (duration = endTs - ts)
+  // Tool `Skill` cujo corpo entrou no contexto. `skillTokens` é ESTIMATIVA (tamanho da
+  // mensagem que o engine injetou); ausente = carregou, mas sem tamanho informado.
+  skillLoaded?: string;
+  skillTokens?: number;
 }
 
 export type TimelineItem = UserItem | AssistantItem | ToolItem;

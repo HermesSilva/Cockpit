@@ -4,6 +4,20 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.224] - 2026-07-22
+
+### Added
+- **Skill load is now visible in the timeline.** When a skill's `SKILL.md` body enters the
+  context, its `Skill` card gets a `⚡ +N tk loaded (est.)` seal, so the cost shows up at the
+  moment it happens instead of only in the panel. The seal appears as soon as the engine
+  reports `Launching skill:` and gains the size once the injected body is measured.
+
+### Fixed
+- A `/skill-name` sent as the **first** message of a tab was never marked as loaded: the CLI
+  only reveals which names are skills in the `init` event, which arrives *after* that first
+  message. The command is now held and resolved when the list arrives (and discarded if the
+  name turns out not to be a skill).
+
 ## [1.0.223] - 2026-07-22
 
 ### Added

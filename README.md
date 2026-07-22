@@ -695,6 +695,9 @@ from VS Code theme tokens, so light, dark and high-contrast all work.
   `Execute skill: <name>`, loads **nothing** into the context and is therefore not marked.
   A skill triggered by `/name` **from the Cockpit** is marked too (we sent it), but the engine
   reports no size, so no number is shown rather than a made-up one.
+- **Visible in the timeline:** when a body enters the context, the `Skill` card gets a
+  `⚡ +N tk loaded (est.)` seal — the cost appears at the moment it happens, not only in the
+  panel.
 - **Listing control (per skill):** `On (full)` · `Name only` · `Only /command` · `Off`. This maps
   to the CLI's `skillOverrides` and the saving is real — measured on a 14-skill setup, turning
   three of them down took the listing from **1928 → 1027 tokens**. Overrides are stored **per

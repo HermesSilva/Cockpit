@@ -188,4 +188,76 @@ describe('Session — overrides de skills', () => {
     s.send('/clear');
     expect(s.snapshot().skills!.some((x) => x.name === 'clear')).toBe(false);
   });
+
+  // O init só chega DEPOIS da primeira mensagem: numa aba nova ainda não sabemos quais
+  // nomes são skills. O /nome fica pendente e é confirmado quando a lista chega.
+  it('/nome enviado ANTES do init é resolvido quando o init chega', () => {
+    const s = makeSession();
+    s.send('/caveman full'); // primeira mensagem da aba: lista ainda desconhecida
+    expect(s.snapshot().skills).toBeUndefined();
+
+    spawns[0].handlers.get('event')![0]({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'sess-A',
+      slash_commands: ['caveman'],
+      skills: ['caveman'],
+    });
+
+    const sk = s.snapshot().skills!.find((x) => x.name === 'caveman')!;
+    expect(sk.active).toBe(true);
+    expect(sk.invokedBy).toBe('user');
+  });
+
+  it('/nome pendente que não era skill é descartado', () => {
+    const s = makeSession();
+    s.send('/naoehskill');
+    spawns[0].handlers.get('event')![0]({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'sess-A',
+      slash_commands: ['naoehskill'],
+      skills: ['caveman'],
+    });
+    expect(s.snapshot().skills).toBeUndefined();
+  });
+});
+
+// Sequência REAL capturada com os argumentos que o Cockpit usa (--include-partial-messages
+// + --permission-prompt-tool stdio), acionando uma skill de projeto.
+describe('Session — carga de skill ponta a ponta (eventos reais)', () => {
+  beforeEach(() => {
+    spawns.length = 0;
+    extraPrompt = undefined;
+  });
+
+  it('marca loaded a partir do stream que o CLI realmente emite', () => {
+    const s = makeSession();
+    s.send('aciona a skill');
+    const fire = (ev: unknown) => spawns[0].handlers.get('event')![0](ev);
+    fire({ type: 'system', subtype: 'init', session_id: 'sess-A', slash_commands: [], skills: ['tootega-convencoes'] });
+    fire({
+      type: 'stream_event',
+      event: { type: 'content_block_start', content_block: { type: 'tool_use', name: 'Skill' } },
+    });
+    fire({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'Skill', input: { skill: 'tootega-convencoes' } }],
+      },
+    });
+    fire({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'Launching skill: tootega-convencoes' }] },
+    });
+    fire({
+      type: 'user',
+      message: { content: [{ type: 'text', text: 'Base directory for this skill: C:\\x\n\n' + 'y'.repeat(800) }] },
+    });
+
+    const sk = s.snapshot().skills!.find((x) => x.name === 'tootega-convencoes')!;
+    expect(sk.active).toBe(true);
+    expect(sk.invokedBy).toBe('model');
+    expect(sk.activeTokens).toBeGreaterThan(150);
+  });
 });

@@ -261,6 +261,15 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       const next = { ...tab, items: [...tab.items, item] };
       return todos ? { ...next, todos } : next;
     }
+    // Corpo do SKILL.md entrou no contexto: sela o card do Skill que o disparou.
+    case 'skillLoaded': {
+      const items = tab.items.map((i) =>
+        i.kind === 'tool' && i.id === msg.toolUseId
+          ? { ...i, skillLoaded: msg.name, skillTokens: msg.tokens ?? i.skillTokens }
+          : i,
+      );
+      return { ...tab, items };
+    }
     case 'toolResult': {
       const owner = tab.items.find(
         (i): i is ToolItem => i.kind === 'tool' && i.id === msg.toolUseId,

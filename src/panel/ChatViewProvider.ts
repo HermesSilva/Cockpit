@@ -47,7 +47,7 @@ import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/S
 import { fetchAccountUsage } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
-import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta } from '../../shared/protocol';
+import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta, SkillOverride } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
@@ -339,6 +339,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const id = `t${++this.tabSeq}`;
     const s = new Session(this.hooksFor(id));
     if (this.lastLimits) s.applyLimits(this.lastLimits, this.lastLimitsSource);
+    this.applySkillOverrides(s);
     this.sessions.set(id, s);
     this.tabMeta.set(id, { title: '', status: 'idle' });
     this.tabOrder.push(id);
@@ -1195,6 +1196,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'history', items }, tab);
     this.postTabs();
     log(`Resuming session ${sessionId} (${items.length} items) in ${tab}`);
+  }
+
+  // ---- Skills ----
+
+  /**
+   * Overrides de listing de skills: valem para TODAS as abas (o custo do listing é o
+   * mesmo em qualquer sessão) e ficam no globalState — o ~/.claude/settings.json do
+   * usuário não é tocado; quem aplica é o `--settings` no spawn do CLI.
+   */
+  private applySkillOverrides(s: Session): void {
+    const map = this.memory.get<Record<string, SkillOverride>>('skillOverrides', {});
+    s.skillOverrides = { ...map };
+    s.stats.setSkillOverrides(s.skillOverrides);
+  }
+
+  /** Muda o override de uma skill e reinicia os CLIs para o novo listing valer. */
+  private setSkillOverride(name: string, value: SkillOverride): void {
+    const map = this.memory.get<Record<string, SkillOverride>>('skillOverrides', {});
+    if (value === 'on') delete map[name];
+    else map[name] = value;
+    void this.memory.update('skillOverrides', map);
+    for (const s of this.sessions.values()) s.setSkillOverride(name, value);
+  }
+
+  /** Relê os metadados de skills da sessão (control_request: sem turno, sem tokens). */
+  private async sendSkills(s: Session): Promise<void> {
+    this.post({ kind: 'skillsBusy', busy: true });
+    try {
+      await s.refreshSkills();
+    } catch (e) {
+      log(`sendSkills: ${String(e)}`);
+    } finally {
+      this.post({ kind: 'skillsBusy', busy: false });
+    }
   }
 
   /** Persists a session's model/effort (override) by sessionId, to restore later. */
@@ -2195,6 +2230,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'mcpRefresh':
         void this.sendMcp(srcSession());
+        break;
+      case 'skillsRefresh':
+        void this.sendSkills(srcSession());
+        break;
+      case 'skillOverrideSet':
+        this.setSkillOverride(m.name, m.value);
         break;
       case 'pluginAction':
         void this.runPluginAction(m.action, m.arg, m.scope);

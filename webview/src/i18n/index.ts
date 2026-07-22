@@ -4,7 +4,9 @@ import { ptBR } from './pt-br';
 
 export type LocaleId = 'en' | 'pt-BR';
 
-const catalogs: Record<LocaleId, Strings> = {
+// Catálogo parcial: chaves novas entram só em `en` e as demais localidades caem
+// no fallback abaixo (`table[key] ?? en[key]`) em vez de travar o typecheck.
+const catalogs: Record<LocaleId, Partial<Strings>> = {
   en,
   'pt-BR': ptBR,
 };

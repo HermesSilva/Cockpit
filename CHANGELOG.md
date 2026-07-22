@@ -4,6 +4,25 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.220] - 2026-07-22
+
+### Added
+- **Skills panel (🎯 Skills in the Hub): what each skill costs and which ones are loaded.**
+  Per skill: source (built-in / user / plugin), **metadata tokens** (the listing cost paid on
+  every turn), and whether its `SKILL.md` body is already in the context. The numbers come from
+  the CLI control request `get_context_usage` — a **local** computation: no turn, no tokens, no
+  line in the transcript (it answers even before the first message).
+- **Per-skill listing control** — `On (full)` · `Name only` · `Only /command` · `Off`, mapped to
+  the CLI's `skillOverrides`. The saving is real: on a 14-skill setup, turning three of them
+  down took the listing from **1928 → 1027 tokens**. Overrides live in the Cockpit and are
+  passed to the CLI at spawn; **`~/.claude/settings.json` is never touched**.
+- Honest by construction: there is **no** "unload" button, because the engine offers no way to
+  remove a single skill from a live context. On a loaded skill the override still prevents
+  re-listing/re-triggering, and the panel says the body stays until a new session or `/clear`
+  (measured: listing fell by exactly the skill's metadata tokens, `Messages` unchanged).
+  Skills triggered by a hook, or by `/name` typed outside the Cockpit, are invisible to the
+  stream and are not shown. Field notes: `Docs/pesquisa/skills-transparencia.md`.
+
 ## [1.0.219] - 2026-07-22
 
 ### Fixed

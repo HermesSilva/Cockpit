@@ -42,6 +42,7 @@ interface Props {
   onUsage: () => void;
   onPlugins: () => void;
   onMcp: () => void;
+  onSkills: () => void;
   onCredentials: () => void;
   onLogin: () => void;
   onLogout: () => void;
@@ -85,6 +86,7 @@ export function HubView({
   onUsage,
   onPlugins,
   onMcp,
+  onSkills,
   onCredentials,
   onLogin,
   onLogout,
@@ -193,6 +195,11 @@ export function HubView({
         <Tooltip title={t('mcp.title')} text={t('mcp.desc')}>
           <button type="button" className="ctx-link" onClick={onMcp}>
             🔌 {t('mcp.title')}
+          </button>
+        </Tooltip>
+        <Tooltip title={t('skills.title')} text={t('skills.desc')}>
+          <button type="button" className="ctx-link" onClick={onSkills}>
+            🎯 {t('skills.title')}
           </button>
         </Tooltip>
         <Tooltip title={t('creds.title')} text={t('creds.open')}>

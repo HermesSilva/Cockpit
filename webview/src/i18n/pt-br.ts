@@ -1,7 +1,7 @@
 // Portuguese (Brazil).
 import type { Strings } from './en';
 
-export const ptBR: Strings = {
+export const ptBR: Partial<Strings> = {
   'app.title': 'Tootega Cockpit',
   'about.cliUpToDate': 'Claude CLI está atualizado.',
   'about.cliReleaseNotes': 'Ver notas da versão no GitHub',

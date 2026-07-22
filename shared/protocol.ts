@@ -113,6 +113,36 @@ export interface StatsSnapshot {
   // Source of the limits: statusline (real complete %) > stream (rate_limit_event:
   // status/reset always, % only close to the limit) > estimate (tokens÷local budget).
   limitsSource?: 'statusline' | 'stream' | 'estimate';
+  // --- Skills (transparência) ---
+  skills?: SkillState[];
+  skillsListingTokens?: number; // categoria "Skills" do get_context_usage (só metadados)
+  skillsTotal?: number; // totalSkills (antes dos overrides)
+  skillsListed?: number; // includedSkills (o que realmente entrou no listing)
+}
+
+// --- Skills ---
+
+/**
+ * Estados aceitos pelo `skillOverrides` do CLI. Ausente = 'on'.
+ *  - 'name-only': lista a skill sem a descrição (custo cai para ~4 tokens).
+ *  - 'user-invocable-only': some do listing do modelo, mas /nome continua funcionando.
+ *  - 'off': some dos dois.
+ */
+export type SkillOverride = 'on' | 'name-only' | 'user-invocable-only' | 'off';
+
+/** Estado de UMA skill: custo de metadados + se o corpo já foi carregado no contexto. */
+export interface SkillState {
+  name: string;
+  source?: string; // 'built-in' | 'userSettings' | 'plugin'… (skillFrontmatter.source)
+  metaTokens?: number; // custo do listing desta skill (get_context_usage)
+  listed: boolean; // apareceu no listing da última leitura
+  override?: SkillOverride; // ausente = 'on'
+  // Corpo do SKILL.md injetado nesta sessão. O CLI NÃO emite evento próprio: isso vem
+  // do tool_use `Skill` (invocação pelo modelo) ou de um /nome enviado pelo Cockpit.
+  active?: boolean;
+  activeTokens?: number; // ESTIMATIVA (chars/4). Ausente quando invocada por /nome.
+  activatedAt?: number;
+  invokedBy?: 'model' | 'user';
 }
 
 // --- Plugins (modal "Plugins") ---
@@ -459,6 +489,7 @@ type HostMsg =
   | { kind: 'pluginsData'; data: PluginsData } // lista de plugins/marketplaces (modal)
   | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operation in progress
   | { kind: 'pluginsError'; message: string } // a plugin action failed
+  | { kind: 'skillsBusy'; busy: boolean } // leitura do get_context_usage em curso
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
   | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }
@@ -563,6 +594,10 @@ export type WebviewToHost =
   | { kind: 'voiceCorrect'; text: string } // ditado: corrige o texto via Haiku (one-shot)
   | { kind: 'pluginsRefresh'; force?: boolean } // modal Plugins: (re)carrega; force = re-valida URLs via Haiku
   | { kind: 'mcpRefresh' } // modal MCP: (re)carrega init + `claude mcp list`
+  // Painel Skills: relê o get_context_usage (control_request, sem gastar turno).
+  | { kind: 'skillsRefresh' }
+  // Painel Skills: muda o override de UMA skill (aplica no próximo spawn do CLI).
+  | { kind: 'skillOverrideSet'; name: string; value: SkillOverride }
   | {
       kind: 'pluginAction';
       action: 'install' | 'uninstall' | 'enable' | 'disable' | 'update' | 'marketAdd' | 'marketRemove';

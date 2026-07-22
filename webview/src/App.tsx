@@ -26,6 +26,7 @@ import { HubView } from './components/HubView';
 import { UsageModal } from './components/UsageModal';
 import { PluginsModal } from './components/PluginsModal';
 import { McpModal } from './components/McpModal';
+import { SkillsModal } from './components/SkillsModal';
 import { VoiceDictModal } from './components/VoiceDictModal';
 import { CredentialsModal } from './components/CredentialsModal';
 import { PermissionModal } from './components/PermissionModal';
@@ -54,6 +55,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [showMcp, setShowMcp] = useState(false);
   const [mcp, setMcp] = useState<McpData | null>(null);
   const [mcpBusy, setMcpBusy] = useState(false);
+  const [showSkills, setShowSkills] = useState(false);
+  const [skillsBusy, setSkillsBusy] = useState(false);
   const [showVoiceDict, setShowVoiceDict] = useState(false);
   const [voiceDict, setVoiceDict] = useState<VoiceDictData | null>(null);
   // Credential vault (TOTP 2FA).
@@ -125,6 +128,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       if (data?.kind === 'pluginsError') setPluginsError(data.message);
       if (data?.kind === 'mcpData') setMcp(data.data);
       if (data?.kind === 'mcpBusy') setMcpBusy(data.busy);
+      if (data?.kind === 'skillsBusy') setSkillsBusy(data.busy);
       if (data?.kind === 'credsData') {
         setCredsData({ enrolled: data.enrolled, items: data.items });
         setCredsSetup(null); // fresh data: ends any enrollment in progress
@@ -205,6 +209,10 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     setMcp(null); // hot state: re-checks the servers' health on every open
     setShowMcp(true);
     send({ kind: 'mcpRefresh' });
+  };
+  const onSkills = () => {
+    setShowSkills(true);
+    send({ kind: 'skillsRefresh' }); // relê o get_context_usage ao abrir
   };
   const onVoiceDict = () => {
     setVoiceDict(null); // shows loading until the host answers
@@ -350,6 +358,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onUsage={onUsage}
           onPlugins={onPlugins}
           onMcp={onMcp}
+          onSkills={onSkills}
           onCredentials={onCredentials}
           onLogin={() => send({ kind: 'loginCli' })}
           onLogout={() => send({ kind: 'logoutCli' })}
@@ -422,6 +431,19 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             busy={mcpBusy}
             onRefresh={() => send({ kind: 'mcpRefresh' })}
             onClose={() => setShowMcp(false)}
+          />
+        )}
+        {showSkills && (
+          <SkillsModal
+            t={t}
+            skills={tab?.stats?.skills}
+            listingTokens={tab?.stats?.skillsListingTokens}
+            total={tab?.stats?.skillsTotal}
+            listed={tab?.stats?.skillsListed}
+            busy={skillsBusy}
+            onRefresh={() => send({ kind: 'skillsRefresh' })}
+            onOverride={(name, value) => send({ kind: 'skillOverrideSet', name, value })}
+            onClose={() => setShowSkills(false)}
           />
         )}
         {credsModalEl}

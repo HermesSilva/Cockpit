@@ -21,6 +21,9 @@ export interface CliOptions {
   // Short language code (pt, en…) for the AskUserQuestion questions. When
   // set, it injects an append-system-prompt that forces the language of the QUESTIONS only.
   askLanguage?: string;
+  // Overrides de listing de skills (--settings JSON). Vale só para ESTE processo:
+  // o ~/.claude/settings.json do usuário fica intocado.
+  skillOverrides?: Record<string, string>;
 }
 
 // Short BCP47 code -> language name for the prompt instruction.
@@ -52,6 +55,10 @@ export class CliProcessManager extends EventEmitter {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private parser = new StreamParser();
   private reqSeq = 0;
+  // control_requests NOSSOS aguardando resposta (request_id → resolve).
+  private pendingControl = new Map<string, (payload: unknown) => void>();
+  // Arquivo temporário de settings do processo atual (removido no stop()).
+  private settingsFile?: string;
 
   constructor(private opts: CliOptions) {
     super();
@@ -139,6 +146,11 @@ export class CliProcessManager extends EventEmitter {
     if (this.opts.askLanguage) {
       args.push('--append-system-prompt', askLanguagePrompt(this.opts.askLanguage));
     }
+    // `--settings` é MERGE (não substitui as settings do usuário) e aceita caminho OU
+    // string JSON — mas JSON inline não sobrevive ao shell do Windows (aspas/chaves são
+    // mastigadas por cmd.exe e o CLI sobe sem os overrides). Gravamos um arquivo temporário.
+    const settingsFile = this.writeSettingsFile();
+    if (settingsFile) args.push('--settings', settingsFile);
 
     const useShell = process.platform === 'win32';
     // Auto mode (the CLI classifier decides allow/deny) is opt-in on Bedrock/Vertex/
@@ -164,7 +176,10 @@ export class CliProcessManager extends EventEmitter {
     proc.stderr.setEncoding('utf8');
 
     proc.stdout.on('data', (chunk: string) => {
-      for (const ev of this.parser.push(chunk)) this.emit('event', ev);
+      for (const ev of this.parser.push(chunk)) {
+        this.settleControl(ev);
+        this.emit('event', ev);
+      }
     });
     proc.stderr.on('data', (text: string) => this.emit('stderr', text));
     proc.on('close', (code) => {
@@ -207,6 +222,58 @@ export class CliProcessManager extends EventEmitter {
     });
   }
 
+  /**
+   * Grava as settings extras deste processo (só os overrides de skills) num arquivo
+   * temporário e devolve o caminho. Sem overrides, ou se a escrita falhar, devolve
+   * undefined — o CLI sobe normalmente, sem o `--settings`.
+   */
+  private writeSettingsFile(): string | undefined {
+    const overrides = this.opts.skillOverrides;
+    if (!overrides || Object.keys(overrides).length === 0) return undefined;
+    const file = path.join(os.tmpdir(), `cockpit-settings-${process.pid}-${++this.reqSeq}.json`);
+    try {
+      fs.writeFileSync(file, JSON.stringify({ skillOverrides: overrides }), 'utf8');
+      this.settingsFile = file;
+      return file;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Envia um control_request nosso e espera a resposta correlacionada por `request_id`.
+   * Usado pelo `get_context_usage` (cálculo local do engine: sem turno, sem tokens).
+   * Resolve `undefined` no timeout ou quando o CLI responde erro — nunca rejeita, para
+   * que uma versão de CLI sem esse subtype não derrube nada.
+   */
+  requestControl(subtype: string, timeoutMs = 5000): Promise<unknown> {
+    const id = `${subtype}_${++this.reqSeq}`;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingControl.delete(id);
+        resolve(undefined);
+      }, timeoutMs);
+      timer.unref?.();
+      this.pendingControl.set(id, (payload) => {
+        clearTimeout(timer);
+        resolve(payload);
+      });
+      this.writeLine({ type: 'control_request', request_id: id, request: { subtype } });
+    });
+  }
+
+  /** Resolve o control_request nosso que estava esperando por este `request_id`. */
+  private settleControl(ev: ClaudeEvent): void {
+    if ((ev as any).type !== 'control_response') return;
+    const resp = (ev as any).response;
+    const id = resp?.request_id;
+    if (typeof id !== 'string') return;
+    const done = this.pendingControl.get(id);
+    if (!done) return;
+    this.pendingControl.delete(id);
+    done(resp?.subtype === 'success' ? resp.response : undefined);
+  }
+
   private writeLine(obj: unknown): void {
     if (!this.proc) this.start();
     this.proc?.stdin.write(JSON.stringify(obj) + '\n');
@@ -231,6 +298,17 @@ export class CliProcessManager extends EventEmitter {
     if (!this.proc) return;
     const proc = this.proc;
     this.proc = null;
+    // Ninguém mais vai responder: libera quem espera em vez de deixar pendurado até o timeout.
+    for (const done of this.pendingControl.values()) done(undefined);
+    this.pendingControl.clear();
+    if (this.settingsFile) {
+      try {
+        fs.unlinkSync(this.settingsFile);
+      } catch {
+        /* arquivo temporário: some no boot seguinte */
+      }
+      this.settingsFile = undefined;
+    }
     try {
       proc.stdin.end();
     } catch {

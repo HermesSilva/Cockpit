@@ -14,7 +14,8 @@ import type {
   ToolUseBlock,
   ToolResultBlock,
 } from '../../shared/events';
-import type { HostToWebview, LimitWindow } from '../../shared/protocol';
+import { parseContextUsage } from '../cli/ContextUsage';
+import type { HostToWebview, LimitWindow, SkillOverride } from '../../shared/protocol';
 
 export interface SessionHooks {
   emit: (msg: HostToWebview) => void;
@@ -50,6 +51,11 @@ export class Session {
   // it says which tools each server exposes — something `claude mcp list` doesn't report.
   lastTools?: string[];
   lastMcpServers?: { name: string; status: string }[];
+  // Skills anunciadas pelo `system/init` (campo `skills`). Serve para reconhecer
+  // um /nome digitado no composer como acionamento de skill.
+  lastSkills?: string[];
+  // Overrides de listing por skill desta aba. Vão para o CLI via --settings no spawn.
+  skillOverrides: Record<string, SkillOverride> = {};
 
   // Background tasks still running (Workflow / tool with run_in_background).
   // The turn that launches them ends (`result` clears busy), but the work goes on;
@@ -136,6 +142,10 @@ export class Session {
       // (which would duplicate the context). clearConversation() clears both for a new conversation.
       resumeSessionId: this.resumeId ?? this.sessionId,
       askLanguage: this.hooks.askLanguage(),
+      // 'on' é o default do CLI: mandar não muda nada e só suja o --settings.
+      skillOverrides: Object.fromEntries(
+        Object.entries(this.skillOverrides).filter(([, v]) => v !== 'on'),
+      ),
     });
     this.cli.on('event', (e: ClaudeEvent) => this.onCliEvent(e));
     this.cli.on('stderr', (t: string) => {
@@ -183,7 +193,21 @@ export class Session {
         `hit=${(s.cacheHitRate * 100).toFixed(0)}%${s.lastTurnHitRate != null ? ` (últ. ${(s.lastTurnHitRate * 100).toFixed(0)}%)` : ''} read=${s.cacheReadTokens} write=${s.cacheCreateTokens} resets=${s.cacheResetCount ?? 0} | ` +
         `custo=$${s.sessionCostUsd.toFixed(4)}${s.costIsEstimate ? '~' : ''} turnos=${s.turnCount ?? 0}`,
     );
+    this.noteSlashSkill(text);
     this.cli!.sendUserMessage(text, images);
+  }
+
+  /**
+   * `/nome` de uma skill conhecida = acionamento pelo USUÁRIO. Provado na Fase 1: esse
+   * caminho NÃO emite nada no stream (nem tool_use, nem system) — o corpo é injetado em
+   * silêncio. Como fomos nós que enviamos, marcamos aqui. Sem tokens: o engine não informa.
+   */
+  private noteSlashSkill(text: string): void {
+    const m = /^\/([A-Za-z0-9_:-]+)/.exec(text.trim());
+    if (!m) return;
+    const name = m[1];
+    if (!this.lastSkills?.includes(name)) return;
+    this.stats.markSkillActive(name, 'user');
   }
 
   interrupt(): void {
@@ -278,6 +302,37 @@ export class Session {
 
   snapshot() {
     return this.stats.snapshot();
+  }
+
+  // ---- Skills ----
+
+  /**
+   * Relê os metadados de skills via `get_context_usage` (control_request). É cálculo
+   * local do engine: NÃO cria turno, não gasta token e não entra no transcript. Sem CLI
+   * vivo não faz nada — spawnar só para ler inflaria a conta com um processo à toa.
+   */
+  async refreshSkills(): Promise<void> {
+    if (!this.cli?.isRunning()) return;
+    const info = parseContextUsage(await this.cli.requestControl('get_context_usage'));
+    if (!info) return; // CLI sem o subtype / payload em formato novo: mantém o que já havia
+    this.stats.applyContextUsage(info);
+    this.emit({ kind: 'stats', stats: this.stats.snapshot() });
+  }
+
+  /**
+   * Define o override de listing de uma skill. O efeito é real (o listing encolhe), mas
+   * só vale a partir do próximo spawn: para o CLI, isso é settings de inicialização.
+   * O stop() faz o respawn silencioso com --resume no próximo send — o mesmo caminho
+   * usado na troca de modelo/effort. O contexto já carregado é preservado: um corpo de
+   * skill que já entrou NÃO sai daqui.
+   */
+  setSkillOverride(name: string, value: SkillOverride): void {
+    if (value === 'on') delete this.skillOverrides[name];
+    else this.skillOverrides[name] = value;
+    this.stats.setSkillOverrides(this.skillOverrides);
+    this.stop();
+    this.emit({ kind: 'stats', stats: this.stats.snapshot() });
+    dlog('session', `skillOverride ${name}=${value}`);
   }
 
   /** Re-sends this session's timeline/compactions (when switching/opening the tab). */
@@ -420,6 +475,8 @@ export class Session {
           // not only at the instant the event goes by.
           this.lastTools = Array.isArray(s.tools) ? s.tools : undefined;
           this.lastMcpServers = Array.isArray(s.mcp_servers) ? s.mcp_servers : undefined;
+          // `skills` existe desde 2.1.x; ausente em versões antigas → segue sem o painel.
+          this.lastSkills = Array.isArray(s.skills) ? s.skills.filter((x: unknown) => typeof x === 'string') : undefined;
           this.sessionId = s.session_id;
           if (s.session_id) {
             this.cli?.setResumeId(s.session_id); // a silent respawn continues THIS session

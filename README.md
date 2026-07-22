@@ -116,7 +116,8 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Plugins manager + marketplaces | ✅ | ✅ | browse/install/enable/disable/update |
 | MCP servers manage (`/mcp`) | 🟡 | ✅ | both forward to the CLI |
 | Built-in IDE MCP server (getDiagnostics, Jupyter execute) | ❌ | ✅ | official runs a local `ide` MCP |
-| Hooks / skills / subagents UI | 🟡 | ✅ | Cockpit forwards `/hooks` etc.; no dedicated UI |
+| **Skills: cost per skill + what is loaded** | ✅ | ❌ | Cockpit reads `get_context_usage` (no turn, no tokens); see [Skills](#skills) |
+| Hooks / subagents UI | 🟡 | ✅ | Cockpit forwards `/hooks` etc.; no dedicated UI |
 | **UTF-8 fix for PowerShell output (Windows)** | ✅ | ❌ | one-click `PreToolUse` hook; see [Accented characters in PowerShell output](#accented-characters-in-powershell-output-windows) |
 | Chrome browser automation (`@browser`) | ❌ | ✅ | official only |
 | Git worktrees (parallel branches) | ❌ | ✅ | official `--worktree` |
@@ -240,6 +241,7 @@ terminal mode.
 - [Cockpit-exclusive features](#cockpit-exclusive-features)
 - [Models, effort, and sessions](#models-effort-and-sessions)
 - [Plugins](#plugins)
+- [Skills](#skills)
 - [Timeline verbosity](#timeline-verbosity)
 - [Voice dictation](#voice-dictation)
 - [Composer attachments](#composer-attachments)
@@ -556,7 +558,7 @@ automatically resumes the most recent session for that directory.
 |---|---|---|
 | Slash commands (built-in + custom) with autocomplete | ✅/🟡 | Curated catalog (context, session, config, tools, account, info); the CLI exposes only names via `sessionInit`, descriptions are curated |
 | **Plugins manager** (browse / install / remove / enable / disable / update + marketplaces) | ✅ | 🧩 **Plugins** in the Hub — see [Plugins](#plugins) |
-| Skills: list / trigger | 🟡 | Via slash commands when exposed |
+| **Skills: listing cost, loaded state, per-skill listing control** | ✅ | 🎯 **Skills** in the Hub — see [Skills](#skills) |
 | Custom subagents: list / select | ⏳ | — |
 | **MCP servers: health / tools / pending approval** | ✅ | 🔌 **MCP** in the Hub: a card per server with its live status and the tools it exposes; `⏸ Pending approval` (unapproved `.mcp.json`) is surfaced. Connecting/approving is still done in the CLI (`/mcp`) |
 | Hooks: view configured ones | 🟡 | `/hooks` forwarded to the CLI |
@@ -655,6 +657,42 @@ only surfaces it:
   precisely from local components; URL + kind for the rest are resolved once by the internal
   AI helper (Haiku) and **cached** in `~/.claude/tootega/plugin-urls.json` (**Refresh** can
   force re-validation). Best-effort — failure keeps the derived values.
+
+---
+
+## Skills
+
+Skills are cheap until they aren't: every skill the CLI knows keeps its **name + description**
+in the context of every turn, and a skill that is actually *triggered* injects its whole
+`SKILL.md` body. The 🎯 **Skills** entry in the Hub
+([`SkillsModal`](webview/src/components/SkillsModal.tsx)) makes both visible.
+
+- **Where the numbers come from:** the control-protocol request `get_context_usage`
+  ([`ContextUsage.ts`](src/cli/ContextUsage.ts)). It is a **local** computation in the engine —
+  it does **not** create a turn, spend tokens, or add a line to the transcript. It answers even
+  before the first message. Per skill it returns the source (built-in / user / plugin) and the
+  **metadata tokens**; the panel also shows the listing total.
+- **Loaded vs. light:** the CLI emits no dedicated event when a skill is triggered. A skill
+  called by the model shows up as a `Skill` tool call whose result is `Launching skill: <name>`,
+  followed by a synthetic message carrying the body — that is where the **estimated** body size
+  comes from (~4 chars/token, labelled as an estimate). The other engine path,
+  `Execute skill: <name>`, loads **nothing** into the context and is therefore not marked.
+  A skill triggered by `/name` **from the Cockpit** is marked too (we sent it), but the engine
+  reports no size, so no number is shown rather than a made-up one.
+- **Listing control (per skill):** `On (full)` · `Name only` · `Only /command` · `Off`. This maps
+  to the CLI's `skillOverrides` and the saving is real — measured on a 14-skill setup, turning
+  three of them down took the listing from **1928 → 1027 tokens**. Overrides are stored by the
+  Cockpit and passed to the CLI at spawn time; **your `~/.claude/settings.json` is never
+  touched**, and the CLI outside the Cockpit is unaffected.
+- **What the panel will not pretend:** there is **no way to unload a single skill** from a live
+  context — the engine offers none. On an already-loaded skill the override still stops it from
+  being listed and re-triggered, and the panel says plainly that the body stays until a new
+  session or `/clear`. Measured on the same session: listing dropped by exactly the skill's
+  metadata tokens while `Messages` stayed unchanged.
+- Skills triggered by a hook, or by `/name` typed outside the Cockpit, are invisible to us and
+  are not shown.
+
+Field notes with the raw captures: [`Docs/pesquisa/skills-transparencia.md`](Docs/pesquisa/skills-transparencia.md).
 
 ---
 

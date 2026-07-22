@@ -9,7 +9,10 @@ import type {
   TimelineSample,
   CompactionEvent,
   DenialEvent,
+  SkillState,
+  SkillOverride,
 } from '../../shared/protocol';
+import type { ContextUsageInfo } from '../cli/ContextUsage';
 import { STATS_VERSION, capTimeline, type PersistedStats } from './StatsStore';
 import { dlog } from '../util/logger';
 
@@ -30,6 +33,18 @@ const DENIAL_CAP = 50;
 const DENIAL_REASON_CAP = 200;
 // The reason is a UI label, not a log: truncated before it becomes a paragraph.
 const REASON_MAX = 300;
+// Prefixo da mensagem `user` sintética que o CLI injeta com o corpo do SKILL.md logo
+// depois do tool_result do `Skill`. É o único vestígio do corpo no stream — daí sai a
+// ESTIMATIVA de tokens da skill ativa (o CLI não atribui esses tokens por skill).
+const SKILL_BODY_PREFIX = 'Base directory for this skill:';
+// tool_result do `Skill` quando o CLI de fato CARREGA o SKILL.md no contexto. Existe um
+// segundo caminho ("Execute skill: <nome>", usado por skills built-in do tipo execute) que
+// NÃO injeta corpo nenhum — nesse caso nada entra no contexto e nada é marcado.
+const SKILL_LAUNCH_PREFIX = 'Launching skill:';
+// Teto do mapa tool_use_id → skill (sessão longa não deve crescer sem limite).
+const SKILL_TOOLUSE_CAP = 200;
+// tool_result em texto: 4 chars ≈ 1 token (mesma aproximação do UsageAggregator).
+const CHARS_PER_TOKEN = 4;
 
 // Prices per 1M tokens (USD). An estimate — labelled as such in the UI.
 interface Price {
@@ -127,6 +142,18 @@ function toolErrorText(content: unknown): string {
   return raw.length > REASON_MAX ? `${raw.slice(0, REASON_MAX - 1)}…` : raw;
 }
 
+/** Texto de um tool_result (string ou blocos), sem truncar — usado só para prefixos. */
+function resultText(block: unknown): string {
+  const content = (block as any)?.content;
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((b) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
 export class StatsAggregator {
   private model?: string;
   private mode?: string;
@@ -191,6 +218,25 @@ export class StatsAggregator {
   private streamLimits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow } = {};
   private streamSeen = false;
 
+  // --- Skills ---
+  // Metadados do listing (get_context_usage): nome → {source, tokens}.
+  private skillMeta = new Map<string, { source?: string; tokens?: number }>();
+  private skillsListingTokens?: number;
+  private skillsTotal?: number;
+  private skillsListed?: number;
+  // Skills cujo corpo já entrou no contexto desta sessão. Não há como descarregar
+  // uma delas pelo engine: só sai com /clear ou sessão nova.
+  private skillsActive = new Map<
+    string,
+    { at: number; by: 'model' | 'user'; tokens?: number }
+  >();
+  // tool_use_id do `Skill` → nome, para ler o tool_result correspondente.
+  private skillByToolUse = new Map<string, string>();
+  // Skill que já teve o "Launching skill:" e espera a mensagem com o corpo.
+  private skillAwaitingBody?: string;
+  // Overrides em vigor (só para exibir na UI; quem aplica é o spawn do CLI).
+  private skillOverrides: Record<string, SkillOverride> = {};
+
   // configuredLimit > 0 = manual override; 0 = auto (derived from the active model).
   constructor(configuredLimit: number) {
     if (configuredLimit > 0) {
@@ -252,6 +298,111 @@ export class StatsAggregator {
   setStreamLimit(which: 'fiveHour' | 'sevenDay', win: LimitWindow) {
     this.streamLimits[which] = { ...this.streamLimits[which], ...win };
     this.streamSeen = true;
+  }
+
+  // ---- Skills ----
+
+  /** Metadados do listing vindos do `get_context_usage` (não gasta turno). */
+  applyContextUsage(info: ContextUsageInfo): void {
+    this.skillMeta.clear();
+    for (const s of info.skills) this.skillMeta.set(s.name, { source: s.source, tokens: s.tokens });
+    this.skillsListingTokens = info.listingTokens;
+    this.skillsTotal = info.totalSkills;
+    this.skillsListed = info.includedSkills;
+  }
+
+  /** Overrides em vigor nesta sessão (aplicados no spawn via --settings). */
+  setSkillOverrides(map: Record<string, SkillOverride>): void {
+    this.skillOverrides = { ...map };
+  }
+
+  /**
+   * Marca uma skill como ATIVA (corpo do SKILL.md no contexto). `tokens` só existe
+   * quando conseguimos medir o corpo injetado; numa invocação por /nome o engine não
+   * emite nada e o custo fica desconhecido — melhor omitir do que inventar.
+   */
+  markSkillActive(name: string, by: 'model' | 'user', tokens?: number): void {
+    if (!name) return;
+    const cur = this.skillsActive.get(name);
+    this.skillsActive.set(name, {
+      at: cur?.at ?? Date.now(),
+      by: cur?.by ?? by,
+      tokens: tokens ?? cur?.tokens,
+    });
+  }
+
+  /**
+   * tool_use `Skill` = o MODELO acionou uma skill. Não marca nada ainda: acionar não é
+   * o mesmo que carregar (ver SKILL_LAUNCH_PREFIX). Só guarda o id → nome para ler o
+   * tool_result correspondente.
+   */
+  private noteSkillToolUse(content: unknown): void {
+    if (!Array.isArray(content)) return;
+    for (const b of content) {
+      if (b?.type !== 'tool_use' || b.name !== 'Skill') continue;
+      const name = typeof b.input?.skill === 'string' ? b.input.skill.replace(/^\//, '') : '';
+      if (!name || typeof b.id !== 'string') continue;
+      if (this.skillByToolUse.size > SKILL_TOOLUSE_CAP) this.skillByToolUse.clear();
+      this.skillByToolUse.set(b.id, name);
+    }
+  }
+
+  /**
+   * Dois sinais na mensagem `user` que fecha o acionamento:
+   *  - tool_result "Launching skill: X" → o corpo do SKILL.md ENTROU no contexto;
+   *  - a mensagem sintética "Base directory for this skill: …" + corpo, logo em seguida,
+   *    de onde sai a ESTIMATIVA de tokens.
+   * Sem o segundo (versão de CLI diferente) a skill fica ativa sem número — melhor faltar
+   * o dado do que exibir um valor inventado.
+   */
+  private noteSkillBody(content: unknown[]): void {
+    for (const b of content) {
+      const type = (b as any)?.type;
+      if (type === 'tool_result') {
+        const name = this.skillByToolUse.get((b as any).tool_use_id);
+        if (!name) continue;
+        this.skillByToolUse.delete((b as any).tool_use_id);
+        if (!resultText(b).startsWith(SKILL_LAUNCH_PREFIX)) continue; // "Execute skill:" não carrega nada
+        this.markSkillActive(name, 'model');
+        this.skillAwaitingBody = name;
+        continue;
+      }
+      if (type !== 'text' || !this.skillAwaitingBody) continue;
+      const text = (b as any).text;
+      if (typeof text !== 'string' || !text.startsWith(SKILL_BODY_PREFIX)) continue;
+      this.markSkillActive(this.skillAwaitingBody, 'model', Math.round(text.length / CHARS_PER_TOKEN));
+      this.skillAwaitingBody = undefined;
+    }
+  }
+
+  /** Skills conhecidas (listadas + ativas), maior custo de metadados primeiro. */
+  private skillStates(): SkillState[] | undefined {
+    const names = new Set([...this.skillMeta.keys(), ...this.skillsActive.keys()]);
+    if (names.size === 0) return undefined;
+    const out: SkillState[] = [];
+    for (const name of names) {
+      const meta = this.skillMeta.get(name);
+      const act = this.skillsActive.get(name);
+      out.push({
+        name,
+        source: meta?.source,
+        metaTokens: meta?.tokens,
+        listed: this.skillMeta.has(name),
+        override: this.skillOverrides[name],
+        active: act ? true : undefined,
+        activeTokens: act?.tokens,
+        activatedAt: act?.at,
+        invokedBy: act?.by,
+      });
+    }
+    // Ativas primeiro (é o que pesa no contexto), depois por tokens de metadados.
+    return out.sort(
+      (a, b) =>
+        Number(!!b.active) - Number(!!a.active) ||
+        (b.activeTokens ?? 0) - (a.activeTokens ?? 0) ||
+        (b.metaTokens ?? 0) - (a.metaTokens ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
   }
 
   /** Records the user's permission decision (allow/deny) per tool. On
@@ -334,6 +485,7 @@ export class StatsAggregator {
         const usage = (ev as any).message?.usage as Usage | undefined;
         this.setModel((ev as any).message?.model, false); // API id, without [1m]
         if (usage) this.applyPromptUsage(usage, true);
+        this.noteSkillToolUse((ev as any).message?.content);
         break;
       }
       case 'user': {
@@ -344,6 +496,7 @@ export class StatsAggregator {
           for (const b of content) {
             if (b?.type === 'tool_result' && b.is_error) this.noteToolError(b.tool_use_id, b.content);
           }
+          this.noteSkillBody(content);
         }
         break;
       }
@@ -692,6 +845,10 @@ export class StatsAggregator {
       // statusline (real complete %) wins; otherwise stream; otherwise the estimate.
       limitsSource:
         this.limitsSource === 'real' ? 'statusline' : this.streamSeen ? 'stream' : 'estimate',
+      skills: this.skillStates(),
+      skillsListingTokens: this.skillsListingTokens,
+      skillsTotal: this.skillsTotal,
+      skillsListed: this.skillsListed,
     };
   }
 }

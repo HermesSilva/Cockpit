@@ -176,7 +176,7 @@ claude -p --output-format stream-json --input-format stream-json --verbose
 
 ## 5. Code conventions
 
-- **Language:** identifiers and code in English; comments and repository documentation in **pt-BR**.
+- **Language:** **English only** in the repository — identifiers, code, comments, documentation and commit messages. This is about the *source*; it does not affect the product, whose UI stays bilingual (see the i18n rule below).
 - **Style:** follow the neighboring file's pattern (naming, comment density, language).
 - **Do not reimplement the engine.** If you are tempted to replicate orchestration logic, stop — surface what the CLI already does.
 - **Stream parsing:** version-tolerant — unknown events are ignored gracefully and never break the UI.
@@ -204,4 +204,4 @@ claude -p --output-format stream-json --input-format stream-json --verbose
 
 ## 7. Related documents
 
-- [Docs/plano-de-execucao.md](Docs/plano-de-execucao.md) — roadmap, milestones, and detailed requirements.
+- [Docs/execution-plan.md](Docs/execution-plan.md) — roadmap, milestones, and detailed requirements.

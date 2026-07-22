@@ -1,242 +1,260 @@
 # Changelog
 
-Todas as mudanças notáveis desta extensão são documentadas aqui.
-O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
-e o projeto adota versionamento semântico.
+All notable changes to this extension are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+and the project adopts semantic versioning.
+
+## [Unreleased]
+
+### Fixed
+- **Garbled accents in PowerShell tool output (Windows).** The Cockpit runs the CLI
+  headless (stdio over pipes, **no console attached**); without a console, .NET falls
+  back to the system OEM code page (e.g. 437) instead of UTF-8, so `powershell`/`cmd`
+  write their output in a legacy encoding and the CLI, which reads it as UTF-8, shows
+  mojibake. Characters outside that code page are lost at write time, so no decoding fix
+  can recover them. New commands **Tootega: Fix accents in PowerShell output** /
+  **Remove the PowerShell UTF-8 hook** install a `PreToolUse` hook in
+  `~/.claude/settings.json` that prefixes every PowerShell tool command with the UTF-8
+  setup. It never blocks or denies a tool (any failure is a silent no-op), is idempotent,
+  changes no system setting and needs no reboot. The Bash tool (Git Bash) is already
+  UTF-8 and is untouched.
+
+### Changed
+- Repository documentation and code comments are now English-only. The bilingual
+  **pt-BR / English UI** is unaffected — it is a product requirement and stays.
 
 ## [1.0.217] - 2026-07-15
 
-> Alinhamento com a **CLI 2.1.215** (changelog 2.1.211→2.1.215). O grosso é correção
-> interna da CLI que não tocamos; o que valia surfacear, veio da telemetria OTEL.
+> Alignment with **CLI 2.1.215** (changelog 2.1.211→2.1.215). Most of it is internal CLI
+> fixes we don't touch; what was worth surfacing came from OTEL telemetry.
 
-### Adicionado
-- **Reasoning effort por run de workflow** no painel Usage. A CLI 2.1.214/215 passou a
-  anexar o atributo `effort` (low…max) às métricas `cost.usage`/`token.usage` — as duas
-  que já agregamos por run. O card do workflow agora mostra o(s) effort(s) dos agentes,
-  ordenados do menor ao maior (ex.: `deep-research · low · max`). Ausente quando o modelo
-  não suporta effort. Shape confirmado na doc oficial de monitoring da Anthropic.
+### Added
+- **Reasoning effort per workflow run** in the Usage panel. CLI 2.1.214/215 started
+  attaching the `effort` attribute (low…max) to the `cost.usage`/`token.usage` metrics —
+  the two we already aggregate per run. The workflow card now shows the agents' effort
+  level(s), ordered from lowest to highest (e.g. `deep-research · low · max`). Absent when
+  the model does not support effort. Shape confirmed in Anthropic's official monitoring
+  docs.
 
-### Melhorado
-- **Nome real do workflow** no painel (não mais `custom`). Sem `OTEL_LOG_TOOL_DETAILS=1`,
-  a CLI substitui o nome de workflows autorais por `custom` nas métricas; agora ligamos
-  esse flag no receiver local. É seguro: os detalhes extras que ele expõe vão para
-  `/v1/logs`, que **descartamos por completo** — só o nome chega às métricas, nenhum
-  conteúdo é retido.
+### Improved
+- **Real workflow name** in the panel (no longer `custom`). Without
+  `OTEL_LOG_TOOL_DETAILS=1` the CLI replaces user-authored workflow names with `custom` in
+  the metrics; we now enable that flag in the local receiver. It is safe: the extra detail
+  it exposes goes to `/v1/logs`, which we **discard entirely** — only the name reaches the
+  metrics, no content is retained.
 
-### Notas (correções da CLI que nos beneficiam sem mexer em nada)
-- Truncamento do motivo de negação do auto mode corrigido na CLI (2.1.212): o texto que
-  capturamos para o log de negações agora vem inteiro.
-- Double-counting de deltas cumulativos na telemetria corrigido na CLI (2.1.214/215): o
-  custo/tokens OTEL exibidos no Usage passam a bater com a fonte.
+### Notes (CLI fixes that benefit us with no change on our side)
+- Auto-mode denial reason truncation fixed in the CLI (2.1.212): the text we capture for
+  the denial log now arrives complete.
+- Double-counting of cumulative deltas in telemetry fixed in the CLI (2.1.214/215): the
+  OTEL cost/tokens shown in Usage now match the source.
 
 ## [1.0.216] - 2026-07-15
 
-> Adequação à **CLI 2.1.210** (changelog 2.1.208→2.1.210). O grosso das releases é
-> correção interna da CLI que não tocamos; só o painel MCP precisou de ajuste.
+> Adaptation to **CLI 2.1.210** (changelog 2.1.208→2.1.210). Most of these releases are
+> internal CLI fixes we don't touch; only the MCP panel needed adjusting.
 
-### Corrigido
-- **Painel MCP: formato do `claude mcp list` mudou.** A CLI passou a anexar o
-  transporte ao alvo dos servidores remotos (`<url> (HTTP)` / `<url> (SSE)`) e o glyph
-  de status virou `✔` (era `√`). Agora separamos o `(HTTP)`/`(SSE)` da URL — o card
-  mostra a URL limpa e um chip de transporte — e o status continua sendo casado pela
-  **palavra**, não pelo símbolo, então a troca de glyph não afeta nada.
-- **Servidor remoto sem URL** (a CLI 2.1.208 rotula "not configured"): antes o card
-  exibia um alvo falso (`(HTTP)`); agora mostra **"Não configurado (sem URL)"**.
+### Fixed
+- **MCP panel: the `claude mcp list` format changed.** The CLI started appending the
+  transport to the target of remote servers (`<url> (HTTP)` / `<url> (SSE)`) and the status
+  glyph became `✔` (was `√`). We now split the `(HTTP)`/`(SSE)` off the URL — the card
+  shows a clean URL plus a transport chip — and the status keeps being matched by **word**,
+  not by symbol, so the glyph swap changes nothing.
+- **Remote server without a URL** (CLI 2.1.208 labels it "not configured"): the card used
+  to show a bogus target (`(HTTP)`); it now shows **"Not configured (no URL)"**.
 
-> Alinhamento com a **CLI 2.1.207** (varredura do changelog oficial da CLI, da 2.1.191
-> à 2.1.207, atrás do que precisávamos implementar, melhorar ou corrigir).
+> Alignment with **CLI 2.1.207** (sweep of the official CLI changelog, from 2.1.191 to
+> 2.1.207, looking for what we needed to implement, improve or fix).
 
-### Adicionado
-- **Painel MCP (🔌 MCP no Hub).** Um card por servidor com o estado ao vivo, o comando/URL
-  e as **ferramentas que ele expõe** — colapsáveis. Funde as duas fontes da CLI, porque
-  nenhuma basta sozinha: o `system/init` da sessão diz *quais tools* cada servidor traz
-  (o `mcp list` não informa isso), e o `claude mcp list` revela o que o init nunca vê —
-  servidores de `.mcp.json` **ainda não aprovados** (`⏸ Pending approval`, CLI 2.1.196),
-  que a CLI se recusa a subir. Pendentes e falhos aparecem no topo, com a explicação do
-  que fazer. Aprovar/conectar continua sendo da CLI (`/mcp`).
-- **Aviso de login prestes a vencer** (a CLI passou a avisar na 2.1.203). O painel Usage
-  mostra a validade do login e, a menos de 7 dias, um alerta pedindo `/login` — um login
-  vencido interrompe sessões longas e tarefas em background. A validade sai do
-  `refreshTokenExpiresAt` do `~/.claude/.credentials.json` (o `auth status --json` não a
-  expõe); o `expiresAt` do accessToken **não** serve: dura horas e a CLI o renova sozinho.
-  Só leitura — nunca gravamos nem registramos credenciais.
-- **Negações feitas pela própria CLI** entram no log de auditoria (E5) com o **motivo**,
-  marcadas com o chip `auto` para não se confundirem com as que *você* negou no modal.
-  A CLI 2.1.193 passou a explicar por que o modo auto negou: o `result` lista as negações
-  do turno (`permission_denials[]`, sem motivo) e o motivo vem no `tool_result` de erro —
-  cruzamos os dois pelo `tool_use_id`.
-- **Runs de workflow no painel Usage** (telemetria OTEL, opt-in): custo e tokens **reais**
-  somados por run, reconstruídos dos atributos `workflow.run_id` / `workflow.name` que a
-  CLI 2.1.202 passou a emitir. O stream-json não expõe esse recorte.
-- **Claude Sonnet 5** no seletor de modelos e no setting `tootega.model`. É o default da
-  CLI desde a 2.1.197, com janela de 1M **nativa** — por isso entra como `claude-sonnet-5`,
-  sem a variante `[1m]`.
+### Added
+- **MCP panel (🔌 MCP in the Hub).** One card per server with its live state, the
+  command/URL and **the tools it exposes** — collapsible. It merges the CLI's two sources,
+  because neither is enough on its own: the session's `system/init` says *which tools* each
+  server contributes (`mcp list` doesn't report that), and `claude mcp list` reveals what
+  init never sees — servers from `.mcp.json` that are **not approved yet**
+  (`⏸ Pending approval`, CLI 2.1.196), which the CLI refuses to start. Pending and failed
+  ones show at the top, with an explanation of what to do. Approving/connecting is still
+  the CLI's job (`/mcp`).
+- **Warning for a login about to expire** (the CLI started warning in 2.1.203). The Usage
+  panel shows the login validity and, under 7 days, an alert asking for `/login` — an
+  expired login interrupts long sessions and background tasks. The validity comes from
+  `refreshTokenExpiresAt` in `~/.claude/.credentials.json` (`auth status --json` doesn't
+  expose it); the accessToken's `expiresAt` is **not** usable: it lasts hours and the CLI
+  renews it by itself. Read-only — we never write or log credentials.
+- **Denials made by the CLI itself** now enter the audit log (E5) with the **reason**,
+  tagged with an `auto` chip so they aren't confused with the ones *you* denied in the
+  modal. CLI 2.1.193 started explaining why auto mode denied: the `result` lists the turn's
+  denials (`permission_denials[]`, without a reason) and the reason comes in the error
+  `tool_result` — we cross-reference them by `tool_use_id`.
+- **Workflow runs in the Usage panel** (OTEL telemetry, opt-in): **real** cost and tokens
+  summed per run, reconstructed from the `workflow.run_id` / `workflow.name` attributes CLI
+  2.1.202 started emitting. stream-json doesn't expose this breakdown.
+- **Claude Sonnet 5** in the model selector and in the `tootega.model` setting. It has been
+  the CLI default since 2.1.197, with a **native** 1M window — hence it is listed as
+  `claude-sonnet-5`, without the `[1m]` variant.
 
-### Segurança
-- **Telemetria OTEL não carrega mais conteúdo de conversa.** A CLI 2.1.193 criou o evento
-  `claude_code.assistant_response` com o **texto da resposta**, e ele herda o
-  `OTEL_LOG_USER_PROMPTS` quando `OTEL_LOG_ASSISTANT_RESPONSES` não está definido — quem já
-  logava prompt passaria a logar resposta ao atualizar. O receiver local já descartava
-  `/v1/logs`; agora cravamos as duas variáveis em `0` no spawn, então o texto **nem sai** do
-  processo `claude`.
+### Security
+- **OTEL telemetry no longer carries conversation content.** CLI 2.1.193 introduced the
+  `claude_code.assistant_response` event with the **response text**, and it inherits
+  `OTEL_LOG_USER_PROMPTS` when `OTEL_LOG_ASSISTANT_RESPONSES` is unset — anyone already
+  logging prompts would start logging responses on upgrade. The local receiver already
+  discarded `/v1/logs`; we now pin both variables to `0` at spawn, so the text **never
+  leaves** the `claude` process.
 
 ## [1.0.214] - 2026-07-11
 
-### Removido
-- **DASE deixa de ter tratamento especial — vira MCP comum.** O DASE agora é um
-  servidor MCP padrão (plugin `dase-mcp`), descoberto sozinho pela CLI. Removidos: o
-  checkbox por sessão **DASE**, a tag `@DASE:`, a descoberta de endpoint por janela, a
-  geração de `--mcp-config` dedicado, o registro automático no `~/.claude.json` e os
-  settings `tootega.dase.enabled` / `dase.registerInCli` / `dase.model`. Sem perda de
-  função: as tools `dase_*` continuam disponíveis como qualquer outro MCP. Settings
-  antigos `tootega.dase.*` viram órfãos inertes (o VS Code ignora chaves desconhecidas).
+### Removed
+- **DASE loses its special handling — it becomes a plain MCP.** DASE is now a standard MCP
+  server (`dase-mcp` plugin), discovered by the CLI on its own. Removed: the per-session
+  **DASE** checkbox, the `@DASE:` tag, per-window endpoint discovery, generation of a
+  dedicated `--mcp-config`, automatic registration in `~/.claude.json`, and the
+  `tootega.dase.enabled` / `dase.registerInCli` / `dase.model` settings. No loss of
+  function: the `dase_*` tools remain available like any other MCP. Old `tootega.dase.*`
+  settings become inert orphans (VS Code ignores unknown keys).
 
 ## [1.0.212] - 2026-07-10
 
-### Melhorado
-- **Título das sessões estilo web.** O card de contexto prioriza o `ai-title`
-  gerado pela CLI (o mesmo rótulo curto que o picker do `/resume` mostra). Quando a
-  sessão ainda não tem `ai-title`, o *fallback* passa a truncar o 1º prompt do
-  usuário (1ª sentença/linha, ~60 chars + `…`) em vez de despejar o parágrafo cru —
-  a lista fica legível como no histórico da versão web. Sem gasto de tokens: só
-  reflete o que a CLI já produz.
+### Improved
+- **Web-style session titles.** The context card prefers the `ai-title` generated by the
+  CLI (the same short label the `/resume` picker shows). When a session has no `ai-title`
+  yet, the fallback now truncates the user's first prompt (first sentence/line, ~60 chars +
+  `…`) instead of dumping the raw paragraph — the list reads like the history in the web
+  version. No token spend: it only reflects what the CLI already produces.
 
 ## [1.0.211] - 2026-07-10
 
-### Corrigido
-- **DASE MCP colidia entre janelas do VS Code.** Cada janela subia o servidor MCP do
-  DASE na mesma porta fixa (`39100`) e gravava o mesmo `mcp-endpoint.json`, então a 2ª
-  janela falhava com `EADDRINUSE` e o arquivo de descoberta era sobrescrito. Agora o
-  DASE usa porta efêmera (uma por janela) e grava um discovery por janela marcado com o
-  `workspacePath`; o Cockpit casa o endpoint com a **própria janela** (normalizado —
-  case-insensitive no Windows), caindo no arquivo legado como *fallback*. Requer o DASE
-  com a mudança correspondente. `readDaseEndpoint` / `ensureDaseMcpConfig` /
-  `registerDaseInClaudeCli` passam a receber o `workspacePath`.
+### Fixed
+- **DASE MCP collided between VS Code windows.** Every window started the DASE MCP server
+  on the same fixed port (`39100`) and wrote the same `mcp-endpoint.json`, so the second
+  window failed with `EADDRINUSE` and the discovery file was overwritten. DASE now uses an
+  ephemeral port (one per window) and writes a per-window discovery file tagged with the
+  `workspacePath`; the Cockpit matches the endpoint against **its own window** (normalized —
+  case-insensitive on Windows), falling back to the legacy file. Requires DASE with the
+  corresponding change. `readDaseEndpoint` / `ensureDaseMcpConfig` / `registerDaseInClaudeCli`
+  now take the `workspacePath`.
 
 ## [1.0.208] - 2026-07-10
 
-### Corrigido
-- **Tarefa em background ficava "executando" para sempre.** O card *Running in the
-  background* e o spinner de turno (chat e Hub) nunca desligavam depois de um comando
-  lançado com `run_in_background`. O acompanhamento lia o texto `<task-notification>`
-  das mensagens `user`, mas quando a tarefa termina **com um turno em voo** a CLI
-  enfileira a notificação e ela nunca chega ao stdout como mensagem — só como evento
-  `system`. Tarefa encerrada pelo agente (`TaskStop`) também nunca notificava. O estado
-  passa a ser reconciliado contra o `background_tasks_changed` (lista completa do que
-  roda agora, emitida pelo engine), com `task_started` / `task_updated` /
-  `task_notification` como complemento; a chave agora é o `task_id` do engine.
-- Turno iniciado **pela própria CLI** para reagir à conclusão de uma tarefa em
-  background com a sessão ociosa não era contabilizado: com `busy` desligado, o `result`
-  caía no descarte "stray/replay" e seus tokens/custo sumiam das estatísticas.
+### Fixed
+- **A background task stayed "running" forever.** The *Running in the background* card and
+  the turn spinner (chat and Hub) never switched off after a command launched with
+  `run_in_background`. Tracking read the `<task-notification>` text from `user` messages,
+  but when a task finishes **with a turn in flight** the CLI queues the notification and it
+  never reaches stdout as a message — only as a `system` event. A task stopped by the agent
+  (`TaskStop`) never notified either. State is now reconciled against
+  `background_tasks_changed` (the full list of what is running now, emitted by the engine),
+  with `task_started` / `task_updated` / `task_notification` as a complement; the key is now
+  the engine's `task_id`.
+- A turn started **by the CLI itself** to react to a background task finishing while the
+  session was idle wasn't accounted for: with `busy` off, the `result` fell into the
+  "stray/replay" discard and its tokens/cost vanished from the statistics.
 
 ## [1.0.207] - 2026-07-10
 
-### Adicionado
-- O Cockpit passa a **registrar o servidor MCP do DASE na configuração de usuário
-  do Claude Code CLI** (`~/.claude.json`, escopo user) assim que detecta a extensão
-  DASE instalada e o servidor no ar — equivalente a `claude mcp add --scope user`,
-  sem o cold start da CLI. Antes, o DASE só era visível às abas do Cockpit com o
-  toggle ligado (via `--mcp-config`); agora as tools `dase_*` valem para qualquer
-  sessão `claude`, inclusive no terminal e em outros workspaces. A entrada é
-  reescrita quando o servidor do DASE reinicia com um endpoint novo. A gravação é
-  atômica, preserva as demais chaves e os outros servidores MCP, e nunca registra
-  o token em log. Controlado pelo setting `tootega.dase.registerInCli` (padrão ligado).
+### Added
+- The Cockpit now **registers the DASE MCP server in the Claude Code CLI user
+  configuration** (`~/.claude.json`, user scope) as soon as it detects the DASE extension
+  installed and the server up — equivalent to `claude mcp add --scope user`, without the
+  CLI cold start. Before, DASE was only visible to Cockpit tabs with the toggle on (via
+  `--mcp-config`); now the `dase_*` tools apply to any `claude` session, including the
+  terminal and other workspaces. The entry is rewritten when the DASE server restarts with
+  a new endpoint. The write is atomic, preserves the other keys and other MCP servers, and
+  never logs the token. Controlled by the `tootega.dase.registerInCli` setting (on by
+  default).
 
-### Alterado
-- O endpoint do DASE passa a aceitar **servidor sem token**: o cabeçalho
-  `Authorization` só é enviado quando o `mcp-endpoint.json` traz um token.
+### Changed
+- The DASE endpoint now accepts a **server without a token**: the `Authorization` header is
+  only sent when `mcp-endpoint.json` carries one.
 
 ## [1.0.204] - 2026-07-10
 
-### Adicionado
-- Seção **Para onde foram os tokens** no modal Usage: parcela do uso gerada com
-  contexto acima de 150k, parcela vinda de subagentes, aproveitamento do cache e
-  **contexto injetado por ferramenta** (servidores MCP agrupados como `mcp:<servidor>`,
-  skills como `skill:<nome>`). Os tokens dos `tool_result` são estimados a ~4
-  caracteres por token; o vínculo `tool_use` → `tool_result` só existe dentro do
-  mesmo arquivo de transcript, e o que fica fora não é atribuído.
-- Aviso quando o Claude Code CLI é anterior à **2.1.162**, versão que corrigiu o
-  Esc (interromper) ser descartado no início do turno em sessões `stream-json` — o
-  canal do Cockpit. Abaixo disso, o botão de parar pode falhar sem aviso.
+### Added
+- **Where the tokens went** section in the Usage modal: the share of usage generated with
+  context above 150k, the share coming from subagents, cache effectiveness and **context
+  injected per tool** (MCP servers grouped as `mcp:<server>`, skills as `skill:<name>`).
+  `tool_result` tokens are estimated at ~4 characters per token; the `tool_use` →
+  `tool_result` link only exists within the same transcript file, and whatever falls
+  outside it is not attributed.
+- A warning when the Claude Code CLI is older than **2.1.162**, the version that fixed Esc
+  (interrupt) being dropped at the start of a turn in `stream-json` sessions — the
+  Cockpit's channel. Below that, the stop button can fail silently.
 
-### Corrigido
-- **Uso local inflado (~59% a mais).** Uma resposta do assistant vira várias linhas
-  no `.jsonl` (um bloco de texto, um por `tool_use`) e todas repetem o mesmo objeto
-  `usage`; a soma linha a linha contava o mesmo consumo até 3–4 vezes. A `usage`
-  passa a ser contada uma vez por resposta (`message.id` + `requestId`). O rollup
-  de tokens diários foi versionado para descartar o cache já inflado.
-- Janelas de limite: a API `/api/oauth/usage` trocou os campos fixos
-  `five_hour`/`seven_day`/`seven_day_opus`/`seven_day_sonnet` por um array `limits[]`
-  com `kind` = `session` | `weekly_all` | `weekly_scoped` e o nome do modelo em
-  `scope.model.display_name`. Os campos antigos vêm `null`, então o medidor semanal
-  por modelo havia sumido da interface. Agora as janelas escopadas são lidas do
-  array e **rotuladas pelo servidor** (hoje, Fable). Os campos legados seguem
-  aceitos como fallback.
+### Fixed
+- **Inflated local usage (~59% too high).** One assistant response becomes several lines in
+  the `.jsonl` (one text block, one per `tool_use`) and all of them repeat the same `usage`
+  object; summing line by line counted the same consumption up to 3–4 times. `usage` is now
+  counted once per response (`message.id` + `requestId`). The daily token rollup was
+  versioned to discard the already-inflated cache.
+- Limit windows: the `/api/oauth/usage` API replaced the fixed fields
+  `five_hour`/`seven_day`/`seven_day_opus`/`seven_day_sonnet` with a `limits[]` array with
+  `kind` = `session` | `weekly_all` | `weekly_scoped` and the model name in
+  `scope.model.display_name`. The old fields come back `null`, so the per-model weekly meter
+  had disappeared from the interface. Scoped windows are now read from the array and
+  **labelled by the server** (today, Fable). The legacy fields are still accepted as a
+  fallback.
 
-### Alterado
-- Medidores renomeados conforme a nomenclatura atual do Claude Code: "Sessão (5h)"
-  passa a ser **Sessão atual** e "Semanal (7 dias)", **Semanal · todos os modelos**.
-- O modo de permissão `default` agora é exibido como **Manual**, acompanhando a
-  renomeação feita no CLI (2.1.131). O valor interno segue `default` (= sem a flag
-  `--permission-mode`), compatível com CLIs anteriores.
-- No detalhamento por modelo, o número em destaque passa a ser o de **tokens novos**
-  (entrada + saída + escrita de cache). O **cache relido** — que sozinho responde por
-  ~97% do total — aparece numa linha secundária, e a nota deixa explícito que o valor
-  em USD é o preço-API equivalente, não uma cobrança da assinatura.
-- Entradas `<synthetic>` (marcador do CLI para turnos sem chamada real) não aparecem
-  mais como se fossem um modelo no detalhamento.
+### Changed
+- Meters renamed to follow current Claude Code naming: "Session (5h)" becomes **Current
+  session** and "Weekly (7 days)" becomes **Weekly · all models**.
+- The `default` permission mode is now displayed as **Manual**, following the rename made in
+  the CLI (2.1.131). The internal value is still `default` (= no `--permission-mode` flag),
+  compatible with older CLIs.
+- In the per-model breakdown, the highlighted number is now **new tokens** (input + output +
+  cache write). **Cache reads** — which alone account for ~97% of the total — appear on a
+  secondary line, and the note makes it explicit that the USD figure is the equivalent API
+  price, not a subscription charge.
+- `<synthetic>` entries (the CLI's marker for turns without a real call) no longer show up
+  as if they were a model in the breakdown.
 
 ## [1.0.202] - 2026-07-06
 
-### Corrigido
-- Caixa de prompt não perde mais o foco ao voltar de outro aplicativo: o webview do
-  VSCode blurava o textarea logo após o clique de reativação da janela. O composer
-  agora rearma o foco quando a janela volta — se o textarea estava focado ao sair e o
-  usuário não focou outro controle.
+### Fixed
+- The prompt box no longer loses focus when you come back from another application: the
+  VS Code webview blurred the textarea right after the window-reactivation click. The
+  composer now re-arms focus when the window returns — if the textarea was focused on the
+  way out and the user hasn't focused another control.
 
 ## [1.0.198] - 2026-07-03
 
-### Adicionado
-- Prompts do usuário na timeline agora começam **encolhidos** (cabeçalho + 1 linha),
-  com botão **Mostrar mais / Mostrar menos** para expandir e contrair.
+### Added
+- User prompts in the timeline now start **collapsed** (header + 1 line), with a **Show
+  more / Show less** button to expand and collapse.
 
-### Corrigido
-- Tarefas em background (PowerShell/Bash com `run_in_background`, Workflow) não somem
-  mais da lista "Running in the background" após concluírem: a notificação de conclusão
-  da CLI passa a ser reconhecida também quando chega como bloco `text` em array ou
-  embutida no `content` de um `tool_result` (antes só string era tratada).
-- Botão de copiar do bloco de código, além dos botões de copiar / rebobinar /
-  mostrar-mais do cabeçalho, deixam de ficar cobertos pela caixa de título do tooltip,
-  que impedia o clique em copiar (elevados acima do tooltip no empilhamento).
+### Fixed
+- Background tasks (PowerShell/Bash with `run_in_background`, Workflow) no longer linger in
+  the "Running in the background" list after finishing: the CLI's completion notification is
+  now recognized when it arrives as a `text` block in an array or embedded in the `content`
+  of a `tool_result` (only strings were handled before).
+- The code-block copy button, along with the copy / rewind / show-more buttons in the
+  header, are no longer covered by the tooltip title box, which blocked the copy click
+  (raised above the tooltip in the stacking order).
 
 ## [1.0.190] - 2026-07-02
 
-### Adicionado
-- Inventário de MCP/plugins: agrupamento de tools por servidor MCP a partir do
-  evento `system/init` do CLI.
-- Comandos **Tootega: Set/Remove Anthropic API key** para gerenciar a API key de
-  descoberta de modelos.
+### Added
+- MCP/plugin inventory: tools grouped per MCP server from the CLI's `system/init` event.
+- **Tootega: Set/Remove Anthropic API key** commands to manage the model-discovery API key.
 
-### Alterado
-- API key de descoberta de modelos migrada da setting `tootega.apiKey` (texto plano)
-  para o **SecretStorage** (keychain do SO). Migração automática na primeira ativação;
-  a setting é removida.
-- Checkbox **DASE (ORM)** agora aparece apenas quando a extensão `tootega.dase` está
-  instalada.
+### Changed
+- The model-discovery API key moved from the `tootega.apiKey` setting (plain text) to
+  **SecretStorage** (the OS keychain). Automatic migration on first activation; the setting
+  is removed.
+- The **DASE (ORM)** checkbox now only appears when the `tootega.dase` extension is
+  installed.
 
-### Corrigido
-- Elimina sessão-fantasma que ressurgia no Hub após apagar contextos.
-- Ativa a extensão DASE para subir o servidor MCP sem `.dsorm` no workspace.
-- Corrige crash do extension host por tempestade de reload de webview.
+### Fixed
+- Eliminates a ghost session that reappeared in the Hub after deleting contexts.
+- Activates the DASE extension so the MCP server starts without a `.dsorm` in the workspace.
+- Fixes an extension-host crash caused by a webview reload storm.
 
-### Publicação
-- Preparação para o VS Code Marketplace: aviso de não-afiliação com a Anthropic,
-  `.vscodeignore` enxuto (remove scripts de dev e notas internas do pacote) e
-  atribuição de licenças de terceiros (ver `THIRD-PARTY-NOTICES.md`).
+### Publishing
+- Preparation for the VS Code Marketplace: non-affiliation notice regarding Anthropic, a
+  lean `.vscodeignore` (drops dev scripts and internal notes from the package) and
+  third-party license attribution (see `THIRD-PARTY-NOTICES.md`).
 
 ## [1.0.0] - 2026-06
 
-### Adicionado
-- Primeira versão pública: chat com streaming, timeline de tools, diffs,
-  checkpoints, painel de estatísticas/consumo, permissões, plan mode,
-  ditado por voz, corretor ortográfico bilíngue e i18n pt-BR/en.
+### Added
+- First public release: streaming chat, tool timeline, diffs, checkpoints,
+  statistics/consumption panel, permissions, plan mode, voice dictation, bilingual
+  spell-checker and pt-BR/en i18n.

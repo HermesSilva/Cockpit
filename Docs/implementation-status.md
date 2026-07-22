@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated per the first build cycle. Tracks the [execution plan](plano-de-execucao.en.md).
+Updated per the first build cycle. Tracks the [execution plan](execution-plan.md).
 
 ## Current state: **functional scaffold, compiling** ✅
 

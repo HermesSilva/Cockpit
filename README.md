@@ -206,7 +206,6 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 - Official extension docs: <https://code.claude.com/docs/en/vs-code>
 - Marketplace listing: <https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code>
 - Checkpointing: <https://code.claude.com/docs/en/checkpointing>
-- Item-by-item analysis (ours): [`Docs/comparacao-gui-oficial.md`](Docs/comparacao-gui-oficial.md)
 
 ### Gaps worth closing (official has it, Cockpit doesn't)
 
@@ -968,7 +967,7 @@ Host logs: *Output → Tootega Cockpit*.
   internal AI helper for anything outside the catalog (the CLI exposes only names).
 
 See the detailed status in
-[`Docs/status-implementacao.en.md`](Docs/status-implementacao.en.md).
+[`Docs/implementation-status.md`](Docs/implementation-status.md).
 
 ---
 
@@ -1009,9 +1008,8 @@ See the detailed status in
 - Before a PR: `npm run typecheck && npm test && npm run build`.
 
 Related documents: [`CLAUDE.md`](CLAUDE.md) ·
-[`Docs/plano-de-execucao.en.md`](Docs/plano-de-execucao.en.md) ·
-[`Docs/comparacao-gui-oficial.en.md`](Docs/comparacao-gui-oficial.en.md) ·
-[`Docs/status-implementacao.en.md`](Docs/status-implementacao.en.md).
+[`Docs/execution-plan.md`](Docs/execution-plan.md) ·
+[`Docs/implementation-status.md`](Docs/implementation-status.md).
 
 ---
 

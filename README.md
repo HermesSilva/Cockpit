@@ -667,26 +667,35 @@ in the context of every turn, and a skill that is actually *triggered* injects i
 `SKILL.md` body. The 🎯 **Skills** entry in the Hub
 ([`SkillsModal`](webview/src/components/SkillsModal.tsx)) makes both visible.
 
+The panel keeps **two axes side by side**: the dropdown *configures* what enters the listing,
+and the label next to it *observes* what is actually in the context — `light`, `⚡ loaded`, or
+`⚠ off · resident`. Header totals show `skills` · `metadata` · `loaded`, and rows are grouped
+by origin (project · user · built-in) with filter chips.
+
 - **Where the numbers come from:** the control-protocol request `get_context_usage`
   ([`ContextUsage.ts`](src/cli/ContextUsage.ts)). It is a **local** computation in the engine —
   it does **not** create a turn, spend tokens, or add a line to the transcript. It answers even
-  before the first message. Per skill it returns the source (built-in / user / plugin) and the
-  **metadata tokens**; the panel also shows the listing total.
+  before the first message. Per skill it returns the **origin** (`projectSettings` ·
+  `userSettings` · `built-in`; anything new falls back to a `plugin` group instead of
+  disappearing) and the **metadata tokens** — **measured by the engine, not estimated**. Only
+  the loaded body is an estimate, and it is the only figure labelled `est.`.
 - **Loaded vs. light:** the CLI emits no dedicated event when a skill is triggered. A skill
   called by the model shows up as a `Skill` tool call whose result is `Launching skill: <name>`,
-  followed by a synthetic message carrying the body — that is where the **estimated** body size
-  comes from (~4 chars/token, labelled as an estimate). The other engine path,
+  followed by a synthetic message carrying the body — the size estimate comes from **that
+  message** (~4 chars/token), i.e. what actually entered the context, not from the file on
+  disk. The other engine path,
   `Execute skill: <name>`, loads **nothing** into the context and is therefore not marked.
   A skill triggered by `/name` **from the Cockpit** is marked too (we sent it), but the engine
   reports no size, so no number is shown rather than a made-up one.
 - **Listing control (per skill):** `On (full)` · `Name only` · `Only /command` · `Off`. This maps
   to the CLI's `skillOverrides` and the saving is real — measured on a 14-skill setup, turning
-  three of them down took the listing from **1928 → 1027 tokens**. Overrides are stored by the
-  Cockpit and passed to the CLI at spawn time; **your `~/.claude/settings.json` is never
-  touched**, and the CLI outside the Cockpit is unaffected.
+  three of them down took the listing from **1928 → 1027 tokens**. Overrides are stored **per
+  workspace** (`.claude/skills/` belongs to the project, so they must not leak into other
+  folders), survive a VS Code restart, and are passed to the CLI when it starts; **your
+  `~/.claude/settings.json` is never touched**, and the CLI outside the Cockpit is unaffected.
 - **What the panel will not pretend:** there is **no way to unload a single skill** from a live
-  context — the engine offers none. On an already-loaded skill the override still stops it from
-  being listed and re-triggered, and the panel says plainly that the body stays until a new
+  context — the engine offers none. An already-loaded skill you switch off is shown as
+  `⚠ off · resident`: it will not be listed or triggered again, but the body stays until a new
   session or `/clear`. Measured on the same session: listing dropped by exactly the skill's
   metadata tokens while `Messages` stayed unchanged.
 - Skills triggered by a hook, or by `/name` typed outside the Cockpit, are invisible to us and

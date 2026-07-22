@@ -1201,22 +1201,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // ---- Skills ----
 
   /**
-   * Overrides de listing de skills: valem para TODAS as abas (o custo do listing é o
-   * mesmo em qualquer sessão) e ficam no globalState — o ~/.claude/settings.json do
-   * usuário não é tocado; quem aplica é o `--settings` no spawn do CLI.
+   * Overrides de listing de skills, guardados POR WORKSPACE: `.claude/skills/` é do
+   * projeto (o engine reporta `projectSettings`), então um override de skill daqui não
+   * deve vazar para outra pasta. Persiste no globalState — sobrevive a reiniciar o VS
+   * Code — e é aplicado via `--settings` no spawn: o `~/.claude/settings.json` do usuário
+   * NUNCA é tocado e o CLI fora do Cockpit segue intacto.
    */
+  private skillOverrideMap(): Record<string, Record<string, SkillOverride>> {
+    return this.memory.get<Record<string, Record<string, SkillOverride>>>('skillOverrides', {});
+  }
+
   private applySkillOverrides(s: Session): void {
-    const map = this.memory.get<Record<string, SkillOverride>>('skillOverrides', {});
-    s.skillOverrides = { ...map };
+    const all = this.skillOverrideMap();
+    s.skillOverrides = { ...(all[this.workspaceCwd()] ?? {}) };
     s.stats.setSkillOverrides(s.skillOverrides);
   }
 
   /** Muda o override de uma skill e reinicia os CLIs para o novo listing valer. */
   private setSkillOverride(name: string, value: SkillOverride): void {
-    const map = this.memory.get<Record<string, SkillOverride>>('skillOverrides', {});
+    const all = this.skillOverrideMap();
+    const key = this.workspaceCwd();
+    const map = { ...(all[key] ?? {}) };
     if (value === 'on') delete map[name];
     else map[name] = value;
-    void this.memory.update('skillOverrides', map);
+    all[key] = map;
+    void this.memory.update('skillOverrides', all);
     for (const s of this.sessions.values()) s.setSkillOverride(name, value);
   }
 

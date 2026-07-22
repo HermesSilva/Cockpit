@@ -4,6 +4,31 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.221] - 2026-07-22
+
+### Changed
+- **Skills panel: configuration and observation are now two separate axes.** The dropdown
+  keeps configuring what enters the listing; a new label beside it reports what is actually
+  in the context — `light`, `⚡ loaded`, or `⚠ off · resident`. `resident` is the state that
+  must not be hidden: the skill is off, so it will not be listed or triggered again, but the
+  body already loaded stays until a new session or `/clear`.
+- Header totals (`skills` · `metadata` · `loaded`), grouping by origin with filter chips, and
+  a legend spelling out the three states and where the control lives.
+- **Origin comes from the engine**, not guessed: `get_context_usage` reports
+  `projectSettings` · `userSettings` · `built-in` (verified by creating a skill under
+  `.claude/skills/`). An unknown origin falls back to a `plugin` group instead of vanishing.
+- **Metadata tokens are measured, not estimated** — they come from the engine per skill, at no
+  token cost. Only the loaded body is an estimate (from the size of the message the engine
+  injected, not from the file on disk) and it is the only number labelled `est.`; with no such
+  signal the panel says the size is not reported rather than showing a number.
+
+### Fixed
+- Listing overrides are now stored **per workspace**. `.claude/skills/` belongs to the project
+  (confirmed: `skillOverrides` in a project `.claude/settings.json` takes effect — listing
+  1983 → 1601), so an override no longer leaks into other folders. They still live in the
+  extension state, survive a VS Code restart, and are applied when the CLI starts —
+  `~/.claude/settings.json` is never touched.
+
 ## [1.0.220] - 2026-07-22
 
 ### Added

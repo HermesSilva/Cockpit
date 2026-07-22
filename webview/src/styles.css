@@ -4557,6 +4557,128 @@ body {
   background: var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.12));
   color: var(--vscode-foreground, #e0e0e0);
 }
+/* Painel Skills (X2). Dois eixos: o select CONFIGURA o listing, o rótulo à direita
+   OBSERVA o que já está no contexto. Cores só por token do tema. */
+.skills-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.skills-tile {
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+}
+/* Destaque só quando há corpo carregado: é o número que dói. */
+.skills-tile.strong {
+  border-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 55%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 14%, transparent);
+}
+.skills-tile-label {
+  font-size: 10px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.skills-tile-value {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.skills-tile.strong .skills-tile-value {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.skills-tile-note {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.skills-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.skills-chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+  background: transparent;
+}
+.skills-chip.on {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-focusBorder, #3794ff);
+  background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 18%, transparent);
+}
+.skills-row-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.skills-row-body .mcp-target {
+  flex: 1;
+  min-width: 0;
+}
+.skills-select {
+  flex: none;
+  max-width: 46%;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--vscode-dropdown-foreground, inherit);
+  background: var(--vscode-dropdown-background, transparent);
+  border: 1px solid var(--vscode-dropdown-border, rgba(128, 128, 128, 0.35));
+  border-radius: 4px;
+}
+/* Coluna de observação: estado real, nunca inferido do select. */
+.skills-obs {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.skills-obs.light {
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.skills-obs.active {
+  color: var(--vscode-charts-blue, #3794ff);
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 18%, transparent);
+}
+.skills-obs.resident {
+  color: var(--vscode-inputValidation-warningBorder, #cca700);
+  background: color-mix(in srgb, var(--vscode-inputValidation-warningBorder, #cca700) 18%, transparent);
+}
+.skills-row.active {
+  border-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 55%, transparent);
+}
+.skills-row.resident {
+  border-color: color-mix(in srgb, var(--vscode-inputValidation-warningBorder, #cca700) 55%, transparent);
+}
+.skills-active-tk {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.skills-resident-tk {
+  color: var(--vscode-inputValidation-warningBorder, #cca700);
+}
+.skills-legend-scope {
+  margin-top: 6px;
+  opacity: 0.85;
+}
+.skills-legend {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+
 /* Painel MCP (X4): um card por servidor, tools colapsáveis. */
 .mcp-refresh {
   margin-left: auto;

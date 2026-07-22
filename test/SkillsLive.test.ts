@@ -127,4 +127,28 @@ describe.skipIf(!LIVE)('skills contra o CLI real', () => {
     expect(messagesAfter).toBeGreaterThanOrEqual(messagesBefore);
     c.cli.stop();
   }, 300_000);
+
+  // Os outros dois estados do seletor. `name-only` mantém a skill listada, mas sem a
+  // descrição (custo cai para poucos tokens); `user-invocable-only` tira do listing do
+  // modelo e mantém o /nome.
+  it('name-only e user-invocable-only têm o efeito anunciado', async () => {
+    const base = spawnCli();
+    const before = (await base.read())!;
+    base.cli.stop();
+    const named = before.skills.find((s) => s.name === 'claude-api') ?? before.skills[0];
+    const hidden = before.skills.find((s) => s.name === 'deep-research') ?? before.skills[1];
+
+    const s = spawnCli({ [named.name]: 'name-only', [hidden.name]: 'user-invocable-only' });
+    const after = (await s.read())!;
+    const namedAfter = after.skills.find((x) => x.name === named.name);
+    report(
+      `[5] name-only ${named.name}: ${named.tokens} → ${namedAfter?.tokens} tk (continua listada) · ` +
+        `user-invocable-only ${hidden.name}: ${hidden.tokens} tk → listada? ${after.skills.some((x) => x.name === hidden.name)} · ` +
+        `listing ${before.listingTokens} → ${after.listingTokens} tk`,
+    );
+    expect(namedAfter, 'name-only não deve remover do listing').toBeTruthy();
+    expect(namedAfter!.tokens!).toBeLessThan(named.tokens!);
+    expect(after.skills.some((x) => x.name === hidden.name)).toBe(false);
+    s.cli.stop();
+  }, 180_000);
 });

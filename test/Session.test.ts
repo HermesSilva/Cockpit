@@ -102,3 +102,59 @@ describe('Session — continuidade de contexto (anti-duplicação)', () => {
     expect(spawns[1].opts.resumeSessionId).toBeUndefined(); // doesn't resume the old one
   });
 });
+
+describe('Session — overrides de skills', () => {
+  beforeEach(() => {
+    spawns.length = 0;
+  });
+
+  it('override chega ao CLI no respawn, na MESMA sessão', () => {
+    const s = makeSession();
+    s.send('primeiro prompt');
+    spawns[0].fireInit('sess-A');
+    expect(spawns[0].opts.skillOverrides).toEqual({}); // sem override: nada para o CLI
+
+    s.setSkillOverride('dataviz', 'off'); // stop() descarta o CLI
+    s.send('segundo prompt'); // respawn
+
+    expect(spawns[1].opts.skillOverrides).toEqual({ dataviz: 'off' });
+    // O contexto (inclusive skill já carregada) segue: o override não é um /clear.
+    expect(spawns[1].opts.resumeSessionId).toBe('sess-A');
+  });
+
+  it('voltar para "on" remove o override em vez de mandar o default', () => {
+    const s = makeSession();
+    s.send('p');
+    s.setSkillOverride('dataviz', 'name-only');
+    s.send('p2');
+    expect(spawns[1].opts.skillOverrides).toEqual({ dataviz: 'name-only' });
+
+    s.setSkillOverride('dataviz', 'on');
+    s.send('p3');
+    expect(spawns[2].opts.skillOverrides).toEqual({});
+  });
+
+  // /nome de skill conhecida = acionamento pelo usuário. O stream não emite nada nesse
+  // caminho (medido no CLI 2.1.217); quem sabe é o Cockpit, que enviou o comando.
+  it('/nome de skill conhecida marca como carregada, sem inventar tokens', () => {
+    const s = makeSession();
+    s.send('primeiro prompt');
+    spawns[0].handlers.get('event')![0]({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'sess-A',
+      slash_commands: ['caveman', 'clear'],
+      skills: ['caveman'],
+    });
+
+    s.send('/caveman full');
+    const sk = s.snapshot().skills!.find((x) => x.name === 'caveman')!;
+    expect(sk.active).toBe(true);
+    expect(sk.invokedBy).toBe('user');
+    expect(sk.activeTokens).toBeUndefined();
+
+    // Slash que NÃO é skill não marca nada.
+    s.send('/clear');
+    expect(s.snapshot().skills!.some((x) => x.name === 'clear')).toBe(false);
+  });
+});

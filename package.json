@@ -126,6 +126,16 @@
         "command": "tootega.disableUsageTracking",
         "title": "%cmd.disableUsageTracking%",
         "category": "Tootega"
+      },
+      {
+        "command": "tootega.enableUtf8Fix",
+        "title": "%cmd.enableUtf8Fix%",
+        "category": "Tootega"
+      },
+      {
+        "command": "tootega.disableUtf8Fix",
+        "title": "%cmd.disableUtf8Fix%",
+        "category": "Tootega"
       }
     ],
     "menus": {

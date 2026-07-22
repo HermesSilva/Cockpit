@@ -8,6 +8,10 @@
   "Real usage tracking is Windows-only for now.": "Real usage tracking is Windows-only for now.",
   "Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)": "Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)",
   "Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.": "Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.",
+  "Fix garbled accents in PowerShell command output? Installs a small Claude Code hook that forces UTF-8; it never blocks a command and you can remove it anytime.": "Fix garbled accents in PowerShell command output? Installs a small Claude Code hook that forces UTF-8; it never blocks a command and you can remove it anytime.",
+  "Accent fix installed. New PowerShell tool calls will return UTF-8 output.": "Accent fix installed. New PowerShell tool calls will return UTF-8 output.",
+  "Accent fix removed.": "Accent fix removed.",
+  "Nothing to install: shells on this platform already output UTF-8.": "Nothing to install: shells on this platform already output UTF-8.",
   "Claude process exited unexpectedly (code {0}) before finishing the turn. Send again to continue.": "Claude process exited unexpectedly (code {0}) before finishing the turn. Send again to continue.",
   "Connection was unstable — the turn may be incomplete. Send again if needed.{0}": "Connection was unstable — the turn may be incomplete. Send again if needed.{0}",
   "The turn ended with an error.{0}": "The turn ended with an error.{0}"

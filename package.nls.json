@@ -16,6 +16,8 @@
   "cmd.clearApiKey": "Remove Anthropic API key",
   "cmd.enableUsageTracking": "Enable real usage tracking (statusline)",
   "cmd.disableUsageTracking": "Disable real usage tracking",
+  "cmd.enableUtf8Fix": "Fix accents in PowerShell output (install UTF-8 hook)",
+  "cmd.disableUtf8Fix": "Remove the PowerShell UTF-8 hook",
   "cfg.claudePath": "Path to the Claude Code CLI executable.",
   "cfg.language": "UI language. 'auto' follows the VS Code language; falls back to English.",
   "cfg.permissionMode": "Default permission mode passed to the CLI. Reflected (pre-selected) in the Permission dropdown in the panel; change it there to override just the current session.",

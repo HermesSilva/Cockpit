@@ -2,6 +2,11 @@
 import * as vscode from 'vscode';
 import { ChatViewProvider } from './panel/ChatViewProvider';
 import { enableUsageTracking, disableUsageTracking, isEnabled } from './cli/StatuslineInstaller';
+import {
+  enableUtf8Fix,
+  disableUtf8Fix,
+  isEnabled as utf8FixEnabled,
+} from './cli/Utf8HookInstaller';
 import { flushStats } from './stats/StatsStore';
 import { log, setDebugLogging } from './util/logger';
 
@@ -38,6 +43,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // sempre-visível. O canal automático (rate_limit_event no stream) já funciona
   // sem isto; a statusline complementa em uso baixo.
   void maybeOfferUsageTracking(context, provider);
+  // Oferece (uma vez) o hook que conserta a acentuação da tool PowerShell no
+  // Windows — ver Utf8HookInstaller para o porquê.
+  void maybeOfferUtf8Fix(context);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('tootega.open', () => {
@@ -121,6 +129,30 @@ export function activate(context: vscode.ExtensionContext): void {
           : vscode.l10n.t('Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.'),
       );
       provider.refreshUsageNow();
+    }),
+    vscode.commands.registerCommand('tootega.enableUtf8Fix', () => {
+      const r = enableUtf8Fix();
+      if (r === 'ok') {
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t('Accent fix installed. New PowerShell tool calls will return UTF-8 output.'),
+        );
+      } else if (r === 'unsupported') {
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t('Nothing to install: shells on this platform already output UTF-8.'),
+        );
+      } else {
+        void vscode.window.showWarningMessage(
+          vscode.l10n.t('Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.'),
+        );
+      }
+    }),
+    vscode.commands.registerCommand('tootega.disableUtf8Fix', () => {
+      const r = disableUtf8Fix();
+      void vscode.window.showInformationMessage(
+        r === 'ok'
+          ? vscode.l10n.t('Accent fix removed.')
+          : vscode.l10n.t('Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.'),
+      );
     }),
     vscode.commands.registerCommand('tootega.toggleLanguage', async () => {
       const cfg = vscode.workspace.getConfiguration('tootega');
@@ -233,4 +265,35 @@ async function maybeOfferUsageTracking(
     );
   }
   provider.refreshUsageNow();
+}
+
+/**
+ * Oferece (uma única vez) instalar o hook de UTF-8 da tool PowerShell. Windows-only:
+ * é lá que o shell sem console cai no OEMCP e corrompe acentos na saída.
+ */
+async function maybeOfferUtf8Fix(context: vscode.ExtensionContext): Promise<void> {
+  if (process.platform !== 'win32') return;
+  if (utf8FixEnabled()) return;
+  if (context.globalState.get<boolean>('utf8FixPrompted')) return;
+  void context.globalState.update('utf8FixPrompted', true);
+  const install = vscode.l10n.t('Install');
+  const pick = await vscode.window.showInformationMessage(
+    vscode.l10n.t(
+      'Fix garbled accents in PowerShell command output? Installs a small Claude Code hook that forces UTF-8; it never blocks a command and you can remove it anytime.',
+    ),
+    install,
+  );
+  if (pick !== install) return;
+  const r = enableUtf8Fix();
+  if (r === 'ok') {
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t('Accent fix installed. New PowerShell tool calls will return UTF-8 output.'),
+    );
+  } else if (r !== 'unsupported') {
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        'Could not update ~/.claude/settings.json (does it have comments?). Edit it manually.',
+      ),
+    );
+  }
 }

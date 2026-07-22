@@ -762,6 +762,23 @@ Commands (palette, **Tootega** category):
 | Toggle language (pt-BR / English) | `tootega.toggleLanguage` | — |
 | **Set / Remove Anthropic API key** (model discovery, stored in the OS keychain) | `tootega.setApiKey` / `tootega.clearApiKey` | — |
 | Enable / Disable real usage tracking | `tootega.enableUsageTracking` / `...disableUsageTracking` | — |
+| **Fix accents in PowerShell output** (install / remove the UTF-8 hook, Windows) | `tootega.enableUtf8Fix` / `tootega.disableUtf8Fix` | — |
+
+### Accented characters in PowerShell output (Windows)
+
+The Cockpit runs the CLI headless (stdio over pipes, **no console attached**). Without a
+console, .NET falls back to the system **OEM code page** (e.g. 437) instead of UTF-8, so
+`powershell` / `cmd` write their output in a legacy encoding — the CLI reads it as UTF-8 and
+you get mojibake. Characters outside that code page (`ã` in CP 437) are *lost at write time*,
+so no decoding fix on our side can recover them. In a terminal the problem is invisible
+because the console is already at `chcp 65001`.
+
+`Tootega: Fix accents in PowerShell output` installs a `PreToolUse` hook in
+`~/.claude/settings.json` (script at `~/.claude/.tootega/utf8-hook.ps1`) that prefixes every
+**PowerShell** tool command with the UTF-8 encoding setup. It is idempotent, never blocks or
+denies a command (any failure is a silent no-op), and is removed by the *Remove* command. No
+system setting is changed and no reboot is needed. The **Bash** tool (Git Bash) is already
+UTF-8 and is left untouched.
 
 In the composer: **Enter** sends · **Shift+Enter** new line · **Ctrl+F** finds in the
 conversation · **@** opens the file autocomplete · the **/** button opens the slash-command

@@ -16,6 +16,8 @@
   "cmd.clearApiKey": "Remover API key Anthropic",
   "cmd.enableUsageTracking": "Ativar uso real da conta (statusline)",
   "cmd.disableUsageTracking": "Desativar uso real da conta",
+  "cmd.enableUtf8Fix": "Corrigir acentuação na saída do PowerShell (instalar hook UTF-8)",
+  "cmd.disableUtf8Fix": "Remover o hook UTF-8 do PowerShell",
   "cfg.claudePath": "Caminho do executável do Claude Code CLI.",
   "cfg.language": "Idioma da UI. 'auto' segue o idioma do VS Code; cai para inglês.",
   "cfg.permissionMode": "Modo de permissão default passado ao CLI. Reflete (pré-seleciona) no combo Permission do painel; mude lá para sobrepor só a sessão atual.",

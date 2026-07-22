@@ -1,5 +1,5 @@
-// Dedupe da usage: linhas da mesma resposta (texto + tool_use) repetem o mesmo
-// objeto `usage` e não podem ser somadas mais de uma vez.
+// Usage dedupe: lines of the same response (text + tool_use) repeat the same
+// `usage` object and must not be summed more than once.
 import { describe, it, expect } from 'vitest';
 import { usageKey } from '../src/stats/usageKey';
 

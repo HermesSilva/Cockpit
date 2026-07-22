@@ -4,7 +4,7 @@ export interface Tip {
   icon: string;
   title: string;
   desc: string;
-  accent?: string; // cor do badge do ícone (var(--vscode-charts-*))
+  accent?: string; // icon badge color (var(--vscode-charts-*))
 }
 
 interface Props {

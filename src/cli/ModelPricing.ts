@@ -20,7 +20,7 @@ const MAX_AGE_MS = 24 * 3600_000; // rebusca 1x/dia
 
 export interface PriceInfo {
   inMTok: number; // USD por 1M tokens de entrada
-  outMTok: number; // USD por 1M tokens de saída
+  outMTok: number; // USD per 1M output tokens
 }
 export type PricingMap = Record<string, PriceInfo>;
 
@@ -82,9 +82,9 @@ export function parsePricingMarkdown(md: string): PricingMap {
     // ['', Model, Base Input, 5m, 1h, Cache Hits, Output, '']
     if (cells.length < 7) continue;
     const name = cells[1];
-    if (!name || /^-+$/.test(name) || /^model$/i.test(name)) continue; // separador/cabeçalho
+    if (!name || /^-+$/.test(name) || /^model$/i.test(name)) continue; // separator/header
     const id = nameToId(name);
-    if (!id || out[id]) continue; // 1ª ocorrência vence (ex.: preço introdutório atual)
+    if (!id || out[id]) continue; // first occurrence wins (e.g. the current introductory price)
     const inMTok = parseUsd(cells[2]); // Base Input Tokens
     const outMTok = parseUsd(cells[cells.length - 2]); // Output Tokens (última antes do '')
     if (inMTok === undefined || outMTok === undefined) continue;

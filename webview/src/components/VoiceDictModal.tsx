@@ -5,22 +5,22 @@ import { Portal } from './Portal';
 
 interface Props {
   t: Translator;
-  data: VoiceDictData | null; // null = ainda carregando
+  data: VoiceDictData | null; // null = still loading
   onSave: (data: VoiceDictData) => void;
   onClose: () => void;
 }
 
 type Tab = 'terms' | 'reps' | 'spell';
 
-// Modal dos dicionários (por login), em abas: termos do ditado, substituições
-// "ouvido → escrito" e o dicionário do corretor. Cada aba é uma LISTA editável
+// Dictionaries modal (per login), in tabs: dictation terms, "heard → written"
+// replacements and the spell-checker dictionary. Each tab is an editable LIST
 // (altera inline, adiciona linha, remove). Edita um rascunho local; salva no host.
 export function VoiceDictModal({ t, data, onSave, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('terms');
   const [terms, setTerms] = useState<string[]>([]);
   const [reps, setReps] = useState<VoiceReplacement[]>([]);
   const [spellWords, setSpellWords] = useState<string[]>([]);
-  const lastInput = useRef<HTMLInputElement>(null); // foca a linha recém-adicionada
+  const lastInput = useRef<HTMLInputElement>(null); // focuses the freshly added row
 
   useEffect(() => {
     if (data) {
@@ -38,7 +38,7 @@ export function VoiceDictModal({ t, data, onSave, onClose }: Props) {
     focusLast();
   };
 
-  // --- substituições (lista de {from,to}) ---
+  // --- replacements (list of {from,to}) ---
   const setRep = (i: number, k: 'from' | 'to', v: string) =>
     setReps((p) => p.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
   const removeRep = (i: number) => setReps((p) => p.filter((_, j) => j !== i));
@@ -58,7 +58,7 @@ export function VoiceDictModal({ t, data, onSave, onClose }: Props) {
 
   const focusLast = () => requestAnimationFrame(() => lastInput.current?.focus());
 
-  // Limpa vazios/duplicados antes de salvar.
+  // Clears empties/duplicates before saving.
   const save = () => {
     const cleanList = (a: string[]) => {
       const seen = new Set<string>();

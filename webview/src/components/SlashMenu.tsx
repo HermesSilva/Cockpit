@@ -8,11 +8,11 @@ interface Props {
   t: Translator;
   commands: string[];
   meta: Record<string, SlashCmdMeta>; // metadados pesquisados por IA (categoria/hint/detalhe)
-  busy: boolean; // pesquisa IA em andamento → botão desabilitado + spinner
+  busy: boolean; // AI research in progress → button disabled + spinner
   onPick: (cmd: string) => void;
 }
 
-// Ícone do Cockpit (chama) girando — indicador de pesquisa em andamento.
+// Cockpit icon (flame) spinning — indicator of research in progress.
 function CockpitSpinner() {
   return (
     <svg className="slash-spin" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
@@ -30,14 +30,14 @@ function CockpitSpinner() {
   );
 }
 
-// Categorias válidas vindas da IA → chave i18n cmdcat.<x>.
+// Valid categories coming from the AI → i18n key cmdcat.<x>.
 const AI_CATS = new Set(['session', 'context', 'config', 'tools', 'account', 'info', 'plugin', 'other']);
 
-// Combobox de slash commands: agrupado por categoria, cada item com hint rico.
+// Slash command combobox: grouped by category, each item with a rich hint.
 export function SlashMenu({ t, commands, meta, busy, onPick }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
-  // t aceita só chaves conhecidas; chaves do catálogo são dinâmicas → cast.
+  // t only accepts known keys; catalog keys are dynamic → cast.
   const tk = (k: string) => t(k as Parameters<Translator>[0]);
 
   const groups = useMemo(() => {
@@ -46,7 +46,7 @@ export function SlashMenu({ t, commands, meta, busy, onPick }: Props) {
     for (const raw of commands) {
       const name = raw.replace(/^\//, '').trim();
       if (!name) continue;
-      // Prioridade: catálogo curado > plugin (grupo próprio) > categoria IA >
+      // Priority: curated catalog > plugin (its own group) > AI category >
       // namespace (":") > Outros.
       let cat: string;
       const ai = meta[name];
@@ -61,7 +61,7 @@ export function SlashMenu({ t, commands, meta, busy, onPick }: Props) {
     const cap = (s: string) => s.replace(/^./, (c) => c.toUpperCase());
     const labelOf = (cat: string): string =>
       cat.startsWith('grp:') ? cap(cat.slice(4)) : cat.startsWith('ns:') ? cap(cat.slice(3)) : tk(cat);
-    // Todos os grupos em ordem ALFABÉTICA pelo rótulo visível; "Outros" sempre por último.
+    // All groups in ALPHABETICAL order by visible label; "Other" always last.
     const entries = [...byCat.entries()].map(([cat, items]) => ({
       cat,
       label: labelOf(cat),
@@ -75,7 +75,7 @@ export function SlashMenu({ t, commands, meta, busy, onPick }: Props) {
     return entries;
   }, [commands, meta, t]);
 
-  // Fecha ao clicar fora ou Esc.
+  // Closes on an outside click or Esc.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {

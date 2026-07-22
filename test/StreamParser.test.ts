@@ -47,7 +47,7 @@ describe('StreamParser', () => {
     expect(p.push('42\n')).toEqual([]);
     expect(p.push('"texto"\n')).toEqual([]);
     expect(p.push('null\n')).toEqual([]);
-    expect(p.push('{"type":123}\n')).toEqual([]); // type não-string
+    expect(p.push('{"type":123}\n')).toEqual([]); // non-string type
   });
 
   it('aceita eventos de tipo desconhecido (tolerância de versão)', () => {
@@ -94,9 +94,9 @@ describe('StreamParser', () => {
 
   it('descarta acúmulo gigante sem newline e volta a processar eventos seguintes', () => {
     const p = new StreamParser();
-    // >64MB sem '\n' (linha corrompida / ruído binário): não vaza memória.
+    // >64MB without '\n' (corrupted line / binary noise): no memory leak.
     expect(p.push('x'.repeat(70 * 1024 * 1024))).toEqual([]);
-    // O buffer foi descartado; um evento legítimo após o próximo '\n' é processado.
+    // The buffer was discarded; a legitimate event after the next '\n' is processed.
     const evs = p.push('{"type":"recuperado"}\n');
     expect(evs).toEqual([{ type: 'recuperado' }]);
   });

@@ -4,7 +4,7 @@ import { send } from '../vscodeApi';
 import { Portal } from './Portal';
 
 // Abre o visualizador de imagem a partir de qualquer lugar (anexo do composer,
-// bolha do chat) sem prop drilling. O App fornece o setter.
+// chat bubble) without prop drilling. The App provides the setter.
 export const ImageViewerContext = createContext<(src: string) => void>(() => {});
 export const useImageViewer = () => useContext(ImageViewerContext);
 
@@ -14,7 +14,7 @@ interface Props {
   onClose: () => void;
 }
 
-// Modal de imagem: Esc/overlay/X fecham. Copiar/Salvar executam a ação e fecham.
+// Image modal: Esc/overlay/X close it. Copy/Save run the action and close.
 export function ImageViewer({ t, src, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -29,7 +29,7 @@ export function ImageViewer({ t, src, onClose }: Props) {
       const blob = await (await fetch(src)).blob();
       await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
     } catch {
-      /* clipboard de imagem pode falhar em alguns ambientes; fecha mesmo assim */
+      /* image clipboard can fail in some environments; closes anyway */
     }
     onClose();
   };

@@ -167,7 +167,7 @@ export class Session {
   send(text: string, images?: { mediaType: string; data: string }[]): void {
     this.ensureCli();
     this.setBusy(true);
-    this.stats.beginTurn(); // cronômetro do tempo de execução ativo (sem ociosidade)
+    this.stats.beginTurn(); // stopwatch of the active execution time (excludes idleness)
     // State BEFORE the turn: mainly the cache (age/life), to understand what
     // each prompt finds (warm vs. cold cache = re-paying the cacheWrite).
     const s = this.stats.snapshot();
@@ -199,7 +199,7 @@ export class Session {
   stop(): void {
     this.resetStreamingState();
     this.pendingPerm.clear();
-    this.stats.endTurn(); // fecha o turno em voo (não conta ocioso depois)
+    this.stats.endTurn(); // closes the turn in flight (idle time after it isn't counted)
     this.persist();
     if (this.cli) dlog('session', `stop (${this.sessionId ?? this.resumeId ?? '?'})`);
     this.cli?.stop();
@@ -254,7 +254,7 @@ export class Session {
     this.setBusy(true);
     this.stats.beginTurn();
     dlog('session', `keep-alive ping (${this.sessionId ?? this.resumeId ?? '?'})`);
-    this.cli!.sendUserMessage('keep-alive: responda apenas "ok". Não use ferramentas nem altere arquivos.');
+    this.cli!.sendUserMessage('keep-alive: answer only "ok". Do not use tools and do not change files.');
     return true;
   }
 
@@ -422,7 +422,7 @@ export class Session {
           this.lastMcpServers = Array.isArray(s.mcp_servers) ? s.mcp_servers : undefined;
           this.sessionId = s.session_id;
           if (s.session_id) {
-            this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão
+            this.cli?.setResumeId(s.session_id); // a silent respawn continues THIS session
             // Pins the resume id at SESSION LEVEL: a stop() (model/effort/permission
             // change) discards the CliProcessManager, and the next
             // send() respawns via ensureCli() reading `this.resumeId`. Without this, that
@@ -516,7 +516,7 @@ export class Session {
           log(`[session] result ${transient ? 'transient' : 'error'} (${this.sessionId ?? '?'}): ${errText.slice(0, 160)}`);
           this.hooks.onTurnError?.({ kind: transient ? 'transient' : 'error', text: errText || undefined });
         }
-        this.stats.endTurn(); // fecha o cronômetro do prompt (tempo de execução real)
+        this.stats.endTurn(); // stops the prompt's stopwatch (real execution time)
         {
           const s = this.stats.snapshot();
           log(
@@ -528,7 +528,7 @@ export class Session {
         this.emit({ kind: 'turnComplete', costUsd: r.total_cost_usd, usage: r.usage });
         this.emit({ kind: 'stats', stats: this.stats.snapshot() }); // activeMs consolidado
         this.emitTimeline(); // nova amostra de timeline (1x por turno)
-        this.persist(); // salva o estado da sessão (continua coerente ao reabrir)
+        this.persist(); // saves the session state (stays coherent on reopen)
         this.setBusy(false);
         this.hooks.onResult();
         this.resetStreamingState();
@@ -548,7 +548,7 @@ export class Session {
     if (!info || typeof info !== 'object') return;
     const type = info.rateLimitType ?? info.rate_limit_type;
     const which = type === 'five_hour' ? 'fiveHour' : type === 'seven_day' ? 'sevenDay' : undefined;
-    if (!which) return; // seven_day_opus/sonnet/overage: fora das 2 janelas exibidas
+    if (!which) return; // seven_day_opus/sonnet/overage: outside the 2 displayed windows
     let pct: number | undefined =
       typeof info.utilization === 'number' && Number.isFinite(info.utilization)
         ? info.utilization

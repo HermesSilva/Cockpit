@@ -6,10 +6,10 @@ const SHOW_DELAY_MS = 500; // ~ delay do tooltip nativo (atributo title)
 export interface TooltipRow {
   label: string;
   value: string;
-  accent?: boolean; // realça o valor em laranja (ex.: custo, erro)
+  accent?: boolean; // highlights the value in orange (e.g. cost, error)
 }
 
-// Rodapé de procedência: origem do dado + nível de confiança (cor por nível).
+// Provenance footer: source of the data + confidence level (color per level).
 export interface TooltipMeta {
   originLabel: string; // ex.: "Origem"
   origin: string; // ex.: "Servidor (via CLI)"
@@ -19,19 +19,19 @@ export interface TooltipMeta {
 }
 
 interface Props {
-  title?: string; // cabeçalho colorido
+  title?: string; // colored header
   text?: string; // corpo simples (variante "simple")
   rows?: TooltipRow[]; // grade chave/valor (variante "rich")
-  meta?: TooltipMeta; // rodapé origem/confiança (chips coloridos)
+  meta?: TooltipMeta; // source/confidence footer (colored chips)
   children: ReactNode;
   className?: string;
-  focusable?: boolean; // adiciona tabIndex quando o filho não é focável (ex.: texto)
+  focusable?: boolean; // adds tabIndex when the child isn't focusable (e.g. text)
 }
 
 interface Anchor {
   top: number;
   bottom: number;
-  cx: number; // centro horizontal do elemento-âncora
+  cx: number; // horizontal center of the anchor element
 }
 interface Coord {
   left: number;
@@ -39,9 +39,9 @@ interface Coord {
   below: boolean;
 }
 
-// Hint reusável: popover via portal (não sofre clip de overflow/scroll), abre em
-// hover E foco (a11y). Mede o popover e empurra p/ o lado contrário à borda que
-// estourou (horizontal) e abre abaixo quando falta espaço acima (vertical).
+// Reusable hint: a popover via portal (it isn't clipped by overflow/scroll), opening on
+// hover AND focus (a11y). It measures the popover and pushes it away from the edge it
+// overflowed (horizontal) and opens below when there is no room above (vertical).
 export function Tooltip({ title, text, rows, meta, children, className, focusable }: Props) {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [coord, setCoord] = useState<Coord | null>(null);
@@ -49,7 +49,7 @@ export function Tooltip({ title, text, rows, meta, children, className, focusabl
   const popRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
 
-  // Delay antes de abrir, espelhando o tooltip nativo do navegador (atributo title).
+  // Delay before opening, mirroring the browser's native tooltip (title attribute).
   const show = () => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
@@ -68,7 +68,7 @@ export function Tooltip({ title, text, rows, meta, children, className, focusabl
   // Limpa o timer pendente se desmontar (ex.: item da timeline removido).
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
-  // Fase 2: com o popover montado (oculto), mede e clampeia dentro da viewport.
+  // Phase 2: with the popover mounted (hidden), it measures and clamps within the viewport.
   useLayoutEffect(() => {
     const pop = popRef.current;
     if (!anchor || !pop) return;
@@ -76,12 +76,12 @@ export function Tooltip({ title, text, rows, meta, children, className, focusabl
     const vw = window.innerWidth;
     const pw = pop.offsetWidth;
     const ph = pop.offsetHeight;
-    const below = anchor.top - ph - pad < 0; // sem espaço acima → abaixo
+    const below = anchor.top - ph - pad < 0; // no room above → below
     const top = below ? anchor.bottom + pad : anchor.top - pad;
     const half = pw / 2;
     let left = anchor.cx;
-    if (left - half < pad) left = pad + half; // estourou à esquerda → empurra p/ direita
-    else if (left + half > vw - pad) left = vw - pad - half; // estourou à direita → esquerda
+    if (left - half < pad) left = pad + half; // overflowed on the left → push right
+    else if (left + half > vw - pad) left = vw - pad - half; // overflowed on the right → left
     setCoord({ left, top, below });
   }, [anchor, title, text, rows, meta]);
 

@@ -30,7 +30,7 @@ describe('parseMcpInventory', () => {
     );
     expect(inv.servers).toHaveLength(1);
     const s = inv.servers[0];
-    expect(s.name).toBe('plugin:mssql-localdb-mcp:mssql-localdb'); // nome de exibição, não o sanitizado
+    expect(s.name).toBe('plugin:mssql-localdb-mcp:mssql-localdb'); // display name, not the sanitized one
     expect(s.tools).toEqual(['sql_execute_query']);
   });
 

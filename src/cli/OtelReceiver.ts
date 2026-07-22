@@ -1,12 +1,12 @@
-// Receiver OTLP/HTTP (JSON) local p/ a telemetria opt-in do Claude Code.
-// Sobe um http.Server em 127.0.0.1 que aceita /v1/metrics e /v1/logs e agrega os
-// contadores `claude_code.*` (LOC, sessões, commits, PRs, decisões de tool).
+// Local OTLP/HTTP (JSON) receiver for Claude Code's opt-in telemetry.
+// Starts an http.Server on 127.0.0.1 that accepts /v1/metrics and /v1/logs and aggregates the
+// `claude_code.*` counters (LOC, sessions, commits, PRs, tool decisions).
 //
-// Por quê: é a fonte LIMPA e estruturada da CLI (sem varrer transcript) p/ dados
-// que o stream-json não traz — linhas de código por modelo, decisões de edição.
-// Opt-in (setting tootega.otel.enabled, padrão OFF): exige o usuário ligar o OTEL
-// do CLI. Ao ligar, injetamos as env vars de export no process.env do host para
-// que os processos `claude` filhos exportem para cá. NUNCA registra credenciais.
+// Why: it is the CLEAN, structured source from the CLI (no transcript scanning) for data
+// stream-json doesn't carry — lines of code per model, edit decisions.
+// Opt-in (setting tootega.otel.enabled, default OFF): it requires the user to turn on the CLI's
+// OTEL. When turned on, we inject the export env vars into the host's process.env so
+// the child `claude` processes export here. It NEVER logs credentials.
 import * as http from 'node:http';
 import type { OtelStats, UsageSlice } from '../../shared/protocol';
 import { normalizeModel } from '../stats/StatsAggregator';
@@ -14,22 +14,22 @@ import { log, dlog } from '../util/logger';
 
 const LOOPBACK = '127.0.0.1';
 
-/** Estado agregado, mutável, alimentado pelos data points OTLP. */
+/** Aggregated, mutable state, fed by the OTLP data points. */
 interface OtelState {
   sinceTs: number;
   linesAdded: number;
   linesRemoved: number;
-  locByModel: Map<string, number>; // modelo -> linhas (added)
-  costByModel: Map<string, number>; // modelo -> USD REAL (claude_code.cost.usage)
-  tokensByModel: Map<string, number>; // modelo -> tokens REAIS (claude_code.token.usage)
+  locByModel: Map<string, number>; // model -> lines (added)
+  costByModel: Map<string, number>; // model -> REAL USD (claude_code.cost.usage)
+  tokensByModel: Map<string, number>; // model -> REAL tokens (claude_code.token.usage)
   sessionCount: number;
   commitCount: number;
   prCount: number;
-  decisions: Map<string, { accept: number; reject: number }>; // tool -> contagens
-  // Custo/tokens por RUN de workflow. Desde a CLI 2.1.202 os agentes gerados por um
-  // workflow carregam `workflow.run_id` / `workflow.name` nos atributos — é o que
-  // permite somar o que uma run inteira gastou (o stream-json não expõe isso). O
-  // `effort` (low…max) veio na 2.1.214/215, também em cost.usage/token.usage.
+  decisions: Map<string, { accept: number; reject: number }>; // tool -> counts
+  // Cost/tokens per workflow RUN. Since CLI 2.1.202 the agents spawned by a
+  // workflow carry `workflow.run_id` / `workflow.name` in the attributes — that is what
+  // lets us sum what a whole run spent (stream-json doesn't expose it). The
+  // `effort` (low…max) came in 2.1.214/215, also on cost.usage/token.usage.
   workflows: Map<string, { name: string; usd: number; tokens: number; efforts: Set<string> }>;
 }
 
@@ -49,23 +49,23 @@ function emptyState(now: number): OtelState {
   };
 }
 
-/** Soma no agregado da run de workflow do data point, se ele pertencer a uma. */
+/** Adds into the workflow run aggregate of the data point, when it belongs to one. */
 function addWorkflow(st: OtelState, a: Record<string, string>, usd: number, tokens: number): void {
   const runId = a['workflow.run_id'];
   if (!runId) return;
   const cur =
     st.workflows.get(runId) ??
     { name: a['workflow.name'] || runId, usd: 0, tokens: 0, efforts: new Set<string>() };
-  // O nome pode chegar só em parte dos pontos; o 1º não-vazio vence.
+  // The name may arrive on only some of the points; the first non-empty one wins.
   if (!cur.name || cur.name === runId) cur.name = a['workflow.name'] || cur.name;
   cur.usd += usd;
   cur.tokens += tokens;
-  // Um run pode ter agentes com efforts diferentes — coletamos o conjunto.
+  // A run may have agents with different efforts — we collect the set.
   if (a.effort) cur.efforts.add(a.effort);
   st.workflows.set(runId, cur);
 }
 
-// Ordem canônica p/ exibir os efforts de um run (menor → maior).
+// Canonical order to display a run's efforts (lowest → highest).
 const EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
 function sortEfforts(efforts: Set<string>): string[] {
   return [...efforts].sort((a, b) => {
@@ -75,7 +75,7 @@ function sortEfforts(efforts: Set<string>): string[] {
   });
 }
 
-/** Valor numérico de um data point OTLP (asInt vem como string no JSON). */
+/** Numeric value of an OTLP data point (asInt comes as a string in JSON). */
 function pointValue(dp: any): number {
   if (dp == null) return 0;
   if (typeof dp.asInt === 'number') return dp.asInt;
@@ -87,7 +87,7 @@ function pointValue(dp: any): number {
   return 0;
 }
 
-/** Mapa de atributos OTLP (lista {key,value:{stringValue|intValue|...}}) -> objeto. */
+/** OTLP attribute map (list of {key,value:{stringValue|intValue|...}}) -> object. */
 function attrs(dp: any): Record<string, string> {
   const out: Record<string, string> = {};
   const list = Array.isArray(dp?.attributes) ? dp.attributes : [];
@@ -104,9 +104,9 @@ function attrs(dp: any): Record<string, string> {
 }
 
 /**
- * Agrega um payload OTLP de métricas (ExportMetricsServiceRequest em JSON) no
- * estado. Tolerante: shapes desconhecidos são ignorados sem lançar. Exportado
- * para teste unitário (parsing puro, sem rede).
+ * Aggregates an OTLP metrics payload (ExportMetricsServiceRequest in JSON) into the
+ * state. Tolerant: unknown shapes are ignored without throwing. Exported
+ * for unit testing (pure parsing, no network).
  */
 export function ingestMetrics(body: any, st: OtelState): void {
   const rms = body?.resourceMetrics;
@@ -131,14 +131,14 @@ export function ingestMetrics(body: any, st: OtelState): void {
               break;
             }
             case 'claude_code.cost.usage': {
-              // Custo REAL (USD) reportado pela própria CLI, por modelo.
+              // REAL cost (USD) reported by the CLI itself, per model.
               const mk = normalizeModel(a.model) ?? 'unknown';
               st.costByModel.set(mk, (st.costByModel.get(mk) ?? 0) + v);
               addWorkflow(st, a, v, 0);
               break;
             }
             case 'claude_code.token.usage': {
-              // Tokens REAIS por modelo (todas as categorias somadas).
+              // REAL tokens per model (all categories summed).
               const mk = normalizeModel(a.model) ?? 'unknown';
               st.tokensByModel.set(mk, (st.tokensByModel.get(mk) ?? 0) + v);
               addWorkflow(st, a, 0, v);
@@ -179,8 +179,8 @@ export class OtelReceiver {
     this.state = emptyState(Date.now());
   }
 
-  /** Liga o receiver e injeta as env vars de export no host (filhos `claude`
-   *  exportam p/ cá). Idempotente. */
+  /** Turns the receiver on and injects the export env vars into the host (child `claude`
+   *  processes export here). Idempotent. */
   start(): void {
     if (this.running) return;
     const srv = http.createServer((req, res) => this.onRequest(req, res));
@@ -193,30 +193,30 @@ export class OtelReceiver {
     this.server = srv;
   }
 
-  /** Desliga o receiver e remove as env vars injetadas. */
+  /** Turns the receiver off and removes the injected env vars. */
   stop(): void {
     this.running = false;
     try {
       this.server?.close();
     } catch {
-      /* ignora */
+      /* ignored */
     }
     this.server = undefined;
     this.clearEnv();
   }
 
-  /** Agrega um payload OTLP de métricas no estado (seam de teste/uso direto). */
+  /** Aggregates an OTLP metrics payload into the state (test/direct-use seam). */
   ingest(metricsBody: unknown): void {
     ingestMetrics(metricsBody, this.state);
   }
 
-  /** Snapshot agregado p/ o webview (modal Usage). undefined-safe. */
+  /** Aggregated snapshot for the webview (Usage modal). undefined-safe. */
   stats(): OtelStats {
-    // A telemetria OTEL não separa cache-read do restante: cacheRead fica em 0.
+    // OTEL telemetry doesn't separate cache-read from the rest: cacheRead stays 0.
     const locByModel: UsageSlice[] = [...this.state.locByModel.entries()]
       .map(([key, lines]) => ({ key, usd: 0, tokens: lines, cacheRead: 0 }))
       .sort((a, b) => b.tokens - a.tokens);
-    // Custo REAL por modelo (cost.usage) + tokens reais (token.usage) quando houver.
+    // REAL cost per model (cost.usage) + real tokens (token.usage) when present.
     const costByModel: UsageSlice[] = [...this.state.costByModel.entries()]
       .map(([key, usd]) => ({
         key,
@@ -264,43 +264,43 @@ export class OtelReceiver {
     req.setEncoding('utf8');
     req.on('data', (c) => {
       body += c;
-      if (body.length > 8 * 1024 * 1024) req.destroy(); // teto defensivo
+      if (body.length > 8 * 1024 * 1024) req.destroy(); // defensive cap
     });
     req.on('end', () => {
       if (url.endsWith('/v1/metrics')) {
         try {
           ingestMetrics(JSON.parse(body), this.state);
         } catch (e) {
-          dlog('otel', `metrics parse falhou: ${String(e)}`);
+          dlog('otel', `metrics parse failed: ${String(e)}`);
         }
       }
-      // /v1/logs: aceito e descartado (responses do assistant podem conter texto;
-      // não agregamos p/ não reter conteúdo sensível). Apenas confirma o recebimento.
+      // /v1/logs: accepted and discarded (assistant responses may contain text;
+      // we don't aggregate it so no sensitive content is retained). It only acknowledges receipt.
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{}');
     });
   }
 
-  /** Env vars OTLP/HTTP-JSON p/ os processos `claude` exportarem p/ este receiver. */
+  /** OTLP/HTTP-JSON env vars for the `claude` processes to export to this receiver. */
   private applyEnv(): void {
     process.env.CLAUDE_CODE_ENABLE_TELEMETRY = '1';
     process.env.OTEL_METRICS_EXPORTER = 'otlp';
     process.env.OTEL_LOGS_EXPORTER = 'otlp';
     process.env.OTEL_EXPORTER_OTLP_PROTOCOL = 'http/json';
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://${LOOPBACK}:${this.port}`;
-    // Export rápido p/ o dado aparecer no modal sem esperar o batch padrão (60s).
+    // Fast export so the data shows up in the modal without waiting for the default batch (60s).
     process.env.OTEL_METRIC_EXPORT_INTERVAL = '10000';
-    // Conteúdo da conversa NÃO entra na telemetria. Desde a CLI 2.1.193 o evento
-    // `claude_code.assistant_response` carrega o texto da resposta, e ele segue o
-    // `OTEL_LOG_USER_PROMPTS` quando `OTEL_LOG_ASSISTANT_RESPONSES` não está setado
-    // — quem já logava prompt passaria a logar resposta. Cravamos ambos em 0: o
-    // receiver já descarta /v1/logs, mas assim o texto nem sai do processo `claude`.
+    // Conversation content does NOT enter the telemetry. Since CLI 2.1.193 the
+    // `claude_code.assistant_response` event carries the response text, and it follows
+    // `OTEL_LOG_USER_PROMPTS` when `OTEL_LOG_ASSISTANT_RESPONSES` is unset
+    // — anyone already logging prompts would start logging responses. We pin both to 0: the
+    // receiver already discards /v1/logs, but this way the text doesn't even leave the `claude` process.
     process.env.OTEL_LOG_USER_PROMPTS = '0';
     process.env.OTEL_LOG_ASSISTANT_RESPONSES = '0';
-    // Traz o `workflow.name` REAL nas métricas: sem isto a CLI substitui nomes de
-    // workflow autorais por "custom" (doc oficial de monitoring). Só afeta o rótulo
-    // do painel de workflows — os detalhes de tool que este flag também expõe vão
-    // para /v1/logs, que descartamos por completo. Nenhum conteúdo é retido.
+    // Brings the REAL `workflow.name` into the metrics: without it the CLI replaces
+    // user-authored workflow names with "custom" (official monitoring docs). It only affects the label
+    // in the workflows panel — the tool details this flag also exposes go
+    // to /v1/logs, which we discard entirely. No content is retained.
     process.env.OTEL_LOG_TOOL_DETAILS = '1';
   }
 

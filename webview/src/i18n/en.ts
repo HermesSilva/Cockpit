@@ -382,8 +382,8 @@ export const en = {
   'controls.permission': 'Permission',
   'controls.agents': 'Agents & workflows',
   'controls.applies': 'Applied on the next message (restarts the session).',
-  // O CLI renomeou o modo "default" para "Manual" (2.1.131). O valor interno
-  // segue 'default' (= sem flag --permission-mode), compatível com CLIs antigos.
+  // The CLI renamed the "default" mode to "Manual" (2.1.131). The internal value
+  // is still 'default' (= no --permission-mode flag), compatible with older CLIs.
   'perm.default': 'Manual',
   'perm.plan': 'Plan',
   'perm.acceptEdits': 'Accept edits',

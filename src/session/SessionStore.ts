@@ -213,7 +213,7 @@ function summarize(file: string): Summary {
       continue;
     }
     if (o.type === 'ai-title' && typeof o.aiTitle === 'string' && clean(o.aiTitle)) {
-      aiTitle = clean(o.aiTitle); // o último prevalece
+      aiTitle = clean(o.aiTitle); // the last one wins
     } else if (o.type === 'user' || o.type === 'assistant') {
       if (!o.isMeta) count++;
       if (o.type === 'user' && !o.isMeta) {

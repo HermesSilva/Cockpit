@@ -20,7 +20,7 @@ interface Props {
   onEnableTracking: () => void;
 }
 
-// Modal "Account & Usage" (botão Usage). Reproduz o /usage do CLI: conta exata
+// "Account & Usage" modal (Usage button). It reproduces the CLI's /usage: exact account
 // (auth status) + janelas de limite reais (API OAuth, read-only).
 export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracking }: Props) {
   const live = !!usage && usage.source !== 'estimate';
@@ -136,7 +136,7 @@ function modelLabel(id: string): string {
   return oneM ? `${s} 1M` : s;
 }
 
-// Barra proporcional de uma fatia (USD) dentro do total da categoria.
+// Proportional bar of a slice (USD) within the category total.
 function SliceRow({
   t,
   label,
@@ -217,14 +217,14 @@ function Breakdown({ t, b }: { t: Translator; b: { byModel: UsageSlice[]; bySour
   );
 }
 
-// Rótulo legível p/ um bucket de tool: "mcp:dase" -> "MCP · dase".
+// Readable label for a tool bucket: "mcp:dase" -> "MCP · dase".
 function toolLabel(key: string): string {
   if (key.startsWith('mcp:')) return `MCP · ${key.slice(4)}`;
   if (key.startsWith('skill:')) return `Skill · ${key.slice(6)}`;
   return key;
 }
 
-// Um insight: título com o número em destaque + explicação do que fazer com ele.
+// One insight: a title with the number highlighted + an explanation of what to do with it.
 function Insight({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="usage-insight">
@@ -234,8 +234,8 @@ function Insight({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-// Atribuição 7d: responde "para onde foram meus tokens". Percentuais sobre os
-// tokens NOVOS da janela. O contexto por tool é estimado a partir dos tool_result.
+// 7d attribution: answers "where did my tokens go". Percentages over the window's
+// NEW tokens. The per-tool context is estimated from the tool_results.
 function Attribution({ t, locale, a }: { t: Translator; locale: string; a: UsageAttribution }) {
   const pct = (v: number) => Math.round(v * 100);
   const top = a.byTool.slice(0, 6);
@@ -290,7 +290,7 @@ function Attribution({ t, locale, a }: { t: Translator; locale: string; a: Usage
 }
 
 // Contador GLOBAL de tokens (enviado/recebido/total), all-time + por dia. Fonte:
-// transcripts locais — soma de todos os contextos e janelas do VSCode da máquina.
+// local transcripts — the sum of every context and VSCode window on the machine.
 function Tokens({ t, locale, tk }: { t: Translator; locale: string; tk: TokenTotals }) {
   const max = tk.days.reduce((m, d) => Math.max(m, d.sent + d.received), 0) || 1;
   return (
@@ -334,7 +334,7 @@ function Tokens({ t, locale, tk }: { t: Translator; locale: string; tk: TokenTot
   );
 }
 
-// "2026-06-30" -> rótulo curto localizado (ex.: "30 jun"). Hoje vira "Today/Hoje".
+// "2026-06-30" -> short localized label (e.g. "30 Jun"). Today becomes "Today".
 function fmtDay(iso: string, locale: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
@@ -348,7 +348,7 @@ function fmtDay(iso: string, locale: string): string {
   }
 }
 
-// Telemetria OTEL (opt-in): LOC por modelo, sessões, commits, PRs, decisões.
+// OTEL telemetry (opt-in): LOC per model, sessions, commits, PRs, decisions.
 function Otel({ t, locale, o }: { t: Translator; locale: string; o: OtelStats }) {
   return (
     <>
@@ -425,7 +425,7 @@ function Row({ k, v, accent }: { k: string; v: string; accent?: boolean }) {
   );
 }
 
-// Barra de uma janela de limite (sessão/semana). % real quando há; senão estimativa.
+// Bar of a limit window (session/week). Real % when available; otherwise an estimate.
 function Meter({
   t,
   locale,
@@ -444,7 +444,7 @@ function Meter({
   const pct = b?.usedPct;
   const known = typeof pct === 'number';
   const w = known ? Math.max(0, Math.min(1, pct)) * 100 : 0;
-  // Estimativa: prefixo "≈" e barra esmaecida (não é o limite real da conta).
+  // Estimate: "≈" prefix and a faded bar (it isn't the account's real limit).
   const right = known
     ? `${live ? '' : '≈'}${Math.round(w)}%`
     : b?.usd != null
@@ -479,8 +479,8 @@ function planLabel(p?: string): string {
 }
 
 // "Resets in 3h" / "3d" / "12m" a partir do ISO de reset.
-// Janela de aviso do login (dias). O refresh token dura semanas: avisar antes
-// dá tempo de rodar /login sem interromper sessão longa ou tarefa em background.
+// Login warning window (days). The refresh token lasts weeks: warning early
+// gives time to run /login without interrupting a long session or a background task.
 const LOGIN_WARN_DAYS = 7;
 
 function expiringSoon(expiresAt?: number): boolean {
@@ -488,7 +488,7 @@ function expiringSoon(expiresAt?: number): boolean {
   return expiresAt - Date.now() < LOGIN_WARN_DAYS * 86400_000;
 }
 
-/** Validade do login: "expirado", "3d", "16d" — data absoluta quando distante. */
+/** Login validity: "expired", "3d", "16d" — an absolute date when it is far away. */
 function relExpiry(expiresAt: number, locale: string): string {
   const ms = expiresAt - Date.now();
   if (ms <= 0) return locale.startsWith('pt') ? 'expirado' : 'expired';

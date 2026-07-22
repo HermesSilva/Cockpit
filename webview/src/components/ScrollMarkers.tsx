@@ -9,10 +9,10 @@ interface Props {
 interface Mark {
   id: string;
   index: number;
-  pct: number; // posição vertical no trilho (0..100)
-  top: number; // px dentro do conteúdo (alvo do scroll)
+  pct: number; // vertical position on the rail (0..100)
+  top: number; // px inside the content (scroll target)
   text: string;
-  images?: string[]; // miniaturas das imagens coladas no prompt
+  images?: string[]; // thumbnails of the images pasted into the prompt
 }
 
 export function ScrollMarkers({ scrollRef, items }: Props) {
@@ -25,10 +25,10 @@ export function ScrollMarkers({ scrollRef, items }: Props) {
   const recompute = useCallback(() => {
     const c = scrollRef.current;
     if (!c) return;
-    // Mapeia cada prompt para o centro do thumb quando ele chega ao topo, de modo
-    // que as marcas fiquem na faixa de curso do thumb (entre seus dois extremos),
-    // não escondidas atrás dele nas pontas. minThumb 20px espelha a scrollbar fina.
-    const view = c.clientHeight; // altura do trilho (= viewport rolável)
+    // Maps each prompt to the center of the thumb when it reaches the top, so
+    // the marks stay within the thumb's travel range (between its two extremes),
+    // not hidden behind it at the ends. minThumb 20px mirrors the thin scrollbar.
+    const view = c.clientHeight; // rail height (= scrollable viewport)
     const scrollH = c.scrollHeight || 1;
     const maxScroll = Math.max(1, scrollH - view);
     const thumbH = Math.min(view, Math.max(20, (view * view) / scrollH));
@@ -53,7 +53,7 @@ export function ScrollMarkers({ scrollRef, items }: Props) {
     setMarks(next);
   }, [userItems, scrollRef]);
 
-  // Recalcula a cada mudança de itens e em resize de viewport/conteúdo (rAF-throttled).
+  // Recomputed on every item change and on viewport/content resize (rAF-throttled).
   useLayoutEffect(() => {
     recompute();
   }, [recompute]);

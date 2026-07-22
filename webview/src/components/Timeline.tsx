@@ -39,7 +39,7 @@ const TOOL_ICONS: Record<string, string> = {
 };
 const toolIcon = (name: string): string => TOOL_ICONS[name] ?? '⚙';
 const basename = (p: string): string => p.replace(/["']/g, '').split(/[\\/]/).pop() || p;
-// Arquivos com preview nativo no VSCode (link "View").
+// Files with a native preview in VSCode ("View" link).
 const hasPreview = (p: string): boolean => /\.(md|markdown|svg|png|jpe?g|gif|webp|ipynb)$/i.test(p);
 
 interface Props {
@@ -53,12 +53,12 @@ interface Props {
   answers?: Record<string, string>;
   busy?: boolean; // turno em andamento: mostra o indicador de atividade no fim
   stats?: StatsSnapshot; // tokens enviados/recebidos p/ o contador do indicador
-  onRewind?: (userIndex: number) => void; // rebobinar até este prompt (remove-o)
-  verbosity?: string; // verbose|necessary|dialogo|quiet — filtra a exibição
+  onRewind?: (userIndex: number) => void; // rewind to this prompt (removing it)
+  verbosity?: string; // verbose|necessary|dialogo|quiet — filters the display
 }
 
-// Agrupa itens em turnos: cada mensagem do usuário e, depois dela, a corrida
-// contígua de itens do Claude (texto + tools) sob um único cabeçalho "Claude".
+// Groups items into turns: each user message and, after it, the contiguous
+// run of Claude items (text + tools) under a single "Claude" header.
 type Group = { kind: 'user'; item: UserItem } | { kind: 'claude'; items: (AssistantItem | ToolItem)[] };
 
 function groupItems(items: TimelineItem[]): Group[] {
@@ -117,8 +117,8 @@ export function Timeline({
     );
   }
   const groups = groupItems(items);
-  // A checklist de tarefas é única e vive (agregada): renderiza só no último
-  // turno que mexeu em tarefas, evitando repetir o grupo a cada add/marcação.
+  // The task checklist is unique and lives aggregated: it is rendered only in the last
+  // turn that touched tasks, avoiding repeating the group on every add/tick.
   let lastTodoGroup = -1;
   let lastUserGroup = -1;
   groups.forEach((g, i) => {
@@ -127,7 +127,7 @@ export function Timeline({
     }
     if (g.kind === 'user') lastUserGroup = i;
   });
-  // Ordinal de cada prompt do usuário (casa com a ordem no transcript do host),
+  // Ordinal of each user prompt (matching the order in the host's transcript),
   // p/ o rewind referenciar o prompt certo independentemente do id local/uuid.
   let userOrdinal = -1;
   return (
@@ -164,41 +164,41 @@ export function Timeline({
   );
 }
 
-// Gauge de progresso (assintótico). Só aparece depois de GAUGE_DELAY de espera —
-// tarefas curtas (< 2s) não mostram gauge, evitando piscação. Ao surgir já começa
+// Progress gauge (asymptotic). It only appears after GAUGE_DELAY of waiting —
+// short tasks (< 2s) show no gauge, avoiding flicker. When it appears it already starts
 // em GAUGE_START (10%) e cresce desacelerando: progress = 1 - (1-START)·e^(-(t-DELAY)/τ),
-// com teto 1 - GAUGE_FLOOR (≈ 97%, nunca 100%). Reinicia a cada informação recebida;
-// ao concluir/encerrar simplesmente some (sem flash de 100%). GAUGE_TAU = velocidade.
+// with a ceiling of 1 - GAUGE_FLOOR (≈ 97%, never 100%). It restarts on every piece of information received;
+// when it completes/ends it simply disappears (no 100% flash). GAUGE_TAU = speed.
 const GAUGE_TAU = 25_000;
 const GAUGE_FLOOR = 0.03;
 const GAUGE_DELAY = 2_000;
 const GAUGE_START = 0.1;
 
-// --- Calibração do gauge por tipo de tarefa (menos "fake") ---
-// As médias de duração por tipo vêm do HOST (persistidas em ~/.claude/tootega,
-// globais p/ todo projeto/aba/sessão). A webview envia amostras de duração e
-// consulta o mapa recebido p/ derivar τ — assim o gauge é rápido p/ tarefas
-// tipicamente curtas e lento p/ longas, calibrado ao tempo real.
-const TASK_AVG = new Map<string, number>(); // tipo -> média (ms): espelho do host
-const TAU_TARGET = 0.8; // progresso que o gauge deve atingir na duração média
-// τ = (média - DELAY) / k, onde k resolve progress=TAU_TARGET na média.
+// --- Gauge calibration per task type (less "fake") ---
+// The average durations per type come from the HOST (persisted in ~/.claude/tootega,
+// global for every project/tab/session). The webview sends duration samples and
+// consults the received map to derive τ — that way the gauge is fast for typically
+// short tasks and slow for long ones, calibrated to the real time.
+const TASK_AVG = new Map<string, number>(); // type -> average (ms): mirror of the host
+const TAU_TARGET = 0.8; // progress the gauge should reach at the average duration
+// τ = (average - DELAY) / k, where k solves progress=TAU_TARGET at the average.
 const TAU_K = Math.log((1 - GAUGE_START) / (1 - TAU_TARGET)); // ≈ 1.504
 const TAU_MIN = 1_500;
 const TAU_MAX = 120_000;
 
-/** Formata ms como min:seg (ex.: 75000 -> "1:15"). */
+/** Formats ms as min:sec (e.g. 75000 -> "1:15"). */
 function fmtMinSec(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-/** Semeia/atualiza o espelho local com as médias vindas do host. */
+/** Seeds/updates the local mirror with the averages coming from the host. */
 export function seedTaskTimings(timings: Record<string, number>): void {
   TASK_AVG.clear();
   for (const [k, v] of Object.entries(timings)) if (Number.isFinite(v)) TASK_AVG.set(k, v);
 }
-// Tipo da tarefa em andamento = o que se está esperando agora: o resultado de
-// uma tool (por nome) ou a próxima resposta do modelo.
+// Type of the task in progress = what is being waited on right now: the result of
+// a tool (by name) or the model's next response.
 function taskType(items: TimelineItem[]): string {
   const last = items[items.length - 1];
   if (last && last.kind === 'tool' && !last.done) return `tool:${last.name}`;
@@ -206,12 +206,12 @@ function taskType(items: TimelineItem[]): string {
 }
 function tauForType(type: string): number {
   const avg = TASK_AVG.get(type);
-  if (avg == null) return GAUGE_TAU; // sem amostra ainda: padrão
+  if (avg == null) return GAUGE_TAU; // no sample yet: default
   return Math.min(TAU_MAX, Math.max(TAU_MIN, (avg - GAUGE_DELAY) / TAU_K));
 }
 
-// Comando/ferramenta em execução agora (último tool não concluído): nome +
-// arquivo/comando/padrão. Usado na barra de progresso nos modos não-verbose.
+// Command/tool running right now (last unfinished tool): name +
+// file/command/pattern. Used in the progress bar in non-verbose modes.
 function currentCmd(items: TimelineItem[]): string | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
@@ -227,11 +227,11 @@ function currentCmd(items: TimelineItem[]): string | undefined {
   return undefined;
 }
 
-// Indicador de atividade na última linha do timeline (enquanto o turno corre):
-// ícone da extensão + spinner + contador de tokens enviados/recebidos, como na
-// GUI original do Claude Code, + gauge de progresso restante (assintótico) à
-// direita do "Working". "Recebidos" soma a saída consolidada à estimativa do
-// turno em voo (texto÷4) para contar ao vivo durante o streaming.
+// Activity indicator on the timeline's last line (while the turn runs):
+// extension icon + spinner + sent/received token counter, as in the
+// original Claude Code GUI, + a remaining-progress gauge (asymptotic) to the
+// right of "Working". "Received" adds the consolidated output to the estimate of the
+// turn in flight (text÷4) so it counts live during the streaming.
 function ActivityIndicator({
   t,
   items,
@@ -244,12 +244,12 @@ function ActivityIndicator({
   verbosity?: string;
 }) {
   const icon = window.__TOOTEGA_ICON__;
-  // Assinatura de "informação recebida": muda a cada item novo (texto/tool),
-  // resultado de tool que chega, ou resposta concluída. É o gatilho de reinício
-  // — streaming no mesmo bloco não muda o id, mas cada chegada muda a assinatura.
-  // O gauge só deve reiniciar quando algo é REALMENTE pintado no timeline (conforme
-  // a verbosity). Em quiet, tools ocultos mudam de comando sem pintar nada → não
-  // resetam. Por isso contamos só os items VISÍVEIS.
+  // "Information received" signature: it changes on every new item (text/tool),
+  // tool result that arrives, or completed response. It is the restart trigger
+  // — streaming within the same block doesn't change the id, but each arrival changes the signature.
+  // The gauge must only restart when something is REALLY painted in the timeline (according to
+  // the verbosity). In quiet, hidden tools change command without painting anything → they don't
+  // reset. That's why we count only the VISIBLE items.
   const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant')?.id;
   const vis = items.filter((it) => visibleInTimeline(it, verbosity, lastAssistId));
   let doneAssist = 0;
@@ -261,41 +261,41 @@ function ActivityIndicator({
       doneTools++;
     }
   }
-  // Texto/thinking da resposta visível em voo: cresce a cada token que aparece.
+  // Text/thinking of the visible response in flight: it grows with every token that appears.
   const last = vis[vis.length - 1];
   const flowing =
     last && last.kind === 'assistant' && !last.done ? last.text.length + last.thinking.length : 0;
-  // Edições visíveis concluídas (deliverables pintados em necessary/dialogo).
+  // Completed visible edits (deliverables painted in necessary/dialogo).
   const editsDone = vis.filter((i) => i.kind === 'tool' && i.done && MERGE_EDIT.test(i.name)).length;
   // Fronteira de segmento (aprendizado) e reset visual, POR MODO:
-  //  - quiet: VÁRIOS comandos = UMA barra do turno inteiro → nunca reseta.
-  //  - necessary: reseta só quando uma EDIÇÃO é pintada (entre edições = 1 barra).
-  //  - verbose/dialogo: reseta por item visível (cada comando/texto = 1 barra).
+  //  - quiet: SEVERAL commands = ONE bar for the whole turn → it never resets.
+  //  - necessary: resets only when an EDIT is painted (between edits = 1 bar).
+  //  - verbose/dialogo: reset per visible item (each command/text = 1 bar).
   let segSig: string;
   if (verbosity === 'quiet') segSig = 'turn';
   else if (verbosity === 'necessary') segSig = `e${editsDone}`;
   else segSig = `${vis.length}:${doneAssist}:${doneTools}`;
-  // Reset "fino": inclui o streaming do texto (não sobe enquanto a resposta chega)
-  // só onde o texto é pintado (verbose/dialogo). Quiet/necessary ignoram tokens.
+  // "Fine" reset: includes the text streaming (it doesn't climb while the response arrives)
+  // only where the text is painted (verbose/dialogo). Quiet/necessary ignore tokens.
   const liveSig =
     verbosity === 'verbose' || verbosity === 'dialogo' ? `${segSig}:${flowing}` : segSig;
   const sent = stats?.inputTokens ?? 0;
   const received = stats?.outputTokens ?? 0;
   const [elapsed, setElapsed] = useState(0);
-  const [totalMs, setTotalMs] = useState(0); // tempo decorrido do turno (não reseta por token)
+  const [totalMs, setTotalMs] = useState(0); // turn elapsed time (not reset per token)
   const gaugeStartRef = useRef(Date.now()); // base do gauge (reset por liveSig)
-  const turnStartRef = useRef(Date.now()); // início do turno (montagem do indicador)
+  const turnStartRef = useRef(Date.now()); // turn start (indicator mount)
   const segStartRef = useRef(Date.now()); // base do segmento (aprendizado)
   const prevLive = useRef(liveSig);
   const prevSeg = useRef(segSig);
-  // Tipo do segmento p/ o aprendizado de duração:
-  //  - verbose: cada comando é um segmento próprio → tipo = comando (tool:Read…).
-  //  - não-verbose: UMA barra cobre VÁRIOS comandos diferentes (entre dois itens
-  //    pintados) → não dá p/ keyar por comando; usa um bucket único 'batch'.
+  // Segment type for the duration learning:
+  //  - verbose: each command is its own segment → type = command (tool:Read…).
+  //  - non-verbose: ONE bar covers SEVERAL different commands (between two painted
+  //    items) → it can't be keyed per command; it uses a single 'batch' bucket.
   const segType = () => (verbosity === 'verbose' ? taskType(vis) : 'batch');
   const typeRef = useRef(segType());
   const tauRef = useRef(tauForType(typeRef.current)); // τ calibrado p/ esse tipo
-  // Tick do cronômetro do gauge.
+  // Gauge stopwatch tick.
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
@@ -304,16 +304,16 @@ function ActivityIndicator({
     }, 100);
     return () => clearInterval(id);
   }, []);
-  // Qualquer informação que chega (item, tool result OU token fluindo) reinicia o
-  // gauge — assim ele só "sobe" num stall real, e some quando a resposta chega.
+  // Any information that arrives (item, tool result OR a flowing token) restarts the
+  // gauge — that way it only "climbs" on a real stall, and disappears when the response arrives.
   useEffect(() => {
     if (liveSig === prevLive.current) return;
     prevLive.current = liveSig;
     gaugeStartRef.current = Date.now();
     setElapsed(0);
   }, [liveSig]);
-  // Aprendizado: mede a duração só nos segmentos grossos (não por token, p/ não
-  // poluir a EMA) e calibra τ pelo tipo da próxima espera.
+  // Learning: it measures the duration only on the coarse segments (not per token, so the
+  // EMA isn't polluted) and calibrates τ by the type of the next wait.
   useEffect(() => {
     if (segSig === prevSeg.current) return;
     prevSeg.current = segSig;
@@ -323,8 +323,8 @@ function ActivityIndicator({
     tauRef.current = tauForType(typeRef.current);
     segStartRef.current = Date.now();
   }, [segSig]);
-  // Fim do turno (indicador desmonta): grava a última barra ainda em curso —
-  // é o que captura a duração da barra ÚNICA do quiet (que nunca muda segSig).
+  // End of the turn (the indicator unmounts): records the last bar still in progress —
+  // that is what captures the duration of quiet's SINGLE bar (which never changes segSig).
   useEffect(() => {
     return () => {
       const dur = Date.now() - segStartRef.current;
@@ -332,16 +332,16 @@ function ActivityIndicator({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Gauge só após GAUGE_DELAY (stall > 2s); surge em GAUGE_START e cresce
-  // assintótico (τ calibrado pelo tipo de tarefa) até o teto (1 - GAUGE_FLOOR).
+  // Gauge only after GAUGE_DELAY (stall > 2s); it appears at GAUGE_START and grows
+  // asymptotically (τ calibrated by task type) up to the ceiling (1 - GAUGE_FLOOR).
   const showGauge = elapsed >= GAUGE_DELAY;
   const progress = Math.min(
     1 - GAUGE_FLOOR,
     1 - (1 - GAUGE_START) * Math.exp(-(elapsed - GAUGE_DELAY) / tauRef.current),
   );
   const pct = Math.round(progress * 100);
-  // Em modos não-verbose os cards de tool ficam ocultos: mostra à esquerda o
-  // comando em execução agora (nome + arquivo/comando).
+  // In non-verbose modes the tool cards are hidden: it shows on the left the
+  // command running right now (name + file/command).
   const cmd = verbosity !== 'verbose' ? currentCmd(items) : undefined;
   return (
     <div className="activity" role="status" aria-live="polite">
@@ -370,16 +370,16 @@ function ActivityIndicator({
   );
 }
 
-// Um turno do Claude: cabeçalho único + texto/tools na ordem. Corridas de tools
-// de tarefa são fundidas numa única checklist inline (TodoCard).
-// Família de edição: agrupa entre si (Edit/Write/MultiEdit) no mesmo arquivo.
+// One Claude turn: a single header + text/tools in order. Runs of task tools
+// are merged into a single inline checklist (TodoCard).
+// Edit family: they group together (Edit/Write/MultiEdit) on the same file.
 const MERGE_EDIT = /^(Edit|MultiEdit|Write|NotebookEdit)$/;
 
 /**
- * Chave de mesclagem: tools consecutivos com a MESMA chave viram um card só.
- *  - edição no mesmo arquivo → `edit:<file>` (mescla Edit/Write/MultiEdit juntos)
- *  - outro file-tool → `<name>:<file>` (Read do mesmo arquivo, etc.)
- *  - demais (Bash/Grep/…) → `<name>` (sequência do mesmo comando)
+ * Merge key: consecutive tools with the SAME key become one card.
+ *  - edit on the same file → `edit:<file>` (merges Edit/Write/MultiEdit together)
+ *  - another file tool → `<name>:<file>` (Read of the same file, etc.)
+ *  - the rest (Bash/Grep/…) → `<name>` (sequence of the same command)
  */
 function mergeKey(it: ToolItem): string {
   const input = (it.input ?? {}) as Record<string, unknown>;
@@ -390,21 +390,21 @@ function mergeKey(it: ToolItem): string {
 }
 
 /**
- * Um item é EXIBIDO no timeline conforme a verbosity (só display):
- *   verbose=tudo; dialogo=edições+todo texto; necessary=edições+texto final;
- *   quiet=só texto final. Ask/checklist sempre; user sempre.
+ * An item is DISPLAYED in the timeline according to the verbosity (display only):
+ *   verbose=everything; dialogo=edits+all text; necessary=edits+final text;
+ *   quiet=final text only. Ask/checklist always; user always.
  */
 function visibleInTimeline(it: TimelineItem, verbosity: string, lastAssistId?: string): boolean {
   if (verbosity === 'verbose') return true;
   if (it.kind === 'user') return true;
   if (it.kind === 'assistant') {
-    if (verbosity === 'dialogo') return true; // todo o texto
-    return it.id === lastAssistId; // necessary/quiet: só o final
+    if (verbosity === 'dialogo') return true; // all the text
+    return it.id === lastAssistId; // necessary/quiet: only the final one
   }
   // tool
   if (it.name === 'AskUserQuestion' || isTodoToolName(it.name)) return true;
   if (verbosity === 'quiet') return false;
-  return MERGE_EDIT.test(it.name); // necessary/dialogo: só edições
+  return MERGE_EDIT.test(it.name); // necessary/dialogo: edits only
 }
 
 function ClaudeTurn({
@@ -432,14 +432,14 @@ function ClaudeTurn({
   const turnStart = turnStartTs(items);
   const nodes: ReactNode[] = [];
   let todoShown = false;
-  // Verbosity filtra a EXIBIÇÃO (não muda nada no agente):
-  //   verbose   = tudo (como hoje)
-  //   necessary = edições + explicação final
-  //   dialogo   = edições + texto do que está fazendo (todo o texto)
-  //   quiet     = só a explicação final
+  // Verbosity filters the DISPLAY (it changes nothing in the agent):
+  //   verbose   = everything (as today)
+  //   necessary = edits + final explanation
+  //   dialogo   = edits + text of what it is doing (all the text)
+  //   quiet     = only the final explanation
   const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant')?.id;
   const visible = items.filter((it) => visibleInTimeline(it, verbosity, lastAssistId));
-  // Buffer p/ mesclar tools ADJACENTES de mesma chave (mesmo arquivo/comando).
+  // Buffer to merge ADJACENT tools with the same key (same file/command).
   let group: ToolItem[] = [];
   let groupKey = '';
   const flushGroup = () => {
@@ -453,9 +453,9 @@ function ClaudeTurn({
     );
   };
   for (const it of visible) {
-    // ToolSearch é plumbing interno do CLI (carrega schemas de tools deferred): oculta.
+    // ToolSearch is internal CLI plumbing (it loads deferred tool schemas): hidden.
     if (it.kind === 'tool' && it.name === 'ToolSearch') continue;
-    // Tools de tarefa não viram cards: alimentam a checklist única do turno.
+    // Task tools don't become cards: they feed the turn's single checklist.
     if (it.kind === 'tool' && isTodoToolName(it.name)) {
       flushGroup();
       if (showTodos && !todoShown && todos.length > 0) {
@@ -464,13 +464,13 @@ function ClaudeTurn({
       }
       continue;
     }
-    // AskUserQuestion: card próprio (não mescla).
+    // AskUserQuestion: its own card (not merged).
     if (it.kind === 'tool' && it.name === 'AskUserQuestion') {
       flushGroup();
       nodes.push(<AskCard key={it.id} item={it} t={t} answers={answers} />);
       continue;
     }
-    // Demais tools: acumula no grupo enquanto a chave de mesclagem se mantém.
+    // Other tools: accumulated in the group while the merge key holds.
     if (it.kind === 'tool') {
       const key = mergeKey(it);
       if (group.length && groupKey === key) group.push(it);
@@ -527,7 +527,7 @@ function UserBubble({
 }) {
   const openImage = useImageViewer();
   const [collapsed, setCollapsed] = useState(true);
-  // Só faz sentido oferecer expandir quando o texto tem mais de uma linha.
+  // It only makes sense to offer expanding when the text has more than one line.
   const collapsible = !!item.text && item.text.includes('\n');
   return (
     <Tooltip
@@ -587,8 +587,8 @@ function UserBubble({
 }
 
 
-// Conteúdo de uma mensagem do assistente, SEM cabeçalho de papel (o turno já
-// mostra "Claude" uma vez). Vazio (sem texto nem thinking) não renderiza nada.
+// Content of an assistant message, WITHOUT a role header (the turn already
+// shows "Claude" once). Empty (no text and no thinking) renders nothing.
 function AssistantContent({
   item,
   t,
@@ -599,7 +599,7 @@ function AssistantContent({
   defaultShowThinking: boolean;
 }) {
   const [showThinking, setShowThinking] = useState(defaultShowThinking);
-  // Default global (setting) mudou: re-sincroniza os blocos já montados.
+  // The global default (setting) changed: re-syncs the already mounted blocks.
   useEffect(() => setShowThinking(defaultShowThinking), [defaultShowThinking]);
   if (!item.text && !item.thinking) return null;
   return (
@@ -624,12 +624,12 @@ function AssistantContent({
 
 function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
-  // Default global (setting) mudou: re-sincroniza os cards já montados.
+  // The global default (setting) changed: re-syncs the already mounted cards.
   useEffect(() => setOpen(defaultOpen), [defaultOpen]);
-  const item = items[0]; // primário (cabeçalho)
+  const item = items[0]; // primary (header)
   const last = items[items.length - 1];
   const merged = items.length > 1;
-  // Status agregado: erro se qualquer um errou; ocupado se algum não concluiu.
+  // Aggregated status: error when any failed; busy when any hasn't finished.
   const anyErr = items.some((i) => i.isError);
   const anyBusy = items.some((i) => !i.done);
   const statusCls = anyErr ? 'err' : anyBusy ? 'busy' : 'ok';
@@ -699,7 +699,7 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
         : typeof input.new_string === 'string'
           ? input.new_string
           : undefined;
-    // Bash: comando shell destacado + saída (stdout) em texto.
+    // Bash: highlighted shell command + output (stdout) as text.
     if (name === 'Bash' && command !== undefined) {
       return (
         <>
@@ -715,7 +715,7 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
         </>
       );
     }
-    // Read: separa numeração (cat -n) num gutter e destaca o conteúdo limpo.
+    // Read: splits the numbering (cat -n) into a gutter and highlights the clean content.
     if (name === 'Read' && item.result !== undefined) {
       const raw = toText(item.result);
       const parsed = stripLineNumbers(raw);
@@ -736,7 +736,7 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
         />
       );
     }
-    // MultiEdit: um diff por edição.
+    // MultiEdit: one diff per edit.
     if (name === 'MultiEdit' && Array.isArray(input.edits)) {
       return (
         <>
@@ -750,11 +750,11 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
         </>
       );
     }
-    // Write: conteúdo novo destacado.
+    // Write: highlighted new content.
     if (name === 'Write' && writeContent !== undefined) {
       return <CodeBlock code={writeContent} language={lang} />;
     }
-    // Genérico: entrada e saída cruas (seguro para qualquer ferramenta).
+    // Generic: raw input and output (safe for any tool).
     return (
       <>
         <div className="tool-section-label">{t('tool.input')}</div>
@@ -770,8 +770,8 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
   }
 }
 
-// AskUserQuestion: visão inline tipo modal — perguntas + opções com a escolha
-// marcada. Sempre aberta. Respostas vêm do estado vivo da aba; em sessão
+// AskUserQuestion: inline modal-like view — questions + options with the choice
+// marked. Always open. Answers come from the tab's live state; in a resumed
 // retomada, caem no parse do tool_result.
 function AskCard({
   item,
@@ -850,7 +850,7 @@ function AskCard({
 
 // Extrai pares pergunta->resposta do tool_result. Formato do CLI:
 //   User has answered your questions: "Q1"="A1". "Q2"="A2". You can now continue…
-// Ancorado nos textos exatos das perguntas (a resposta pode conter aspas).
+// Anchored on the exact question texts (the answer may contain quotes).
 function parseAnswersFromResult(text: string, questions: AskQuestion[]): Record<string, string> {
   const out: Record<string, string> = {};
   if (!text) return out;
@@ -900,8 +900,8 @@ function stringify(v: unknown): string {
   }
 }
 
-// Timestamp mais recente do turno (fim da interação): endTs do turnComplete ou,
-// em sessão retomada, o maior ts entre os itens (assistant/tool).
+// Latest timestamp of the turn (end of the interaction): the turnComplete endTs or,
+// in a resumed session, the largest ts among the items (assistant/tool).
 function turnEndTs(items: (AssistantItem | ToolItem)[]): number | undefined {
   let m = 0;
   for (const it of items) {
@@ -911,14 +911,14 @@ function turnEndTs(items: (AssistantItem | ToolItem)[]): number | undefined {
   return m || undefined;
 }
 
-// Primeiro carimbo do turno (início da execução do prompt).
+// First stamp of the turn (start of the prompt's execution).
 function turnStartTs(items: (AssistantItem | ToolItem)[]): number | undefined {
   let m = Infinity;
   for (const it of items) if (it.ts) m = Math.min(m, it.ts);
   return Number.isFinite(m) ? m : undefined;
 }
 
-// Data + hora completa (HH:MM:SS) no formato da região do PC.
+// Full date + time (HH:MM:SS) in the PC's region format.
 function fmtStamp(ts: number): string {
   const region = window.__TOOTEGA_REGION__ || navigator.language || undefined;
   try {
@@ -930,7 +930,7 @@ function fmtStamp(ts: number): string {
   }
 }
 
-// ---- Linhas dos hints (dados de comunicação que não aparecem na timeline) ----
+// ---- Hint lines (communication data that doesn't show up in the timeline) ----
 
 function userRows(item: UserItem, t: Translator): TooltipRow[] {
   const rows: TooltipRow[] = [];

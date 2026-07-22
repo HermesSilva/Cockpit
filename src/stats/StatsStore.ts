@@ -16,14 +16,14 @@ import type { TimelineSample, CompactionEvent, ModelUsage, DenialEvent } from '.
 const DIR = path.join(os.homedir(), '.claude', 'tootega', 'stats');
 export const STATS_VERSION = 1;
 const FLUSH_MS = 4_000; // debounce do flush
-const TIMELINE_CAP = 400; // amostras de timeline mantidas por sessão (decima as antigas)
+const TIMELINE_CAP = 400; // timeline samples kept per session (old ones are decimated)
 
 /** Serializable state of a session — mirrors the StatsAggregator accumulators. */
 export interface PersistedStats {
   version: number;
   sessionId: string;
-  cwd?: string; // pasta de trabalho — p/ o CacheKeeper retomar com a aba fechada
-  keepCacheAlive?: boolean; // reenviar antes do cache de 1h expirar
+  cwd?: string; // working folder — for the CacheKeeper to resume with the tab closed
+  keepCacheAlive?: boolean; // re-send before the 1h cache expires
   model?: string;
   mode?: string;
   contextLimit: number;
@@ -39,12 +39,12 @@ export interface PersistedStats {
   // Counters
   turnCount: number;
   cacheResetCount: number; // resets de cache por TTL frio
-  cacheRecacheCostUsd: number; // $ re-pago em cacheWrite por causa dos resets
+  cacheRecacheCostUsd: number; // $ re-paid in cacheWrite because of the resets
   compactionCount: number;
-  reopenCount: number; // quantas vezes o contexto foi reaberto/retomado
+  reopenCount: number; // how many times the context was reopened/resumed
   peakContextUsed: number;
   peakContextTs?: number;
-  activeMs: number; // tempo de execução real (soma dos prompts, sem ociosidade)
+  activeMs: number; // real execution time (sum of the prompts, without idleness)
   // State for between-turn detection (not displayed, but must survive a reopen)
   lastContextUsed: number;
   lastCacheRead: number;
@@ -52,7 +52,7 @@ export interface PersistedStats {
   // Breakdown
   perModel: Record<string, ModelUsage>;
   toolDecisions: Record<string, { allow: number; allowAlways: number; deny: number }>;
-  denials?: DenialEvent[]; // log das negações de permissão (E5)
+  denials?: DenialEvent[]; // permission denial log (E5)
   timeline: TimelineSample[];
   compactions: CompactionEvent[];
   updatedAt: string; // ISO 8601
@@ -141,7 +141,7 @@ export function loadAllStats(): PersistedStats[] {
   try {
     names = fs.readdirSync(DIR);
   } catch {
-    return []; // diretório ainda não existe
+    return []; // the directory doesn't exist yet
   }
   const out: PersistedStats[] = [];
   for (const n of names) {
@@ -163,7 +163,7 @@ export function bumpCacheActivity(sessionId: string, ts: number): void {
   if (!s) return;
   s.lastTurnTs = ts;
   s.updatedAt = new Date(ts).toISOString();
-  pending.set(sessionId, s); // garante que um saveStats pendente não regrida
+  pending.set(sessionId, s); // makes sure a pending saveStats doesn't regress
   flushStats();
   dlog('stats', `cache activity bump ${sessionId} → lastTurnTs=${s.updatedAt}`);
 }
@@ -197,7 +197,7 @@ export function flushStats(): void {
     const tmp = `${dst}.tmp`;
     try {
       fs.writeFileSync(tmp, JSON.stringify(data));
-      fs.renameSync(tmp, dst); // troca atômica
+      fs.renameSync(tmp, dst); // atomic swap
     } catch (e) {
       log(`stats-store flush fail (${sessionId}): ${String(e)}`);
     }
@@ -209,7 +209,7 @@ export function flushStats(): void {
 /** Decima a timeline mantendo as amostras recentes densas e ralando as antigas. */
 export function capTimeline(timeline: TimelineSample[]): TimelineSample[] {
   if (timeline.length <= TIMELINE_CAP) return timeline;
-  // Mantém a metade recente intacta; remove 1 a cada 2 da metade antiga.
+  // Keeps the recent half intact; removes 1 in every 2 of the old half.
   const half = Math.floor(timeline.length / 2);
   const old = timeline.slice(0, half).filter((_, i) => i % 2 === 0);
   return [...old, ...timeline.slice(half)];

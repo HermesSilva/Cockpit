@@ -1,31 +1,31 @@
-// Catálogo curado de slash commands embutidos do Claude Code: categoria + chave
-// de descrição (i18n). O CLI só expõe os NOMES via sessionInit; categoria/descrição
-// não vêm no stream — daí a curadoria. Comandos fora do catálogo caem em "Outros".
+// Curated catalog of Claude Code's built-in slash commands: category + description
+// key (i18n). The CLI only exposes the NAMES via sessionInit; category/description
+// don't come in the stream — hence the curation. Commands outside the catalog fall into "Other".
 
 export interface CmdMeta {
-  cat: string; // chave i18n da categoria
-  desc: string; // chave i18n da descrição
+  cat: string; // i18n key of the category
+  desc: string; // i18n key of the description
 }
 
 export const SLASH_CATALOG: Record<string, CmdMeta> = {
-  // Contexto
+  // Context
   clear: { cat: 'cmdcat.context', desc: 'cmd.clear' },
   compact: { cat: 'cmdcat.context', desc: 'cmd.compact' },
   context: { cat: 'cmdcat.context', desc: 'cmd.context' },
   memory: { cat: 'cmdcat.context', desc: 'cmd.memory' },
-  // Sessão
+  // Session
   resume: { cat: 'cmdcat.session', desc: 'cmd.resume' },
   // Config
   model: { cat: 'cmdcat.config', desc: 'cmd.model' },
   config: { cat: 'cmdcat.config', desc: 'cmd.config' },
   permissions: { cat: 'cmdcat.config', desc: 'cmd.permissions' },
-  // Ferramentas
+  // Tools
   review: { cat: 'cmdcat.tools', desc: 'cmd.review' },
   init: { cat: 'cmdcat.tools', desc: 'cmd.init' },
   mcp: { cat: 'cmdcat.tools', desc: 'cmd.mcp' },
   agents: { cat: 'cmdcat.tools', desc: 'cmd.agents' },
   hooks: { cat: 'cmdcat.tools', desc: 'cmd.hooks' },
-  // Conta
+  // Account
   login: { cat: 'cmdcat.account', desc: 'cmd.login' },
   logout: { cat: 'cmdcat.account', desc: 'cmd.logout' },
   // Info
@@ -38,7 +38,7 @@ export const SLASH_CATALOG: Record<string, CmdMeta> = {
 
 export const OTHER_CAT = 'cmdcat.other';
 
-// Ordem de exibição das categorias no dropdown.
+// Display order of the categories in the dropdown.
 export const CAT_ORDER = [
   'cmdcat.session',
   'cmdcat.context',

@@ -1,8 +1,8 @@
-// Protocolo de mensagens entre o host da extensão e o webview React.
+// Message protocol between the extension host and the React webview.
 import type { Usage } from './events';
 
 export interface LimitWindow {
-  usedPct?: number; // 0..1 — statusline (sempre) ou stream (só perto do limite)
+  usedPct?: number; // 0..1 — statusline (always) or stream (only close to the limit)
   resetsAt?: string; // ISO 8601
   status?: 'allowed' | 'allowed_warning' | 'rejected'; // banda vinda do stream
   usd?: number; // custo local na janela
@@ -21,20 +21,20 @@ export interface ToolDecision {
   deny: number;
 }
 
-/** Uma negação de permissão registrada (log de negações — E5/auto-mode). */
+/** A recorded permission denial (denial log — E5/auto-mode). */
 export interface DenialEvent {
   tool: string;
   ts: number; // epoch ms
-  // 'user' = negada no modal; 'engine' = negada pelo próprio CLI (regra de auto
-  // mode, tool não permitida, caminho fora do workspace…). Ausente = 'user' (dado
-  // antigo, gravado antes da distinção existir).
+  // 'user' = denied in the modal; 'engine' = denied by the CLI itself (auto-mode
+  // rule, tool not allowed, path outside the workspace…). Absent = 'user' (old
+  // data, written before the distinction existed).
   source?: 'user' | 'engine';
   // Motivo. No 'user': o feedback digitado. No 'engine': a mensagem do CLI (desde
-  // a 2.1.193 o auto mode explica por que negou).
+  // 2.1.193 auto mode explains why it denied).
   reason?: string;
 }
 
-/** Uso acumulado segmentado por modelo (a sessão pode trocar de modelo). */
+/** Accumulated usage segmented per model (a session can switch models). */
 export interface ModelUsage {
   model: string;
   inputTokens: number;
@@ -45,17 +45,17 @@ export interface ModelUsage {
   turns: number;
 }
 
-/** Uma amostra da timeline (um ponto por turno) — base dos gráficos de consumo (S10). */
+/** A timeline sample (one point per turn) — the basis of the consumption charts (S10). */
 export interface TimelineSample {
   ts: number; // epoch ms
   contextUsed: number; // tamanho do prompt (input + cache_*) no turno
-  cacheReadPct: number; // 0..1 — fração lida do cache neste turno (eficiência)
-  costUsd: number; // custo acumulado da sessão até aqui
-  reset?: boolean; // este turno foi um cache reset (TTL frio)
-  compaction?: boolean; // este turno reduziu o contexto (compactação)
+  cacheReadPct: number; // 0..1 — fraction read from the cache this turn (efficiency)
+  costUsd: number; // session cost accumulated up to here
+  reset?: boolean; // this turn was a cache reset (cold TTL)
+  compaction?: boolean; // this turn reduced the context (compaction)
 }
 
-/** Evento de compactação detectado (contexto encolheu entre turnos) (S11). */
+/** Detected compaction event (the context shrank between turns) (S11). */
 export interface CompactionEvent {
   ts: number;
   before: number;
@@ -66,52 +66,52 @@ export interface CompactionEvent {
 export interface StatsSnapshot {
   model?: string;
   mode?: string;
-  // Sessão
-  sessionStartTs?: number; // epoch ms — início da sessão (system init)
+  // Session
+  sessionStartTs?: number; // epoch ms — session start (system init)
   // Contexto
   contextUsed: number;
   contextLimit: number;
   contextBreakdown?: ContextSlice[];
-  // Tokens acumulados na sessão
+  // Tokens accumulated in the session
   inputTokens: number;
   outputTokens: number;
   cacheCreateTokens: number;
   cacheReadTokens: number;
-  cacheHitRate: number; // 0..1 — cumulativo da sessão (read / (read+write+input))
-  lastTurnHitRate?: number; // 0..1 — hit do último turno consolidado (cr/total do turno)
-  cacheSavingsUsd?: number; // economia estimada (tokens lidos × delta de preço input→read)
+  cacheHitRate: number; // 0..1 — cumulative for the session (read / (read+write+input))
+  lastTurnHitRate?: number; // 0..1 — hit rate of the last consolidated turn (cr/total of the turn)
+  cacheSavingsUsd?: number; // estimated savings (read tokens × input→read price delta)
   // Custo
   sessionCostUsd: number;
   lastTurnCostUsd: number;
   costIsEstimate: boolean;
-  // Aceitação de ferramentas (por tool_name, acumulado na sessão)
+  // Tool acceptance (per tool_name, accumulated in the session)
   toolAcceptance?: ToolDecision[];
-  // Log das negações de permissão mais recentes (E5) — as últimas primeiro.
+  // Log of the most recent permission denials (E5) — latest first.
   recentDenials?: DenialEvent[];
-  // --- Persistência/coerência entre reaberturas do contexto ---
-  turnCount?: number; // turnos consolidados na sessão
-  reopenCount?: number; // quantas vezes o contexto foi reaberto/retomado
-  // Cache reset (TTL frio): turno ocioso que perdeu o prefixo e re-escreveu o cache
+  // --- Persistence/coherence across context reopens ---
+  turnCount?: number; // turns consolidated in the session
+  reopenCount?: number; // how many times the context was reopened/resumed
+  // Cache reset (cold TTL): an idle turn that lost the prefix and rewrote the cache
   cacheResetCount?: number;
-  cacheRecacheCostUsd?: number; // $ re-pago em cacheWrite por causa dos resets
-  // Compactação (contexto condensado entre turnos) — S11
+  cacheRecacheCostUsd?: number; // $ re-paid in cacheWrite because of the resets
+  // Compaction (context condensed between turns) — S11
   compactionCount?: number;
-  peakContextUsed?: number; // maior contexto já atingido na sessão
-  // Tempo de execução REAL da sessão (soma do tempo de cada prompt; exclui ociosidade)
+  peakContextUsed?: number; // largest context reached in the session
+  // REAL session execution time (sum of each prompt's time; excludes idleness)
   activeMs?: number;
   // --- Vida do cache (TTL de 1h) e keep-alive ---
   cacheLifeMs?: number; // janela total do cache (1h)
-  cacheAgeMs?: number; // idade desde a última atividade (requisição)
+  cacheAgeMs?: number; // age since the last activity (request)
   cacheExpiresInMs?: number; // quanto falta p/ o cache expirar
-  cacheExpiresAt?: number; // epoch ms do vencimento — p/ contagem regressiva ao vivo
-  cacheAlive?: boolean; // o cache ainda está vivo (idade < 1h)
-  keepCacheAlive?: boolean; // checkbox: reenviar p/ o cache não morrer
+  cacheExpiresAt?: number; // epoch ms of the expiry — for a live countdown
+  cacheAlive?: boolean; // the cache is still alive (age < 1h)
+  keepCacheAlive?: boolean; // checkbox: re-send so the cache doesn't die
   // Detalhamento por modelo (S5 estendido)
   perModel?: ModelUsage[];
   // Limites de conta
   limits?: { fiveHour?: LimitWindow; sevenDay?: LimitWindow };
-  // Fonte dos limites: statusline (% real completo) > stream (rate_limit_event:
-  // status/reset sempre, % só perto do limite) > estimate (tokens÷orçamento local).
+  // Source of the limits: statusline (real complete %) > stream (rate_limit_event:
+  // status/reset always, % only close to the limit) > estimate (tokens÷local budget).
   limitsSource?: 'statusline' | 'stream' | 'estimate';
 }
 
@@ -123,7 +123,7 @@ export interface InstalledPlugin {
   enabled: boolean;
   description?: string; // do manifest plugin.json
   url?: string; // homepage/repo/author do manifest
-  kind?: string; // tipo: skills|agents|commands|mcp|hooks|mixed (dos componentes)
+  kind?: string; // type: skills|agents|commands|mcp|hooks|mixed (from the components)
 }
 export interface AvailablePlugin {
   pluginId: string; // name@marketplace
@@ -131,8 +131,8 @@ export interface AvailablePlugin {
   description?: string;
   marketplaceName?: string;
   installCount?: number;
-  url?: string; // repositório de origem (source.url)
-  kind?: string; // tipo (classificado pelo Haiku)
+  url?: string; // source repository (source.url)
+  kind?: string; // type (classified by Haiku)
 }
 export interface Marketplace {
   name: string;
@@ -145,7 +145,7 @@ export interface PluginsData {
   marketplaces: Marketplace[];
 }
 
-// --- Account & Usage (botão "Usage") ---
+// --- Account & Usage ("Usage" button) ---
 export interface UsageAccount {
   loggedIn: boolean;
   authMethod?: string; // 'claude.ai' | 'console' | …
@@ -158,19 +158,19 @@ export interface UsageAccount {
 export interface UsageBucket {
   usedPct?: number; // 0..1
   resetsAt?: string; // ISO 8601
-  tokens?: number; // estimativa local (quando não há % real)
+  tokens?: number; // local estimate (when there is no real %)
   usd?: number;
 }
-/** Janela semanal restrita a um escopo (ex.: um modelo). O rótulo vem do servidor. */
+/** Weekly window restricted to a scope (e.g. one model). The label comes from the server. */
 export interface ScopedBucket extends UsageBucket {
   label: string; // display_name do escopo (ex.: "Fable", "Sonnet")
 }
-/** Uma fatia do detalhamento de uso (por modelo ou por origem). */
+/** A slice of the usage breakdown (per model or per source). */
 export interface UsageSlice {
   key: string; // id do modelo, ou 'main' | 'subagent'
   usd: number;
   tokens: number; // tokens NOVOS: input + output + cache-create
-  cacheRead: number; // contexto relido do cache (domina o total; exibido à parte)
+  cacheRead: number; // context re-read from the cache (dominates the total; displayed separately)
 }
 
 /** Detalhamento local da janela de 7 dias (sempre estimativa de tabela). */
@@ -179,29 +179,29 @@ export interface UsageBreakdown {
   bySource: UsageSlice[]; // main vs. subagent (sidechain)
 }
 
-/** Contexto injetado por uma ferramenta (soma estimada dos tool_result). */
+/** Context injected by a tool (estimated sum of the tool_results). */
 export interface ToolContextSlice {
   key: string; // nome da tool; "mcp:<servidor>" ou "skill:<nome>" quando agrupada
   calls: number;
   tokens: number;
 }
 
-/** Atribuição do uso de 7 dias: para onde foram os tokens. */
+/** 7-day usage attribution: where the tokens went. */
 export interface UsageAttribution {
-  longContextPct: number; // 0..1 — parcela gerada com contexto > 150k
+  longContextPct: number; // 0..1 — share generated with context > 150k
   subagentPct: number; // 0..1 — parcela vinda de subagentes
   cacheHitPct?: number; // 0..1 — cache_read / (cache_read + cache_creation)
   byTool: ToolContextSlice[]; // maior primeiro
 }
 
-/** Tokens de um único dia (chave local YYYY-MM-DD). */
+/** Tokens of a single day (local YYYY-MM-DD key). */
 export interface DailyTokens {
   date: string; // YYYY-MM-DD no fuso local
   sent: number; // input + cache_read + cache_creation
   received: number; // output
 }
 
-/** Contador GLOBAL de tokens (todas as instâncias/contextos da máquina). */
+/** GLOBAL token counter (every instance/context on the machine). */
 export interface TokenTotals {
   sent: number; // all-time
   received: number; // all-time
@@ -211,27 +211,27 @@ export interface TokenTotals {
 
 export interface UsageData {
   account: UsageAccount;
-  // fiveHour = janela da sessão atual; sevenDay = semanal "todos os modelos";
-  // weeklyScoped = janelas semanais por modelo (ex.: Fable), rotuladas pelo servidor.
+  // fiveHour = current session window; sevenDay = weekly "all models";
+  // weeklyScoped = per-model weekly windows (e.g. Fable), labelled by the server.
   buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; weeklyScoped?: ScopedBucket[] };
-  source: 'api' | 'statusline' | 'stream' | 'estimate'; // origem dos %
+  source: 'api' | 'statusline' | 'stream' | 'estimate'; // origin of the %
   trackingEnabled: boolean; // wrapper de statusline instalado (captura rate_limits real)
   // Detalhamento local 7d (por modelo / origem) — estimativa, sempre presente.
   breakdown?: UsageBreakdown;
-  // Atribuição local 7d: long context, subagentes, cache hit-rate, tools/MCP.
+  // Local 7d attribution: long context, subagents, cache hit rate, tools/MCP.
   attribution?: UsageAttribution;
-  // Contador global de tokens (enviado/recebido/total) por dia — toda a máquina.
+  // Global token counter (sent/received/total) per day — the whole machine.
   tokens?: TokenTotals;
-  // Telemetria OTEL (opt-in) agregada pelo receiver local — ausente se desligado.
+  // OTEL telemetry (opt-in) aggregated by the local receiver — absent when off.
   otel?: OtelStats;
   generatedAt: string; // ISO 8601
 }
 
-/** Estatísticas agregadas da telemetria OTEL do Claude Code (opt-in, local). */
+/** Aggregated statistics from Claude Code's OTEL telemetry (opt-in, local). */
 export interface OtelStats {
   enabled: boolean; // receiver ligado e escutando
-  endpoint?: string; // ex.: http://127.0.0.1:4318 (p/ o usuário apontar o OTEL)
-  sinceTs?: number; // epoch ms do início da coleta
+  endpoint?: string; // ex.: http://127.0.0.1:4318 (for the user to point OTEL at)
+  sinceTs?: number; // epoch ms of the collection start
   linesAdded?: number; // claude_code.lines_of_code.count (type=added)
   linesRemoved?: number; // claude_code.lines_of_code.count (type=removed)
   locByModel?: UsageSlice[]; // LOC por modelo (tokens = linhas)
@@ -243,20 +243,20 @@ export interface OtelStats {
   workflows?: WorkflowRun[]; // custo/tokens por run de workflow (maior custo primeiro)
 }
 
-/** Uma run de workflow reconstruída da telemetria (atributos `workflow.*`, CLI 2.1.202). */
+/** A workflow run reconstructed from the telemetry (`workflow.*` attributes, CLI 2.1.202). */
 export interface WorkflowRun {
   runId: string;
   name: string;
-  usd: number; // custo REAL somado dos agentes da run
+  usd: number; // REAL cost summed from the run's agents
   tokens: number;
-  effort?: string; // effort(s) dos agentes da run (low…max), CLI 2.1.214; ausente se o modelo não suporta
+  effort?: string; // effort(s) of the run's agents (low…max), CLI 2.1.214; absent when the model doesn't support it
 }
 
 // --- MCP (painel 🔌 Servers) ---
-/** Um servidor MCP: estado agora + tools que ele expõe nesta sessão. */
+/** An MCP server: its state now + the tools it exposes in this session. */
 export interface McpServerInfo {
   name: string;
-  // 'pending' = `.mcp.json` não aprovado (o CLI nem sobe o servidor — 2.1.196).
+  // 'pending' = `.mcp.json` not approved (the CLI won't even start the server — 2.1.196).
   status: 'connected' | 'failed' | 'pending' | 'unknown';
   connected: boolean;
   target?: string; // comando (stdio) ou URL (http/sse), sem o sufixo `(HTTP)`/`(SSE)`
@@ -273,22 +273,22 @@ export interface McpData {
 export interface SessionConfig {
   model: string; // valor selecionado ('default' = padrão do CLI)
   effort: string; // 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-  models: string[]; // opções planas (compat)
-  modelGroups?: ModelGroup[]; // opções agrupadas (aliases / versões / ativos)
-  modelMeta?: Record<string, ModelMeta>; // contexto (real, /v1/models) + preço (docs) por id
+  models: string[]; // flat options (compat)
+  modelGroups?: ModelGroup[]; // grouped options (aliases / versions / active)
+  modelMeta?: Record<string, ModelMeta>; // context (real, /v1/models) + price (docs) per id
   efforts: string[];
   defaultModel?: string; // o que 'Default' resolve (settings.model ou init observado)
   defaultEffort?: string; // settings.effortLevel
   permissionMode: string;
   permissionModes: string[];
   allowAgents: boolean; // liberar agentes (Task) e workflows (Workflow); off economiza tokens
-  showThinking: boolean; // expandir thinking por padrão
-  spellCheck: boolean; // corretor ortográfico ao digitar (overlay do compositor)
-  expandToolCards: boolean; // expandir cards de tool por padrão na timeline
-  pendingRestart: boolean; // model/effort/permission mudou e reinicia no próximo envio
+  showThinking: boolean; // expand thinking by default
+  spellCheck: boolean; // spell-check while typing (composer overlay)
+  expandToolCards: boolean; // expand tool cards by default in the timeline
+  pendingRestart: boolean; // model/effort/permission changed and restarts on the next send
   userName: string; // nome do assinante para o rótulo "You" (vazio = usa o padrão)
-  voiceCorrect: boolean; // corrigir o texto ditado via Haiku ao parar o ditado
-  verbosity: string; // verbose|necessary|dialogo|quiet — o que mostrar no timeline
+  voiceCorrect: boolean; // correct the dictated text via Haiku when dictation stops
+  verbosity: string; // verbose|necessary|dialogo|quiet — what to show in the timeline
 }
 
 export interface ModelGroup {
@@ -296,38 +296,38 @@ export interface ModelGroup {
   items: string[];
 }
 
-// Metadados por modelo para o seletor (colunas contexto/preço).
-// Contexto vem REAL da Models API (/v1/models: max_input_tokens); preço vem das
-// docs de pricing (não há endpoint de preço). Campos ausentes = desconhecido.
+// Per-model metadata for the selector (context/price columns).
+// The context comes REAL from the Models API (/v1/models: max_input_tokens); the price from the
+// pricing docs (there is no price endpoint). Absent fields = unknown.
 export interface ModelMeta {
   contextTokens?: number; // janela de contexto (max_input_tokens)
-  inMTok?: number; // preço de entrada em USD por 1M tokens
-  outMTok?: number; // preço de saída em USD por 1M tokens
+  inMTok?: number; // input price in USD per 1M tokens
+  outMTok?: number; // output price in USD per 1M tokens
   priceMult?: number; // multiplicador de entrada normalizado (Opus 4.8 = 1x)
 }
 
-// Sessão/conversa existente ("contexto") para retomar.
+// Existing session/conversation ("context") to resume.
 export interface SessionInfo {
   id: string;
   title: string;
   updatedAt: string; // ISO 8601
   messageCount: number;
-  // Estatísticas extras p/ o hint rico do card (todas opcionais/tolerantes).
-  createdAt?: string; // ISO 8601 — criação do transcript
+  // Extra statistics for the card's rich hint (all optional/tolerant).
+  createdAt?: string; // ISO 8601 — transcript creation
   sizeBytes?: number; // tamanho do .jsonl
-  userCount?: number; // mensagens do usuário
+  userCount?: number; // user messages
   assistantCount?: number; // mensagens do assistente
   toolCount?: number; // chamadas de tool (tool_use)
-  model?: string; // último modelo observado
+  model?: string; // last observed model
 }
 
-// Uma opção de uma pergunta do AskUserQuestion.
+// One option of an AskUserQuestion question.
 export interface AskOption {
   label: string;
   description?: string;
 }
 
-// Uma pergunta do AskUserQuestion (a UI renderiza uma aba por pergunta).
+// One AskUserQuestion question (the UI renders one tab per question).
 export interface AskQuestion {
   question: string;
   header: string;
@@ -335,7 +335,7 @@ export interface AskQuestion {
   options: AskOption[];
 }
 
-// Sugestão de permissão que acompanha o can_use_tool (ex.: setMode acceptEdits).
+// Permission suggestion that accompanies can_use_tool (e.g. setMode acceptEdits).
 export interface PermissionSuggestion {
   type?: string;
   mode?: string;
@@ -343,7 +343,7 @@ export interface PermissionSuggestion {
   [k: string]: unknown;
 }
 
-// Item reconstruído do transcript para renderizar o histórico ao retomar.
+// Item rebuilt from the transcript to render the history when resuming.
 export type HistoryItem =
   | { kind: 'user'; id: string; text: string; images?: string[]; ts?: number }
   | { kind: 'assistant'; id: string; text: string; thinking: string }
@@ -357,15 +357,15 @@ export type HistoryItem =
       ts?: number;
     };
 
-// Aba/sessão paralela: metadados que o host mantém (id, título, status).
+// Parallel tab/session: metadata the host keeps (id, title, status).
 export interface TabInfo {
   id: string;
   title: string;
   status: 'idle' | 'busy' | 'error';
-  sessionId?: string; // id do transcript da sessão (casa com SessionInfo.id)
+  sessionId?: string; // the session's transcript id (matches SessionInfo.id)
 }
 
-// Metadados de uma credencial do cofre (nunca traz o valor secreto).
+// Metadata of a vault credential (it never carries the secret value).
 export interface CredentialMeta {
   id: string;
   name: string;
@@ -374,16 +374,16 @@ export interface CredentialMeta {
   createdAt: number;
 }
 
-// Uma tarefa em background em andamento (Workflow / tool com run_in_background).
+// A background task in progress (Workflow / tool with run_in_background).
 export interface BackgroundTask {
-  id: string; // tool_use id que a lançou (casa com o <tool-use-id> da notificação)
+  id: string; // tool_use id that launched it (matches the <tool-use-id> of the notification)
   tool: string; // 'Workflow' | 'Task' | 'Bash' | …
-  label: string; // o que está fazendo (nome do workflow / descrição / comando)
+  label: string; // what it is doing (workflow name / description / command)
 }
 
-// host -> webview. Toda mensagem pode carregar `tab` (id da aba de origem):
-// mensagens de conversa/stats são roteadas para o estado daquela aba; mensagens
-// globais (ready/config/cliStatus/locale/sessions/tabs) vêm sem `tab`.
+// host -> webview. Every message can carry `tab` (the origin tab id):
+// conversation/stats messages are routed to that tab's state; global
+// messages (ready/config/cliStatus/locale/sessions/tabs) come without `tab`.
 export type HostToWebview = HostMsg & { tab?: string };
 
 type HostMsg =
@@ -395,8 +395,8 @@ type HostMsg =
       available: boolean;
       version?: string;
       error?: string;
-      latest?: string; // última versão publicada do Claude CLI (npm)
-      cockpitVersion?: string; // versão desta extensão
+      latest?: string; // latest published Claude CLI version (npm)
+      cockpitVersion?: string; // this extension's version
     }
   | {
       kind: 'sessionInit';
@@ -422,19 +422,19 @@ type HostMsg =
       description?: string;
       input: unknown;
       suggestions?: PermissionSuggestion[];
-      oldText?: string; // conteúdo atual em disco (Write) p/ diff
+      oldText?: string; // current content on disk (Write) for the diff
     }
   | { kind: 'askRequest'; requestId: string; questions: AskQuestion[] }
   | { kind: 'authRequired' }
   | { kind: 'stats'; stats: StatsSnapshot }
-  // Timeline/compactações da sessão (pesado): enviado por turno, não por token.
+  // Session timeline/compactions (heavy): sent per turn, not per token.
   | { kind: 'statsTimeline'; timeline: TimelineSample[]; compactions: CompactionEvent[] }
   | { kind: 'turnComplete'; costUsd?: number; usage?: Usage }
   | { kind: 'busy'; busy: boolean }
-  // Tarefa(s) em background (Workflow / run_in_background) ainda executando após o
-  // turno terminar: o `result` zera o busy, mas o trabalho continua. Mantém o
-  // indicador de "executando" na timeline e no card do Hub até a notificação chegar,
-  // e lista o que cada processo está fazendo (rótulo) para o usuário ficar ciente.
+  // Background task(s) (Workflow / run_in_background) still running after the
+  // turn ended: the `result` clears busy, but the work goes on. It keeps the
+  // "running" indicator in the timeline and in the Hub card until the notification arrives,
+  // and lists what each process is doing (label) so the user is aware.
   | { kind: 'background'; tasks: BackgroundTask[] }
   | { kind: 'error'; message: string }
   | { kind: 'sessions'; sessions: SessionInfo[]; cwd: string }
@@ -444,62 +444,62 @@ type HostMsg =
   | { kind: 'history'; items: HistoryItem[] }
   | { kind: 'resolvedPath'; requestId: string; text: string }
   | { kind: 'openSessions' }
-  | { kind: 'taskTimings'; timings: Record<string, number> } // médias por tipo, já no escopo (modelo,effort) atual (gauge)
+  | { kind: 'taskTimings'; timings: Record<string, number> } // averages per type, already in the current (model,effort) scope (gauge)
   | { kind: 'usageData'; data: UsageData } // resposta ao botão "Usage"
-  | { kind: 'effortGate'; selected: string; min: string } // effort < mínimo do CLAUDE.md da pasta: confirmar antes
+  | { kind: 'effortGate'; selected: string; min: string } // effort < the folder CLAUDE.md minimum: confirm first
   | { kind: 'voiceCorrected'; text: string } // ditado: texto corrigido (libera o input)
-  | { kind: 'voiceCorrectError' } // ditado: correção falhou (mantém o original, libera)
-  | { kind: 'draftRestore'; text: string } // restaura rascunho/ditado após reload/crash do renderer
-  | { kind: 'voiceDict'; data: VoiceDictData } // dicionário de ditado da conta (resposta ao modal)
-  | { kind: 'voiceReady' } // ditado: WS aberto + mic capturando de fato (pode falar)
-  | { kind: 'voiceTranscript'; text: string; isFinal: boolean } // ditado: transcrição parcial/final
-  | { kind: 'voiceError'; message: string } // ditado: falha (sem token, ws, etc.)
-  | { kind: 'voiceClosed' } // ditado: sessão encerrada
+  | { kind: 'voiceCorrectError' } // dictation: correction failed (keeps the original, unblocks)
+  | { kind: 'draftRestore'; text: string } // restores the draft/dictation after a renderer reload/crash
+  | { kind: 'voiceDict'; data: VoiceDictData } // the account's dictation dictionary (answer to the modal)
+  | { kind: 'voiceReady' } // dictation: WS open + mic actually capturing (you may speak)
+  | { kind: 'voiceTranscript'; text: string; isFinal: boolean } // dictation: partial/final transcription
+  | { kind: 'voiceError'; message: string } // dictation: failure (no token, ws, etc.)
+  | { kind: 'voiceClosed' } // dictation: session ended
   | { kind: 'auth'; loggedIn: boolean } // estado de login (mostra Sign in OU Sign out)
   | { kind: 'pluginsData'; data: PluginsData } // lista de plugins/marketplaces (modal)
-  | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operação em andamento
-  | { kind: 'pluginsError'; message: string } // falha numa ação de plugin
+  | { kind: 'pluginsBusy'; busy: boolean; label?: string } // operation in progress
+  | { kind: 'pluginsError'; message: string } // a plugin action failed
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
   | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }
-  // Corretor ortográfico (host via hunspell-asm): resultado de checagem (palavras
-  // erradas) e de sugestões (por idioma).
+  // Spell-checker (host via hunspell-asm): result of a check (wrong words)
+  // and of suggestions (per language).
   | { kind: 'spellResult'; bad: string[] }
   | { kind: 'spellSuggestResult'; requestId: string; word: string; pt: string[]; en: string[] }
   // --- Cofre de credenciais (TOTP 2FA) ---
   | { kind: 'credsData'; enrolled: boolean; items: CredentialMeta[] } // estado do cofre
   | { kind: 'credsSetup'; qrSvg: string; secret: string; uri: string } // enrollment: QR + segredo
   | { kind: 'credsValue'; id: string; name: string; value: string } // valor liberado p/ injetar no composer
-  | { kind: 'credsResult'; ok: boolean; action: string; message?: string } // resultado de uma ação
-  | { kind: 'credsError'; message: string } // falha (storage indisponível, etc.)
-  // Seleção/arquivo ativo do editor p/ compartilhar como @file#a-b (toggle no composer).
+  | { kind: 'credsResult'; ok: boolean; action: string; message?: string } // result of an action
+  | { kind: 'credsError'; message: string } // failure (storage unavailable, etc.)
+  // Editor selection/active file to share as @file#a-b (composer toggle).
   | { kind: 'selection'; ref?: string }
   // Autocomplete de @-mention: resultados de arquivos p/ a query digitada.
   | { kind: 'mentionResults'; requestId: string; items: string[] };
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
-// `category` é uma chave enum (session|context|config|tools|account|info|plugin|other);
-// `hint`/`detail` já vêm no idioma do Cockpit.
+// `category` is an enum key (session|context|config|tools|account|info|plugin|other);
+// `hint`/`detail` already come in the Cockpit's language.
 export interface SlashCmdMeta {
   category: string;
   hint: string;
   detail?: string;
-  group?: string; // nome do plugin/ferramenta de terceiro (grupo próprio)
+  group?: string; // name of the third-party plugin/tool (its own group)
 }
 
-// Dicionário de ditado (por login): termos a reconhecer/preservar + substituições.
+// Dictation dictionary (per login): terms to recognize/preserve + replacements.
 export interface VoiceReplacement {
-  from: string; // como costuma ser ouvido/transcrito
-  to: string; // como deve ficar escrito
+  from: string; // how it is usually heard/transcribed
+  to: string; // how it should be written
 }
 export interface VoiceDictData {
   terms: string[];
   replacements: VoiceReplacement[];
-  account?: string; // conta a que pertence (rótulo informativo)
-  spellWords?: string[]; // dicionário do corretor (palavras adicionadas/ignoradas)
+  account?: string; // account it belongs to (informative label)
+  spellWords?: string[]; // spell-checker dictionary (added/ignored words)
 }
 
-// Imagem anexada (base64 sem prefixo data:).
+// Attached image (base64 without the data: prefix).
 export interface ImageAttachment {
   mediaType: string;
   data: string;
@@ -508,7 +508,7 @@ export interface ImageAttachment {
 // webview -> host
 export type WebviewToHost =
   | { kind: 'init' }
-  | { kind: 'heartbeat' } // pulso de vida do render: silêncio prolongado = renderer morto (tela branca)
+  | { kind: 'heartbeat' } // render liveness beat: prolonged silence = dead renderer (blank screen)
   | { kind: 'sendMessage'; text: string; images?: ImageAttachment[]; force?: boolean; selection?: string }
   | { kind: 'resolvePaths'; requestId: string; absPaths: string[] }
   | { kind: 'readClipboardFiles'; requestId: string }
@@ -531,7 +531,7 @@ export type WebviewToHost =
   | { kind: 'listSessions' }
   | { kind: 'resumeSession'; sessionId: string }
   | { kind: 'reloadSession'; sessionId: string }
-  | { kind: 'remoteControl'; sessionId: string } // publica a sessão p/ controle remoto (celular)
+  | { kind: 'remoteControl'; sessionId: string } // publishes the session for remote control (phone)
   | { kind: 'deleteSession'; sessionId: string }
   | { kind: 'deleteAllSessions' }
   | { kind: 'setLocale'; locale: string }
@@ -548,16 +548,16 @@ export type WebviewToHost =
   | { kind: 'mentionSearch'; requestId: string; query: string } // @-mention: busca arquivos
   | { kind: 'openDiff'; tool: string; input: unknown } // abre o diff proposto no editor nativo
   | { kind: 'draftChanged'; text: string } // espelha o rascunho/ditado no host (anti-perda)
-  // Exporta a conversa p/ um .md na raiz do projeto. mode 'direct' = mecânico (o
-  // markdown já vem pronto); 'ai' = reescreve via CLI (mesmo modelo/effort, gasta tokens).
+  // Exports the conversation to a .md at the project root. mode 'direct' = mechanical (the
+  // markdown is already built); 'ai' = rewritten via the CLI (same model/effort, spends tokens).
   | { kind: 'exportMd'; markdown: string; fileName?: string; mode: 'direct' | 'ai' }
-  | { kind: 'voiceDictGet' } // modal: carrega o dicionário de ditado da conta
-  | { kind: 'voiceDictSave'; data: VoiceDictData } // modal: salva o dicionário de ditado
+  | { kind: 'voiceDictGet' } // modal: loads the account's dictation dictionary
+  | { kind: 'voiceDictSave'; data: VoiceDictData } // modal: saves the dictation dictionary
   | { kind: 'setKeepCacheAlive'; value: boolean } // liga/desliga o keep-alive do cache desta aba
   | { kind: 'openEditor' }
   | { kind: 'openFolder'; path: string }
-  | { kind: 'taskDuration'; type: string; ms: number } // amostra de duração de tarefa (gauge)
-  | { kind: 'rewind'; index: number } // rebobina a conversa até o (index)-ésimo prompt do usuário, removendo-o
+  | { kind: 'taskDuration'; type: string; ms: number } // task duration sample (gauge)
+  | { kind: 'rewind'; index: number } // rewinds the conversation to the (index)-th user prompt, removing it
   | { kind: 'voiceStart'; language?: string } // ditado: host abre o WS + captura o mic (ffmpeg)
   | { kind: 'voiceStop' } // ditado: finaliza a captura
   | { kind: 'voiceCorrect'; text: string } // ditado: corrige o texto via Haiku (one-shot)
@@ -572,17 +572,17 @@ export type WebviewToHost =
   | { kind: 'fetchUsage' } // botão "Usage": busca conta + limites + breakdown (dado quente)
   | { kind: 'enableUsageTracking' } // instala o wrapper de statusline p/ capturar rate_limits real
   | { kind: 'saveImage'; mediaType: string; data: string }
-  // Corretor ortográfico: checa um lote de palavras; pede sugestões de uma; adiciona
-  // ao dicionário do usuário (persistente no host).
+  // Spell-checker: checks a batch of words; asks for suggestions for one; adds
+  // to the user dictionary (persistent in the host).
   | { kind: 'spellCheck'; words: string[] }
   | { kind: 'spellSuggest'; requestId: string; word: string }
   | { kind: 'spellAdd'; word: string }
   // --- Cofre de credenciais (TOTP 2FA) ---
   | { kind: 'credsLoad' } // pede o estado do cofre (enrolado? lista)
   | { kind: 'credsEnrollBegin' } // gera segredo TOTP novo (devolve QR)
-  | { kind: 'credsEnrollConfirm'; code: string } // confirma o enrollment com o 1º código
+  | { kind: 'credsEnrollConfirm'; code: string } // confirms the enrollment with the first code
   | { kind: 'credsAdd'; code: string; name: string; username?: string; value: string; note?: string }
-  // Edita: value ausente/indefinido = mantém o valor atual; presente = substitui.
+  // Edit: absent/undefined value = keeps the current value; present = replaces it.
   | { kind: 'credsEdit'; code: string; id: string; name: string; username?: string; value?: string; note?: string }
   | { kind: 'credsUse'; code: string; id: string } // usa: valida TOTP e devolve o valor
   | { kind: 'credsDelete'; code: string; id: string };

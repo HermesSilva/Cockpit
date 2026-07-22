@@ -50,7 +50,7 @@ function readMac(): string[] {
   );
   if (res.status !== 0) return [];
   const p = (res.stdout || '').trim();
-  return p ? [p.normalize('NFC')] : []; // coerção «class furl» rende 1 arquivo
+  return p ? [p.normalize('NFC')] : []; // the «class furl» coercion yields 1 file
 }
 
 function readLinux(): string[] {

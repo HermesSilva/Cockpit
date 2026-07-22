@@ -1,6 +1,6 @@
-// Converte a timeline num documento Markdown legível: a CONVERSA — o que se
-// pediu, o que se pensou e o que o assistente respondeu (o que fez, por quê,
-// como). Exclui o ruído técnico (cards de tool / comandos / resultados).
+// Converts the timeline into a readable Markdown document: the CONVERSATION — what was
+// asked, what was thought and what the assistant answered (what it did, why,
+// how). It excludes the technical noise (tool cards / commands / results).
 import type { TimelineItem } from '../types';
 import type { Translator } from '../i18n';
 
@@ -13,8 +13,8 @@ function fmtTs(ts?: number): string {
   }
 }
 
-/** Monta o Markdown da conversa a partir dos itens da timeline. Os nomes dos
- *  interlocutores espelham a webview: usuário = `userName` (ou role.user) e
+/** Builds the conversation's Markdown from the timeline items. The speaker
+ *  names mirror the webview: user = `userName` (or role.user) and
  *  assistente = role.assistant ("Claude"). */
 export function buildConversationMd(
   items: TimelineItem[],
@@ -41,19 +41,19 @@ export function buildConversationMd(
       if (!think && !text) continue;
       out.push(`### 🤖 ${assistantLabel}`, '');
       if (think) {
-        // Raciocínio recolhível (não polui a leitura, mas preserva "o que se pensou").
+        // Collapsible reasoning (it doesn't pollute the reading, but preserves "what was thought").
         out.push('<details>', `<summary>💭 ${t('export.thinking')}</summary>`, '', think, '', '</details>', '');
       }
       if (text) out.push(text, '');
     }
-    // kind === 'tool': IGNORADO de propósito (comando/resultado = ruído técnico).
+    // kind === 'tool': IGNORED on purpose (command/result = technical noise).
   }
 
   out.push('---', '');
   return out.join('\n');
 }
 
-/** Nome de arquivo sugerido (slug do título + data curta). */
+/** Suggested file name (title slug + short date). */
 export function suggestedFileName(title?: string, ts = Date.now()): string {
   const slug = (title || 'conversa')
     .toLowerCase()

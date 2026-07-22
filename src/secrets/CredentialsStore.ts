@@ -8,9 +8,9 @@ import * as crypto from 'crypto';
 import * as QRCode from 'qrcode';
 
 // Keys in SecretStorage. Everything here is encrypted by the OS.
-const K_TOTP = 'cockpit.creds.totp'; // segredo TOTP do cofre (base32) — presença = enrolado
-const K_INDEX = 'cockpit.creds.index'; // JSON com os metadados (sem valores)
-const K_VALUE = (id: string) => `cockpit.creds.v.${id}`; // valor de cada credencial
+const K_TOTP = 'cockpit.creds.totp'; // the vault's TOTP secret (base32) — its presence = enrolled
+const K_INDEX = 'cockpit.creds.index'; // JSON with the metadata (no values)
+const K_VALUE = (id: string) => `cockpit.creds.v.${id}`; // value of each credential
 
 /** Metadata of a credential (never includes the secret value). */
 export interface CredentialMeta {
@@ -48,7 +48,7 @@ function base32Decode(s: string): Buffer {
   const out: number[] = [];
   for (const ch of clean) {
     const idx = B32.indexOf(ch);
-    if (idx < 0) continue; // ignora caracteres inválidos (tolerante)
+    if (idx < 0) continue; // ignores invalid characters (tolerant)
     value = (value << 5) | idx;
     bits += 5;
     if (bits >= 8) {
@@ -86,7 +86,7 @@ export function verifyTotp(secret: string, code: string, atMs = Date.now()): boo
   const step = Math.floor(atMs / 1000 / 30);
   for (let w = -1; w <= 1; w++) {
     const counter = step + w;
-    if (counter < 0) continue; // passo negativo (relógio ~época) não existe
+    if (counter < 0) continue; // a negative step (clock ~epoch) doesn't exist
     // Constant-time comparison so nothing leaks via timing.
     const expected = hotp(secret, counter);
     if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(clean))) return true;

@@ -1,7 +1,7 @@
-// Modelo de estado da UI.
+// UI state model.
 export type ItemKind = 'user' | 'assistant' | 'tool';
 
-// Uso de tokens de um turno (normalizado p/ a UI a partir do usage do engine).
+// Token usage of a turn (normalized for the UI from the engine's usage).
 export interface TurnUsage {
   input?: number;
   output?: number;
@@ -13,8 +13,8 @@ export interface UserItem {
   kind: 'user';
   id: string;
   text: string;
-  images?: string[]; // data URLs para preview
-  ts?: number; // epoch ms de quando a mensagem entrou na UI
+  images?: string[]; // data URLs for the preview
+  ts?: number; // epoch ms of when the message entered the UI
 }
 
 export interface AssistantItem {
@@ -24,10 +24,10 @@ export interface AssistantItem {
   thinking: string;
   done: boolean;
   canceled?: boolean;
-  ts?: number; // epoch ms do início do streaming
-  endTs?: number; // epoch ms do fim do turno (turnComplete)
-  usage?: TurnUsage; // anexado no fim do turno (turnComplete)
-  costUsd?: number; // custo do turno (turnComplete)
+  ts?: number; // epoch ms of the streaming start
+  endTs?: number; // epoch ms of the turn's end (turnComplete)
+  usage?: TurnUsage; // attached at the end of the turn (turnComplete)
+  costUsd?: number; // turn cost (turnComplete)
 }
 
 export interface ToolItem {
@@ -38,8 +38,8 @@ export interface ToolItem {
   result?: unknown;
   isError?: boolean;
   done: boolean;
-  ts?: number; // epoch ms do tool_use
-  endTs?: number; // epoch ms do tool_result (duração = endTs - ts)
+  ts?: number; // epoch ms of the tool_use
+  endTs?: number; // epoch ms of the tool_result (duration = endTs - ts)
 }
 
 export type TimelineItem = UserItem | AssistantItem | ToolItem;

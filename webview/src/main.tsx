@@ -7,7 +7,7 @@ declare global {
     __TOOTEGA_VIEW__?: 'chat' | 'hub';
     __TOOTEGA_SESSION__?: string;
     __TOOTEGA_REGION__?: string;
-    __TOOTEGA_ICON__?: string; // URI (asWebviewUri) do ícone da extensão p/ o indicador de atividade
+    __TOOTEGA_ICON__?: string; // URI (asWebviewUri) of the extension icon for the activity indicator
   }
 }
 

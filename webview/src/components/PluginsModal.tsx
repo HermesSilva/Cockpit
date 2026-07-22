@@ -25,7 +25,7 @@ interface Props {
   onClose: () => void;
 }
 
-// Linha unificada (disponível ∪ instalado).
+// Unified row (available ∪ installed).
 interface Row {
   id: string; // name@marketplace
   name: string;
@@ -58,7 +58,7 @@ function buildRows(data: PluginsData | null): Row[] {
       kind: i?.kind || a.kind,
     });
   }
-  // Instalados que não aparecem nos marketplaces (locais/privados).
+  // Installed ones that don't appear in the marketplaces (local/private).
   for (const p of data.installed) {
     if (seen.has(p.id)) continue;
     const [name, market] = p.id.split('@');
@@ -73,7 +73,7 @@ function buildRows(data: PluginsData | null): Row[] {
       kind: p.kind,
     });
   }
-  // Instalados primeiro; depois por nº de instalações desc.
+  // Installed first; then by install count descending.
   rows.sort((a, b) => {
     if (a.installed !== b.installed) return a.installed ? -1 : 1;
     return (b.installCount ?? 0) - (a.installCount ?? 0);

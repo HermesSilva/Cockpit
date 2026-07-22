@@ -27,7 +27,7 @@ function readToken(): string | undefined {
 }
 
 export interface VoiceCallbacks {
-  onOpen?: () => void; // WS pronto: hora de começar a capturar áudio
+  onOpen?: () => void; // WS ready: time to start capturing audio
   onTranscript: (text: string, isFinal: boolean) => void;
   onError: (message: string) => void;
   onClose: () => void;
@@ -43,7 +43,7 @@ export class VoiceSession {
   private closed = false;
   private chunks = 0;
   private bytes = 0;
-  private lastInterim = ''; // último TranscriptText (interim) da utterance atual
+  private lastInterim = ''; // last TranscriptText (interim) of the current utterance
 
   constructor(
     private readonly language: string,
@@ -140,7 +140,7 @@ export class VoiceSession {
     //   {"type":"TranscriptEndpoint"}                 -> end of the utterance
     if (j.type === 'TranscriptInterim' && typeof j.data === 'string') {
       this.lastInterim = j.data;
-      this.cb.onTranscript(j.data, false); // ao vivo: substitui o interim atual
+      this.cb.onTranscript(j.data, false); // live: replaces the current interim
       return;
     }
     if (j.type === 'TranscriptText' && typeof j.data === 'string') {
@@ -150,7 +150,7 @@ export class VoiceSession {
     }
     if (j.type === 'TranscriptEndpoint') {
       if (this.lastInterim) {
-        this.cb.onTranscript(this.lastInterim, true); // sem Text: fixa o último interim
+        this.cb.onTranscript(this.lastInterim, true); // no Text: pins the last interim
         this.lastInterim = '';
       }
       return;

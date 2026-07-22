@@ -85,7 +85,7 @@ let inFlight = false;
 export async function researchCommands(opts: {
   commands: string[];
   locale: string;
-  onResearchStart?: () => void; // chamado só quando vai mesmo consultar a IA
+  onResearchStart?: () => void; // called only when it will actually query the AI
 }): Promise<Record<string, CmdInfo>> {
   const { commands, locale, onResearchStart } = opts;
   const cache = loadCache();

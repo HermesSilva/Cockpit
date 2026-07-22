@@ -18,17 +18,17 @@ const DIR = path.join(os.homedir(), '.claude', 'tootega');
 const LEGACY_DIR = path.join(DIR, 'voice-dictionary'); // antigo: por conta
 const FILE = path.join(DIR, 'dictionaries.json');
 const VERSION = 2;
-const MAX_TERMS = 200; // teto p/ não estourar o header de keyterms
+const MAX_TERMS = 200; // cap so the keyterms header doesn't blow up
 const MAX_KEYTERMS_CHARS = 2000;
 
 export interface Replacement {
-  from: string; // como costuma ser ouvido/transcrito
-  to: string; // como deve ficar escrito
+  from: string; // how it is usually heard/transcribed
+  to: string; // how it should be written
 }
 export interface VoiceDict {
   terms: string[];
   replacements: Replacement[];
-  spellWords?: string[]; // dicionário do corretor (palavras adicionadas/ignoradas)
+  spellWords?: string[]; // spell-checker dictionary (added/ignored words)
 }
 
 const EMPTY: VoiceDict = { terms: [], replacements: [], spellWords: [] };
@@ -142,25 +142,25 @@ export function applyReplacements(text: string, dict: VoiceDict): string {
   for (const r of dict.replacements) {
     if (!r.from) continue;
     try {
-      // Limite por não-letra (unicode), preservando o caso do alvo escrito.
+      // Bounded by a non-letter (unicode), preserving the case of the written target.
       const re = new RegExp(`(?<!\\p{L})${escapeRe(r.from)}(?!\\p{L})`, 'giu');
       out = out.replace(re, r.to);
     } catch {
-      /* regex inválida (raro): ignora a regra */
+      /* invalid regex (rare): the rule is ignored */
     }
   }
   return out;
 }
 
-/** Trecho de instrução p/ o corretor Haiku preservar termos e aplicar correções. */
+/** Instruction snippet for the Haiku corrector to preserve terms and apply corrections. */
 export function correctorHints(dict: VoiceDict): string | undefined {
   const parts: string[] = [];
   if (dict.terms.length) {
-    parts.push(`Preserve EXATAMENTE estes termos (nomes/jargão), sem alterar grafia: ${dict.terms.join(', ')}.`);
+    parts.push(`Preserve these terms EXACTLY (names/jargon), without changing their spelling: ${dict.terms.join(', ')}.`);
   }
   if (dict.replacements.length) {
     const map = dict.replacements.map((r) => `"${r.from}" → "${r.to}"`).join('; ');
-    parts.push(`Aplique estas substituições quando aparecerem: ${map}.`);
+    parts.push(`Apply these replacements whenever they appear: ${map}.`);
   }
   return parts.length ? parts.join(' ') : undefined;
 }

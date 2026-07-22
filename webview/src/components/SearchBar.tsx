@@ -4,7 +4,7 @@ import type { Translator } from '../i18n';
 interface Props {
   t: Translator;
   scrollRef: RefObject<HTMLDivElement | null>;
-  itemsKey: number; // muda quando a timeline muda → re-busca
+  itemsKey: number; // changes when the timeline changes → re-search
   onClose: () => void;
 }
 
@@ -13,9 +13,9 @@ type Scope = 'timeline' | 'prompts';
 const HL = 'cockpit-search';
 const HL_CUR = 'cockpit-search-current';
 
-// Barra de busca (Ctrl+F): pesquisa no Timeline inteiro ou só nos prompts do
-// usuário. Debounce 250ms; realça os matches (CSS Custom Highlight API, sem mexer
-// no DOM renderizado) e rola o match atual à vista. ↑/↓ ou Enter navegam.
+// Search bar (Ctrl+F): searches the whole Timeline or only the user's
+// prompts. 250ms debounce; it highlights the matches (CSS Custom Highlight API, without touching
+// the rendered DOM) and scrolls the current match into view. ↑/↓ or Enter navigate.
 export function SearchBar({ t, scrollRef, itemsKey, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<Scope>('timeline');
@@ -30,7 +30,7 @@ export function SearchBar({ t, scrollRef, itemsKey, onClose }: Props) {
     return () => clearHighlights();
   }, []);
 
-  // Debounce 250ms: re-busca ao mudar query/escopo ou quando a timeline muda.
+  // 250ms debounce: re-searches when the query/scope changes or when the timeline changes.
   useEffect(() => {
     const id = setTimeout(() => runSearch(query, scope), 250);
     return () => clearTimeout(id);
@@ -44,7 +44,7 @@ export function SearchBar({ t, scrollRef, itemsKey, onClose }: Props) {
     ranges.current = [];
   }
 
-  // Coleta os nós de texto dentro das raízes do escopo e monta um Range por match.
+  // Collects the text nodes inside the scope's roots and builds a Range per match.
   function collect(q: string): Range[] {
     const root = scrollRef.current;
     if (!root || !q) return [];

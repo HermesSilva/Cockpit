@@ -8,7 +8,7 @@ const CUSTOM = '__custom__';
 interface Props {
   t: Translator;
   config?: SessionConfig;
-  activeModel?: string; // modelo que o CLI está rodando (do evento init)
+  activeModel?: string; // the model the CLI is running (from the init event)
   onModel: (model: string) => void;
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
@@ -137,14 +137,14 @@ interface ModelSelectProps {
   value: string; // selecionado ('__custom__' quando em modo custom)
   models: string[];
   meta?: Record<string, ModelMeta>;
-  known: boolean; // config.model está na lista?
+  known: boolean; // is config.model in the list?
   currentModel: string;
   defaultFor?: string; // o que 'default' resolve (p/ rótulo)
   onSelect: (v: string) => void;
 }
 
-/** Seletor de modelo com 3 colunas (modelo · contexto · preço). Dropdown próprio
- *  porque <option> nativo não renderiza colunas. Contexto/preço vêm de `meta`. */
+/** Model selector with 3 columns (model · context · price). It is a custom dropdown
+ *  because a native <option> can't render columns. Context/price come from `meta`. */
 function ModelSelect({
   t,
   value,
@@ -246,17 +246,17 @@ function formatMult(mult: number): string {
   return `${mult}x`;
 }
 
-/** Tooltip com o preço real em USD/1M ("$5/M in · $25/M out"). */
+/** Tooltip with the real price in USD/1M ("$5/M in · $25/M out"). */
 function priceTitle(md?: ModelMeta): string {
   if (!md || md.inMTok == null) return '';
   const out = md.outMTok != null ? ` · $${md.outMTok}/M out` : '';
   return `$${md.inMTok}/M in${out}`;
 }
 
-// Estimativa de consumo relativo de tokens por nível de effort. NÃO é fator
-// oficial (Anthropic não publica multiplicador por effort) — apenas ordem de
+// Estimated relative token consumption per effort level. It is NOT an official
+// factor (Anthropic publishes no per-effort multiplier) — only an order of
 // grandeza p/ orientar a escolha. Ancorado em high = 1x (default da API).
-// Recalibre aqui se quiser outros valores.
+// Recalibrate here if you want other values.
 const EFFORT_MULT: Record<string, number> = {
   low: 0.3,
   medium: 0.6,
@@ -273,7 +273,7 @@ interface EffortSelectProps {
   onSelect: (v: string) => void;
 }
 
-/** Seletor de effort com multiplicador estimado de consumo de tokens por nível. */
+/** Effort selector with an estimated per-level token consumption multiplier. */
 function EffortSelect({ t, value, efforts, defaultEffort, onSelect }: EffortSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -292,7 +292,7 @@ function EffortSelect({ t, value, efforts, defaultEffort, onSelect }: EffortSele
     onSelect(v);
   };
 
-  // 'default' resolve p/ o effort padrão — usa o multiplicador dele.
+  // 'default' resolves to the default effort — uses its multiplier.
   const multFor = (ef: string): number | undefined =>
     EFFORT_MULT[ef === 'default' ? (defaultEffort ?? '') : ef];
 
@@ -349,7 +349,7 @@ function modelLabel(m: string, t: Translator, defaultForParen?: string): string 
   return prettyModel(m);
 }
 
-/** Título elegante: claude-opus-4-8 -> "Claude Opus 4.8"; …[1m] -> "… 1M". */
+/** Elegant title: claude-opus-4-8 -> "Claude Opus 4.8"; …[1m] -> "… 1M". */
 function prettyModel(id: string): string {
   const oneM = /\[1m\]/i.test(id);
   const core = id.replace(/^claude-/i, '').replace(/\[1m\]/i, '');

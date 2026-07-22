@@ -1,6 +1,6 @@
-// Schemas dos eventos stream-json emitidos pelo Claude Code CLI.
-// Contrato tolerante: tipos desconhecidos caem no índice genérico de ClaudeEvent.
-// (Fase 1 do plano de execução — congelar este contrato com fixtures reais.)
+// Schemas of the stream-json events emitted by the Claude Code CLI.
+// Tolerant contract: unknown types fall into ClaudeEvent's generic index.
+// (Phase 1 of the execution plan — freeze this contract with real fixtures.)
 
 export interface Usage {
   input_tokens?: number;
@@ -36,7 +36,7 @@ export type ContentBlock =
   | ToolResultBlock
   | { type: string; [k: string]: unknown };
 
-// --- Eventos de alto nível (uma linha NDJSON cada) ---
+// --- High-level events (one NDJSON line each) ---
 
 export interface SystemInitEvent {
   type: 'system';
@@ -71,7 +71,7 @@ export interface UserEvent {
   };
 }
 
-/** Uma negação feita pelo ENGINE (auto mode / falta de permissão), não pelo usuário. */
+/** A denial made by the ENGINE (auto mode / missing permission), not by the user. */
 export interface PermissionDenial {
   tool_name?: string;
   tool_use_id?: string;
@@ -88,13 +88,13 @@ export interface ResultEvent {
   usage?: Usage;
   num_turns?: number;
   duration_ms?: number;
-  // Negações do turno decididas pelo próprio engine (regra de auto mode, tool fora
-  // do allowlist, escrita fora do workspace…). Só a tool e o input — o MOTIVO vem
-  // no texto do `tool_result` de erro com o mesmo `tool_use_id`.
+  // The turn's denials decided by the engine itself (auto-mode rule, tool outside
+  // the allowlist, write outside the workspace…). Only the tool and the input — the REASON comes
+  // in the error `tool_result` text with the same `tool_use_id`.
   permission_denials?: PermissionDenial[];
 }
 
-// Deltas crus da API (quando --include-partial-messages está ativo).
+// Raw API deltas (when --include-partial-messages is on).
 export type RawStreamEvent =
   | { type: 'message_start'; message: { id: string; model?: string; usage?: Usage } }
   | { type: 'content_block_start'; index: number; content_block: ContentBlock }
@@ -118,9 +118,9 @@ export interface StreamWrapperEvent {
   event: RawStreamEvent;
 }
 
-// Limites de uso da conta, emitidos pelo engine no stream-json quando o status
-// de um bucket muda. `utilization` (0..1) só vem quando o bucket cruza o limiar
-// de warning — em uso baixo só status/resetsAt/rateLimitType (ver claude-code #50518).
+// Account usage limits, emitted by the engine in stream-json when a bucket's
+// status changes. `utilization` (0..1) only arrives when the bucket crosses the
+// warning threshold — at low usage only status/resetsAt/rateLimitType (see claude-code #50518).
 export type RateLimitStatus = 'allowed' | 'allowed_warning' | 'rejected';
 export type RateLimitBucket =
   | 'five_hour'
@@ -133,7 +133,7 @@ export interface RateLimitInfo {
   status: RateLimitStatus;
   resetsAt?: number; // epoch (segundos)
   rateLimitType?: RateLimitBucket;
-  utilization?: number; // fração 0..1; ausente em uso baixo
+  utilization?: number; // fraction 0..1; absent at low usage
   overageStatus?: RateLimitStatus;
   isUsingOverage?: boolean;
 }
@@ -145,7 +145,7 @@ export interface RateLimitEvent {
   session_id?: string;
 }
 
-// Protocolo de controle (permissões interativas via stdin/stdout).
+// Control protocol (interactive permissions via stdin/stdout).
 export interface ControlRequestEvent {
   type: 'control_request';
   request_id: string;

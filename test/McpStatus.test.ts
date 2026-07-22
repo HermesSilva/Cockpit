@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseMcpList } from '../src/cli/McpInventory';
 import { mergeMcpStatus } from '../src/cli/McpStatus';
 
-// Saída real do `claude mcp list` (2.1.207), incluindo o cabeçalho de health-check.
+// Real output of `claude mcp list` (2.1.207), including the health-check header.
 const LIST_OUT = `Checking MCP server health…
 
 plugin:dase-mcp:dase: node D:/Tootega/Source/DASE50/MCP/server/dase-mcp.cjs - √ Connected
@@ -105,7 +105,7 @@ describe('mergeMcpStatus', () => {
       parseMcpList('api: node ./api.js - ✗ Failed to connect'),
     );
     expect(servers[0]).toMatchObject({ status: 'failed', connected: false });
-    expect(servers[0].tools).toEqual(['ping']); // tools do init continuam visíveis
+    expect(servers[0].tools).toEqual(['ping']); // the init tools stay visible
   });
 
   it('ordena: pendentes e falhos primeiro (é o que pede ação)', () => {

@@ -1,6 +1,6 @@
-// Markdown leve -> nós React (seguro, sem innerHTML para texto).
-// Suporta: headers, listas (ul/ol), bold, itálico, código inline, links e
-// blocos de código com syntax highlight.
+// Lightweight markdown -> React nodes (safe, no innerHTML for text).
+// Supports: headers, lists (ul/ol), bold, italic, inline code, links and
+// code blocks with syntax highlighting.
 import { Fragment, type ReactNode } from 'react';
 import { CodeBlock } from './CodeBlock';
 
@@ -85,8 +85,8 @@ function renderText(text: string, nextKey: () => number): ReactNode[] {
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
 
-    // Tabela GFM: linha com pipes seguida de separador |---|---|. Consome o
-    // cabeçalho + separador + linhas de corpo (até linha em branco/não-tabela).
+    // GFM table: a line with pipes followed by a |---|---| separator. It consumes the
+    // header + separator + body rows (until a blank/non-table line).
     if (isTableRow(line) && li + 1 < lines.length && isTableSep(lines[li + 1])) {
       flushPara();
       flushList();
@@ -167,15 +167,15 @@ function renderText(text: string, nextKey: () => number): ReactNode[] {
 // --- Tabela GFM ---
 type Align = 'left' | 'center' | 'right' | undefined;
 
-/** Linha de tabela: tem ao menos um `|` "de verdade" (não só no fim de prosa). */
+/** Table row: it has at least one "real" `|` (not just at the end of prose). */
 function isTableRow(line: string): boolean {
   const t = line.trim();
   if (!t.includes('|')) return false;
-  // Exige pipe interno (não apenas borda) p/ não confundir prosa com `texto |`.
+  // Requires an inner pipe (not only a border) so prose isn't mistaken for `text |`.
   return /\|/.test(t.replace(/^\|/, '').replace(/\|$/, ''));
 }
 
-/** Separador de tabela: células só com - e : opcionais (ex.: |:--|--:|:-:|). */
+/** Table separator: cells with only - and optional : (e.g. |:--|--:|:-:|). */
 function isTableSep(line: string): boolean {
   const t = line.trim();
   if (!t.includes('-') || !t.includes('|')) return false;
@@ -196,7 +196,7 @@ function alignStyle(a: Align): { textAlign: Align } | undefined {
   return a ? { textAlign: a } : undefined;
 }
 
-/** Divide uma linha em células: tira bordas e separa por `|` (respeita \|). */
+/** Splits a line into cells: strips the borders and splits on `|` (respects \|). */
 function splitRow(line: string): string[] {
   const t = line.trim().replace(/^\|/, '').replace(/\|$/, '');
   return t
@@ -204,7 +204,7 @@ function splitRow(line: string): string[] {
     .map((c) => c.replace(/\\\|/g, '|').trim());
 }
 
-// Inline: links -> código -> ênfase (bold/itálico).
+// Inline: links -> code -> emphasis (bold/italic).
 function renderInline(text: string): ReactNode[] {
   return splitLinks(text);
 }
@@ -232,8 +232,8 @@ function splitCode(text: string, prefix: string): ReactNode[] {
   return text.split(/(`[^`]+`)/g).map((p, i) => {
     if (p.startsWith('`') && p.endsWith('`')) {
       const inner = p.slice(1, -1);
-      // Código inline que é um caminho de arquivo (com separador ou extensão
-      // conhecida, opcionalmente com :linha) vira link clicável e abríve.
+      // Inline code that is a file path (with a separator or a known
+      // extension, optionally with :line) becomes a clickable, openable link.
       if (isFilePath(inner)) {
         return (
           <a key={`${prefix}c${i}`} href={pathHref(inner)} className="md-link md-inline">
@@ -252,16 +252,16 @@ function splitCode(text: string, prefix: string): ReactNode[] {
 }
 
 // --- Auto-link de caminhos de arquivo em texto puro ---
-// Extensões reconhecidas quando a menção não tem separador de caminho.
+// Extensions recognized when the mention has no path separator.
 const FILE_EXT =
   /\.(?:tsx?|jsx?|mjs|cjs|json|jsonc|md|markdown|css|scss|sass|less|html?|py|rs|go|java|kt|c|h|hpp|cc|cpp|cs|rb|php|sh|bash|zsh|ps1|yml|yaml|toml|xml|txt|sql|vue|svelte|lock|cfg|ini|env|gitignore|svg|png|jpe?g|gif|webp|dockerfile)$/i;
 
-// Token candidato a caminho: opcional drive (C:\), segmentos, ponto+extensão,
+// Path-candidate token: optional drive (C:\), segments, dot+extension,
 // e sufixo opcional de linha (:12, :12:5 ou #L12).
 const PATH_RE =
   /(?:[A-Za-z]:[\\/])?(?:[\w.+\-]+[\\/])*[\w.+\-]+\.[A-Za-z][\w]{0,9}(?::\d+(?::\d+)?|#L\d+)?/g;
 
-/** Normaliza `path:linha[:col]` -> `path#Llinha` (âncora que o host entende). */
+/** Normalizes `path:line[:col]` -> `path#Lline` (an anchor the host understands). */
 function pathHref(tok: string): string {
   if (/#L\d+$/.test(tok)) return tok;
   const m = tok.match(/^(.+?):(\d+)(?::\d+)?$/);
@@ -269,7 +269,7 @@ function pathHref(tok: string): string {
   return tok;
 }
 
-/** Heurística: string sem espaços que parece caminho (separador ou extensão). */
+/** Heuristic: a string without spaces that looks like a path (separator or extension). */
 function isFilePath(s: string): boolean {
   const t = s.trim();
   if (!t || /\s/.test(t)) return false;
@@ -279,8 +279,8 @@ function isFilePath(s: string): boolean {
 }
 
 /**
- * Texto puro -> nós. Caminhos com separador (ex.: `docs/API.md`, `src/a.ts:42`)
- * viram links; o resto passa por ênfase (bold/itálico).
+ * Plain text -> nodes. Paths with a separator (e.g. `docs/API.md`, `src/a.ts:42`)
+ * become links; the rest goes through emphasis (bold/italic).
  */
 function renderTextRun(text: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -290,7 +290,7 @@ function renderTextRun(text: string): ReactNode[] {
   PATH_RE.lastIndex = 0;
   while ((m = PATH_RE.exec(text))) {
     const tok = m[0];
-    // Em texto puro só linka quando há separador, p/ evitar falsos positivos
+    // In plain text it only links when there is a separator, to avoid false positives
     // (ex.: "e.g.", "Node.js" em prosa). Backticks usam isFilePath (mais amplo).
     if (!/[\\/]/.test(tok)) continue;
     if (m.index > last) out.push(...renderEmphasis(text.slice(last, m.index)));

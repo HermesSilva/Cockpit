@@ -42,8 +42,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [confirmDelete, setConfirmDelete] = useState<SessionInfo | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [confirmRewind, setConfirmRewind] = useState<number | null>(null);
-  // Gate de effort: o host bloqueia e manda 'effortGate'; guardamos o último envio
-  // p/ reenviar com force=true se o usuário confirmar.
+  // Effort gate: the host blocks and sends 'effortGate'; we keep the last send
+  // so it can be re-sent with force=true if the user confirms.
   const [confirmEffort, setConfirmEffort] = useState<{ selected: string; min: string } | null>(null);
   const lastSendRef = useRef<{ text: string; images: ImageAttachment[] } | null>(null);
   const [draftRestore, setDraftRestore] = useState<{ text: string; images: ImageAttachment[] } | null>(null);
@@ -56,33 +56,33 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const [mcpBusy, setMcpBusy] = useState(false);
   const [showVoiceDict, setShowVoiceDict] = useState(false);
   const [voiceDict, setVoiceDict] = useState<VoiceDictData | null>(null);
-  // Cofre de credenciais (TOTP 2FA).
+  // Credential vault (TOTP 2FA).
   const [showCreds, setShowCreds] = useState(false);
   const [credsData, setCredsData] = useState<{ enrolled: boolean; items: CredentialMeta[] } | null>(null);
   const [credsSetup, setCredsSetup] = useState<{ qrSvg: string; secret: string; uri: string } | null>(null);
   const [credsResult, setCredsResult] = useState<{ ok: boolean; action: string; message?: string } | null>(null);
   const [credsError, setCredsError] = useState<string | undefined>(undefined);
-  // Texto (valor de credencial) a injetar no composer. Muda de ref p/ disparar.
+  // Text (credential value) to inject into the composer. Its ref changes to trigger it.
   const [injectText, setInjectText] = useState<{ text: string } | null>(null);
-  const [exportMenu, setExportMenu] = useState(false); // link de export expandido (direto/IA)
+  const [exportMenu, setExportMenu] = useState(false); // export link expanded (direct/AI)
   const [pluginsBusy, setPluginsBusy] = useState(false);
   const [pluginsBusyLabel, setPluginsBusyLabel] = useState<string | undefined>(undefined);
   const [pluginsError, setPluginsError] = useState<string | undefined>(undefined);
-  // null = segue as settings; boolean = override do botão "expandir/colapsar tudo".
+  // null = follows the settings; boolean = override from the "expand/collapse all" button.
   const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
-  const atBottomRef = useRef(true); // estado vivo p/ o auto-scroll (sem stale closure)
+  const atBottomRef = useRef(true); // live state for the auto-scroll (no stale closure)
   const t = useMemo(() => createTranslator(state.locale), [state.locale]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Chat: renderiza a sessão injetada (uma webview por contexto). Hub: a ativa.
+  // Chat: renders the injected session (one webview per context). Hub: the active one.
   const tab =
     view === 'hub' ? activeTab(state) : state.tabs.find((tb) => tb.id === sessionId) ?? activeTab(state);
   const items = tab?.items ?? [];
 
-  // Ctrl+F: abre a barra de busca (só no chat, não no hub).
+  // Ctrl+F: opens the search bar (chat only, not the hub).
   useEffect(() => {
     if (view === 'hub') return;
     const h = (e: KeyboardEvent) => {
@@ -111,8 +111,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const data = e.data as HostToWebview;
-      if (data?.kind === 'taskTimings') seedTaskTimings(data.timings); // médias do host p/ o gauge
-      if (data?.kind === 'usageData') setUsage(data.data); // resposta do botão Usage (dado quente)
+      if (data?.kind === 'taskTimings') seedTaskTimings(data.timings); // host averages for the gauge
+      if (data?.kind === 'usageData') setUsage(data.data); // answer to the Usage button (hot data)
       if (data?.kind === 'effortGate') setConfirmEffort({ selected: data.selected, min: data.min });
       if (data?.kind === 'draftRestore' && data.text) setDraftRestore({ text: data.text, images: [] });
       if (data?.kind === 'voiceDict') setVoiceDict(data.data);
@@ -127,15 +127,15 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       if (data?.kind === 'mcpBusy') setMcpBusy(data.busy);
       if (data?.kind === 'credsData') {
         setCredsData({ enrolled: data.enrolled, items: data.items });
-        setCredsSetup(null); // dado fresco: encerra qualquer enrollment em curso
+        setCredsSetup(null); // fresh data: ends any enrollment in progress
         setCredsResult(null);
       }
       if (data?.kind === 'credsSetup') setCredsSetup({ qrSvg: data.qrSvg, secret: data.secret, uri: data.uri });
       if (data?.kind === 'credsResult') setCredsResult({ ok: data.ok, action: data.action, message: data.message });
       if (data?.kind === 'credsError') setCredsError(data.message);
       if (data?.kind === 'credsValue') {
-        // Valor liberado pelo cofre. No Hub não há composer → copia p/ a área de
-        // transferência; no Chat injeta no composer. Fecha o modal nos dois casos.
+        // Value released by the vault. In the Hub there is no composer → it copies to the
+        // clipboard; in the Chat it injects into the composer. It closes the modal in both cases.
         if (view === 'hub') {
           void navigator.clipboard?.writeText(data.value);
         } else {
@@ -151,24 +151,24 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     return () => window.removeEventListener('message', onMsg);
   }, [view]);
 
-  // Heartbeat de renderização: prova ao host que o processo do webview está vivo.
-  // Se o renderer cair (bug GPU do VSCode → tela branca), os pulsos param e o host
-  // força um reload do HTML (remonta o React → replay do transcript). Fora do ciclo
-  // do React de propósito: um render pesado de timeline atrasa o tick, mas ele
-  // dispara assim que a stack limpa — só renderer realmente morto fica sem bater.
+  // Render heartbeat: it proves to the host that the webview process is alive.
+  // When the renderer dies (VSCode GPU bug → blank screen), the beats stop and the host
+  // forces an HTML reload (React remounts → transcript replay). Outside React's cycle
+  // on purpose: a heavy timeline render delays the tick, but it fires
+  // as soon as the stack clears — only a truly dead renderer stops beating.
   useEffect(() => {
     send({ kind: 'heartbeat' });
     const id = setInterval(() => send({ kind: 'heartbeat' }), 10_000);
     return () => clearInterval(id);
   }, []);
 
-  // Conteúdo novo: só fixa no fim se o usuário JÁ estava no fim (respeita scroll manual).
+  // New content: it only pins to the bottom when the user WAS already at the bottom (respects manual scroll).
   useEffect(() => {
     const el = scrollRef.current;
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [items]);
 
-  // Troca de aba: vai pro fim e reseta o estado de "no fim".
+  // Tab switch: goes to the bottom and resets the "at bottom" state.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -176,14 +176,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     setAtBottom(true);
   }, [state.activeTab]);
 
-  // Envia otimista (bolha local + manda ao host). O gate de effort é decidido NO
-  // HOST (lê o CLAUDE.md da pasta): se bloquear, manda 'effortGate' e não roda;
-  // confirmando, reenviamos o último com force=true.
+  // Optimistic send (local bubble + send to the host). The effort gate is decided IN THE
+  // HOST (it reads the folder's CLAUDE.md): when it blocks, it sends 'effortGate' and doesn't run;
+  // on confirmation, we re-send the last one with force=true.
   const onSend = (text: string, images: ImageAttachment[], selection?: string) => {
     lastSendRef.current = { text, images };
     const previews = images.map((i) => `data:${i.mediaType};base64,${i.data}`);
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
-    dispatch({ type: 'clearError' }); // novo envio: limpa aviso de erro/abort anterior
+    dispatch({ type: 'clearError' }); // new send: clears the previous error/abort warning
     send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
   };
   const onStop = () => {
@@ -192,27 +192,27 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   };
   const onSettings = () => send({ kind: 'openSettings' });
   const onUsage = () => {
-    setUsage(null); // limpa p/ mostrar carregando; busca sempre fresco (dado quente)
+    setUsage(null); // cleared to show loading; always fetches fresh (hot data)
     setShowUsage(true);
     send({ kind: 'fetchUsage' });
   };
   const onManageUsage = () => send({ kind: 'openLink', href: 'https://claude.ai/settings/usage' });
   const onPlugins = () => {
     setShowPlugins(true);
-    send({ kind: 'pluginsRefresh' }); // carrega ao abrir
+    send({ kind: 'pluginsRefresh' }); // loads on open
   };
   const onMcp = () => {
-    setMcp(null); // estado quente: re-checa a saúde dos servidores a cada abertura
+    setMcp(null); // hot state: re-checks the servers' health on every open
     setShowMcp(true);
     send({ kind: 'mcpRefresh' });
   };
   const onVoiceDict = () => {
-    setVoiceDict(null); // mostra carregando até o host responder
+    setVoiceDict(null); // shows loading until the host answers
     setShowVoiceDict(true);
     send({ kind: 'voiceDictGet' });
   };
   const onCredentials = () => {
-    setCredsData(null); // carregando até o host responder
+    setCredsData(null); // loading until the host answers
     setCredsSetup(null);
     setCredsResult(null);
     setCredsError(undefined);
@@ -229,11 +229,11 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     });
   };
   const onEnableTracking = () => {
-    setUsage(null); // mostra carregando; host instala wrapper e reenvia usageData
+    setUsage(null); // shows loading; the host installs the wrapper and re-sends usageData
     send({ kind: 'enableUsageTracking' });
   };
 
-  // Clique em link de arquivo (a.md-link) -> abre no editor via host.
+  // Click on a file link (a.md-link) -> opens it in the editor via the host.
   const onContentClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest('a.md-link');
     if (a) {
@@ -271,14 +271,14 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   };
 
   const cliMissing = !state.cli.available;
-  // Carregando: host ainda não reportou o status do CLI, OU a aba ainda não
-  // recebeu o histórico (reabrir contexto). Evita o flash do banner e do timeline
-  // vazio — mostra o loader do Cockpit. Banner só após o status do CLI.
+  // Loading: the host hasn't reported the CLI status yet, OR the tab hasn't
+  // received the history yet (reopening a context). Avoids the flash of the banner and the empty
+  // timeline — it shows the Cockpit loader. The banner only after the CLI status.
   const cliLoading = !state.cli.checked || (!!tab?.sessionId && !tab.historyLoaded);
 
-  // Modal do cofre — compartilhado entre Hub e Chat. No Hub não há composer, então
-  // "usar" copia o valor p/ a área de transferência; no Chat injeta no composer (o
-  // host manda 'credsValue' e o handler em onMsg decide pelo `view`).
+  // Vault modal — shared between Hub and Chat. In the Hub there is no composer, so
+  // "use" copies the value to the clipboard; in the Chat it injects into the composer (the
+  // host sends 'credsValue' and the handler in onMsg decides by `view`).
   const credsModalEl = showCreds && (
     <CredentialsModal
       t={t}
@@ -645,8 +645,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             setConfirmEffort(null);
           }}
           onCancel={() => {
-            dispatch({ type: 'removeLastUser' }); // desfaz a bolha otimista (não vai rodar)
-            if (lastSendRef.current) setDraftRestore(lastSendRef.current); // devolve o texto ao input
+            dispatch({ type: 'removeLastUser' }); // undoes the optimistic bubble (it won't run)
+            if (lastSendRef.current) setDraftRestore(lastSendRef.current); // gives the text back to the input
             setConfirmEffort(null);
           }}
         />
@@ -658,7 +658,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           data={voiceDict}
           onSave={(d) => {
             send({ kind: 'voiceDictSave', data: d });
-            resetSpell(); // dicionário do corretor mudou → re-checa o overlay
+            resetSpell(); // the spell-checker dictionary changed → re-check the overlay
           }}
           onClose={() => setShowVoiceDict(false)}
         />

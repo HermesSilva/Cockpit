@@ -13,7 +13,7 @@ const MARK: Record<TodoItem['status'], string> = {
   completed: '✓',
 };
 
-// Checklist de tarefas renderada inline no corpo da conversa (não é janela).
+// Task checklist rendered inline in the conversation body (it is not a window).
 export function TodoCard({ t, todos }: Props) {
   const [open, setOpen] = useState(true);
   const done = todos.filter((x) => x.status === 'completed').length;

@@ -7,8 +7,8 @@ import { Controls } from './Controls';
 import { Tooltip, type TooltipMeta } from './Tooltip';
 import { send, readState, saveState } from '../vscodeApi';
 
-// Procedência de um dado: origem + nível de confiança, já localizados, p/ o
-// rodapé do hint (chips coloridos). Mantém as descrições i18n limpas.
+// Provenance of a piece of data: source + confidence level, already localized, for the
+// hint footer (colored chips). It keeps the i18n descriptions clean.
 type Origin = 'server' | 'local' | 'computed' | 'estimate' | 'cli';
 function meta(t: Translator, origin: Origin, confidence: 'high' | 'medium' | 'low'): TooltipMeta {
   return {
@@ -35,7 +35,7 @@ interface Props {
   sessions: SessionInfo[];
   cwd?: string;
   activeSessionId?: string;
-  busySessions?: Set<string>; // sessionIds com turno em andamento → spinner no card
+  busySessions?: Set<string>; // sessionIds with a turn in progress → spinner on the card
   onNewSession: () => void;
   onOpenFolder: (path: string) => void;
   onSettings: () => void;
@@ -60,9 +60,9 @@ interface Props {
   onDeleteAll: () => void;
 }
 
-// Hub na Activity Bar: centro de controle. Barra de botões + info do contexto
-// ativo (janela de contexto + controles de sessão) + grade de contextos salvos.
-// O chat de cada contexto vive numa webview própria no editor.
+// Hub in the Activity Bar: the control center. Button bar + info of the active
+// context (context window + session controls) + grid of saved contexts.
+// Each context's chat lives in its own webview in the editor.
 export function HubView({
   t,
   locale,
@@ -299,8 +299,8 @@ export function HubView({
   );
 }
 
-// Card de um contexto salvo. Abre ao clicar; ✏ entra em edição inline do nome,
-// 🗑 remove. Ao salvar, dispara onRename (host persiste e atualiza o título da
+// Card of a saved context. Click to open; ✏ enters inline name editing,
+// 🗑 removes it. On save it fires onRename (the host persists it and updates the title of the
 // webview aberta, se houver).
 function SessionCard({
   s,
@@ -445,13 +445,13 @@ function SessionCard({
 }
 
 // Vida do cache (TTL de 1h): barra do tempo restante + checkbox de keep-alive.
-// `now` vem do tick de 1s do pai (contagem regressiva ao vivo).
+// `now` comes from the parent's 1s tick (live countdown).
 function CacheLife({ t, stats, now }: { t: Translator; stats: StatsSnapshot; now: number }) {
   const expiresAt = stats.cacheExpiresAt ?? 0;
   const lifeMs = stats.cacheLifeMs || 3_600_000;
   const remaining = Math.max(0, expiresAt - now);
   const alive = remaining > 0;
-  const pct = Math.min(1, remaining / lifeMs); // fração de vida RESTANTE
+  const pct = Math.min(1, remaining / lifeMs); // fraction of REMAINING life
   const band = !alive ? 'crit' : pct > 0.25 ? 'ok' : pct > 0.08 ? 'warn' : 'crit';
   const keep = !!stats.keepCacheAlive;
   return (
@@ -501,7 +501,7 @@ function ContextInfo({
   const band = pct < 0.6 ? 'ok' : pct < 0.85 ? 'warn' : 'crit';
   const elapsed = stats.sessionStartTs ? now - stats.sessionStartTs : undefined;
 
-  // Aceitação de ferramentas: só mostra se houve decisões na sessão.
+  // Tool acceptance: only shown when there were decisions in the session.
   const toolRows = stats.toolAcceptance?.filter((d) => d.allow + d.allowAlways + d.deny > 0) ?? [];
 
   return (
@@ -729,12 +729,12 @@ function semver(s?: string): string | undefined {
 // Lista de releases do Claude CLI no GitHub.
 const CLI_RELEASES_URL = 'https://github.com/anthropics/claude-code/releases';
 
-// Versão mínima do CLI para o Cockpit funcionar direito: a 2.1.162 corrigiu o
-// Esc (interromper) sendo descartado no início do turno em sessões stream-json,
-// que é exatamente o canal que usamos. Abaixo disso, o botão Stop pode não pegar.
+// Minimum CLI version for the Cockpit to work properly: 2.1.162 fixed
+// Esc (interrupt) being dropped at the start of a turn in stream-json sessions,
+// which is exactly the channel we use. Below that, the Stop button may not take effect.
 const MIN_CLI_VERSION = '2.1.162';
 
-/** a < b (semver de 3 partes). false quando alguma versão não é reconhecida. */
+/** a < b (3-part semver). false when either version isn't recognized. */
 function semverLt(a?: string, b?: string): boolean {
   const x = semver(a);
   const y = semver(b);
@@ -752,7 +752,7 @@ function cliOutdated(installed?: string, latest?: string): boolean {
   return semverLt(installed, latest);
 }
 
-/** CLI velho a ponto de quebrar o Stop — aviso mais forte que "desatualizado". */
+/** A CLI old enough to break Stop — a stronger warning than "outdated". */
 function cliBelowMin(installed?: string): boolean {
   return semverLt(installed, MIN_CLI_VERSION);
 }
@@ -766,10 +766,10 @@ function prettyChip(id: string): string {
   return oneM ? `${s} 1M` : s;
 }
 
-// Data/hora no formato da REGIÃO do PC (injetado pelo host via Node Intl),
+// Date/time in the PC's REGION format (injected by the host via Node Intl),
 // independente do idioma da UI. Fallback: locale do webview.
-// Checklist de onboarding (dispensável, persiste no estado do webview). Os passos
-// de CLI e login se marcam sozinhos pelo estado; abrir contexto e ditado são dicas.
+// Onboarding checklist (dismissible, persisted in the webview state). The CLI and
+// login steps tick themselves from the state; opening a context and dictation are hints.
 function Onboarding({
   t,
   cliMissing,
@@ -815,8 +815,8 @@ function Onboarding({
   );
 }
 
-// Agrupa as sessões por faixa de tempo (updatedAt) p/ a grade do hub. A lista já
-// vem ordenada por mais recente; preserva essa ordem dentro de cada faixa.
+// Groups the sessions by time range (updatedAt) for the hub grid. The list already
+// arrives sorted by most recent; that order is preserved within each range.
 function groupSessions(sessions: SessionInfo[]): { key: string; items: SessionInfo[] }[] {
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

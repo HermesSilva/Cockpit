@@ -1,4 +1,4 @@
-// Parser do payload de /api/oauth/usage. Cobre o formato atual (`limits[]` com
+// Parser of the /api/oauth/usage payload. Covers the current format (`limits[]` with
 // kind session/weekly_all/weekly_scoped) e o legado (campos fixos de topo).
 import { describe, it, expect } from 'vitest';
 import { parseUsage } from '../src/cli/UsageApi';

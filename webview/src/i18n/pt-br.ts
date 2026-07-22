@@ -1,4 +1,4 @@
-// Português (Brasil).
+// Portuguese (Brazil).
 import type { Strings } from './en';
 
 export const ptBR: Strings = {
@@ -231,7 +231,7 @@ export const ptBR: Strings = {
     'Solicitações de ferramenta negadas nesta sessão — por você, no modal, ou pelo próprio CLI (chip “auto”) — da mais recente para a mais antiga, com a razão quando informada. Auditoria de controle.',
   'tip.ctx.denials.engine':
     'Negada pelo CLI, não por você: uma regra do modo auto (ou a falta de permissão) barrou a chamada.',
-  // Rodapé de procedência dos hints (chips coloridos).
+  // Provenance footer of the hints (colored chips).
   'meta.origin.label': 'Origem',
   'meta.origin.server': 'Servidor (via CLI)',
   'meta.origin.local': 'Local',
@@ -382,8 +382,8 @@ export const ptBR: Strings = {
   'controls.permission': 'Permissão',
   'controls.agents': 'Agentes e workflows',
   'controls.applies': 'Aplica na próxima mensagem (reinicia a sessão).',
-  // O CLI renomeou o modo "default" para "Manual" (2.1.131). O valor interno
-  // segue 'default' (= sem flag --permission-mode), compatível com CLIs antigos.
+  // The CLI renamed the "default" mode to "Manual" (2.1.131). The internal value
+  // is still 'default' (= no --permission-mode flag), compatible with older CLIs.
   'perm.default': 'Manual',
   'perm.plan': 'Plano',
   'perm.acceptEdits': 'Aceitar edições',

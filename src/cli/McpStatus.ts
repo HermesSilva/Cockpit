@@ -15,7 +15,7 @@ import type { McpServerInfo } from '../../shared/protocol';
 import { parseMcpInventory, parseMcpList, type McpListEntry } from './McpInventory';
 import { dlog } from '../util/logger';
 
-const LIST_TIMEOUT_MS = 15_000; // health-check de servidor lento; 8s não basta
+const LIST_TIMEOUT_MS = 15_000; // health-check of a slow server; 8s isn't enough
 
 /** Runs `claude mcp list` and returns the entries. Failure/timeout → []. */
 export function fetchMcpList(claudePath: string): Promise<McpListEntry[]> {

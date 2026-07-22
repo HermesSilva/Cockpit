@@ -32,7 +32,7 @@ export interface TokenTotals {
   sent: number;
   received: number;
   total: number;
-  days: DailyTokens[]; // limitado p/ exibição; total é all-time
+  days: DailyTokens[]; // capped for display; the total is all-time
 }
 
 // v2: lines of the same response are no longer summed repeatedly (usageKey).
@@ -76,7 +76,7 @@ function saveRollup(r: Rollup): void {
     fs.mkdirSync(path.dirname(ROLLUP), { recursive: true });
     const tmp = `${ROLLUP}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(r));
-    fs.renameSync(tmp, ROLLUP); // troca atômica
+    fs.renameSync(tmp, ROLLUP); // atomic swap
   } catch (e) {
     log(`daily-tokens rollup save fail: ${String(e)}`);
   }
@@ -85,7 +85,7 @@ function saveRollup(r: Rollup): void {
 /** Reads a .jsonl and returns the day→{s,r} map of the assistant lines with usage. */
 function parseFile(content: string): FileDays {
   const days: FileDays = {};
-  const counted = new Set<string>(); // ids já contados neste arquivo (ver usageKey)
+  const counted = new Set<string>(); // ids already counted in this file (see usageKey)
   for (const line of content.split('\n')) {
     if (!line.includes('"assistant"') || !line.includes('usage')) continue;
     let o: any;
@@ -99,7 +99,7 @@ function parseFile(content: string): FileDays {
     if (Number.isNaN(ts)) continue;
     const key = usageKey(o);
     if (key) {
-      if (counted.has(key)) continue; // mesma resposta, outro bloco: usage já somada
+      if (counted.has(key)) continue; // same response, another block: usage already summed
       counted.add(key);
     }
     const u = o.message.usage as Usage;
@@ -130,7 +130,7 @@ export async function computeDailyTokens(maxDays = 30): Promise<TokenTotals> {
   try {
     dirs = await fs.promises.readdir(base);
   } catch {
-    return { sent: 0, received: 0, total: 0, days: [] }; // sem histórico ainda
+    return { sent: 0, received: 0, total: 0, days: [] }; // no history yet
   }
 
   for (const d of dirs) {

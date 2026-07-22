@@ -12,7 +12,7 @@ interface Props {
   onDocs: (href: string) => void;
 }
 
-// Banner de pré-requisito: CLI ausente (instalar) ou não autenticado (login).
+// Prerequisite banner: CLI missing (install) or not authenticated (login).
 export function CliMissing({ t, mode, error, onInstall, onLogin, onRecheck, onDocs }: Props) {
   const login = mode === 'login';
   return (

@@ -1,4 +1,4 @@
-// Acesso à API do webview do VS Code.
+// Access to the VS Code webview API.
 import type { WebviewToHost } from '../../shared/protocol';
 
 interface VsCodeApi {
@@ -20,8 +20,8 @@ export function send(msg: WebviewToHost): void {
   getVsCodeApi().postMessage(msg);
 }
 
-// Estado leve persistido pelo VSCode (sobrevive a reload/crash do renderer e a
-// reinício do VSCode). Usado p/ não perder o rascunho/ditado do composer.
+// Lightweight state persisted by VSCode (it survives a renderer reload/crash and a
+// VSCode restart). Used so the composer's draft/dictation isn't lost.
 export function saveState(patch: Record<string, unknown>): void {
   const api = getVsCodeApi();
   api.setState({ ...(api.getState() ?? {}), ...patch });

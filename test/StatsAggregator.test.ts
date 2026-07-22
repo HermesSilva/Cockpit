@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { StatsAggregator, normalizeModel, deriveContextLimit } from '../src/stats/StatsAggregator';
 
-// Helpers para forjar eventos no shape que o ingest espera.
+// Helpers to forge events in the shape the ingest expects.
 const initEv = (model: string) => ({ type: 'system', subtype: 'init', model } as any);
 const assistantEv = (
   model: string,
@@ -32,8 +32,8 @@ describe('StatsAggregator — consolidação de turno', () => {
     expect(s.perModel).toHaveLength(1);
     expect(s.perModel?.[0].turns).toBe(1);
     expect(s.activeMs).toBeGreaterThanOrEqual(0);
-    expect(s.cacheResetCount).toBe(0); // 1º turno nunca é reset
-    // Vida do cache: após um turno, há vencimento e o cache está vivo.
+    expect(s.cacheResetCount).toBe(0); // the first turn is never a reset
+    // Cache life: after a turn there is an expiry and the cache is alive.
     expect(s.cacheAlive).toBe(true);
     expect(s.cacheExpiresAt).toBeGreaterThan(Date.now());
     expect(s.cacheLifeMs).toBe(60 * 60_000);
@@ -46,7 +46,7 @@ describe('StatsAggregator — robustez do parser', () => {
     expect(normalizeModel('claude-opus-4-8[1M][1m]')).toBe('claude-opus-4-8[1M]');
     expect(normalizeModel('claude-opus-4-8')).toBe('claude-opus-4-8');
     expect(normalizeModel(undefined)).toBeUndefined();
-    // O limite continua 1M mesmo após o colapso.
+    // The limit stays 1M even after the collapse.
     expect(deriveContextLimit(normalizeModel('claude-opus-4-8[1m][1m]'))).toBe(1_000_000);
   });
 
@@ -83,13 +83,13 @@ describe('StatsAggregator — log de negações (E5)', () => {
     const agg = new StatsAggregator(0);
     agg.recordDecision('Bash', 'allow');
     agg.recordDecision('Write', 'deny', '  não mexa nesse arquivo  ');
-    agg.recordDecision('Bash', 'deny'); // sem razão
+    agg.recordDecision('Bash', 'deny'); // no reason
 
     const s = agg.snapshot();
     expect(s.recentDenials).toHaveLength(2);
-    expect(s.recentDenials?.[0].tool).toBe('Bash'); // último primeiro
+    expect(s.recentDenials?.[0].tool).toBe('Bash'); // latest first
     expect(s.recentDenials?.[1]).toMatchObject({ tool: 'Write', reason: 'não mexa nesse arquivo' });
-    // Aceitação por ferramenta continua contando a negação.
+    // Per-tool acceptance still counts the denial.
     expect(s.toolAcceptance?.find((d) => d.tool === 'Bash')?.deny).toBe(1);
 
     const restored = new StatsAggregator(0);
@@ -129,10 +129,10 @@ describe('StatsAggregator — persistência (serialize/hydrate)', () => {
     expect(s.cacheReadTokens).toBe(5);
     expect(s.reopenCount).toBe(1);
     expect(s.contextUsed).toBe(15); // input 10 + create 0 + read 5 — barra restaurada
-    expect(s.keepCacheAlive).toBe(true); // checkbox sobrevive ao reopen
+    expect(s.keepCacheAlive).toBe(true); // the checkbox survives the reopen
     expect(s.perModel?.[0].model).toBe('claude-sonnet-4-6');
 
-    // Timeline também sobrevive ao round-trip.
+    // The timeline survives the round-trip too.
     expect(restored.timelineSnapshot().timeline).toHaveLength(1);
   });
 });

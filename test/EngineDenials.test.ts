@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { StatsAggregator } from '../src/stats/StatsAggregator';
 
-// Negação decidida pelo ENGINE (auto mode / falta de permissão). Shape real da CLI
-// 2.1.207: o `result` lista `permission_denials[]` (tool + input, sem motivo) e o
-// motivo vem no `tool_result` de erro com o mesmo tool_use_id.
+// Denial decided by the ENGINE (auto mode / missing permission). Real CLI shape
+// 2.1.207: the `result` lists `permission_denials[]` (tool + input, no reason) and the
+// reason comes in the error `tool_result` with the same tool_use_id.
 const toolErrorEv = (id: string, text: string) =>
   ({
     type: 'user',
@@ -29,7 +29,7 @@ describe('StatsAggregator — negações do engine (auto mode)', () => {
       source: 'engine',
       reason: DENIAL_TEXT,
     });
-    // Também conta como recusa na aceitação por ferramenta.
+    // It also counts as a rejection in the per-tool acceptance.
     expect(s.toolAcceptance?.find((d) => d.tool === 'Write')?.deny).toBe(1);
   });
 
@@ -51,7 +51,7 @@ describe('StatsAggregator — negações do engine (auto mode)', () => {
     agg.ingest(resultEv([{ tool_name: 'Write', tool_use_id: 'toolu_3' }]));
 
     const s = agg.snapshot();
-    // Mais recente primeiro: a do engine veio depois.
+    // Most recent first: the engine one came later.
     expect(s.recentDenials?.map((d) => d.source)).toEqual(['engine', 'user']);
   });
 

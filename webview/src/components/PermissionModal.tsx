@@ -12,7 +12,7 @@ interface Props {
   onDecision: (d: 'allow' | 'deny' | 'allow_always', message?: string) => void;
 }
 
-// Ícone por ferramenta (espelha o conjunto da Timeline).
+// Icon per tool (mirrors the Timeline's set).
 const TOOL_ICON: Record<string, string> = {
   Bash: '$_',
   Write: '✎',
@@ -35,7 +35,7 @@ export function PermissionModal({ t, req, onDecision }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onDecision]);
 
-  // Plan mode: ExitPlanMode chega como permissão; o plano vem em input.plan.
+  // Plan mode: ExitPlanMode arrives as a permission; the plan comes in input.plan.
   if (req.tool === 'ExitPlanMode') {
     return <PlanModal t={t} req={req} onDecision={onDecision} />;
   }
@@ -94,7 +94,7 @@ export function PermissionModal({ t, req, onDecision }: Props) {
   );
 }
 
-// Rótulo do "Sempre permitir" derivado da sugestão do CLI (ex.: acceptEdits).
+// "Always allow" label derived from the CLI's suggestion (e.g. acceptEdits).
 function suggestionLabel(t: Translator, req: PermissionRequest): string | undefined {
   const s = req.suggestions?.[0];
   if (s?.type === 'setMode' && s.mode === 'acceptEdits') return t('permission.alwaysEdits');
@@ -109,7 +109,7 @@ type Preview =
   | { kind: 'diff'; segs: DiffSeg[] }
   | { kind: 'json'; text: string };
 
-// Bloco de preview por tipo de conteúdo.
+// Preview block per content type.
 function PreviewBlock({ p }: { p: Preview }) {
   if (p.kind === 'diff') {
     return (
@@ -147,8 +147,8 @@ function PreviewBlock({ p }: { p: Preview }) {
   return <pre className="tool-pre">{p.text}</pre>;
 }
 
-// Decide o preview pelo conteúdo do input (não pelo nome da tool — shells
-// custom como "PowerShell" também trazem `command`).
+// Decides the preview by the input's content (not by the tool name — custom
+// shells like "PowerShell" also carry `command`).
 function inputPreview(req: PermissionRequest): Preview | null {
   const inp = (req.input ?? {}) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v));
@@ -174,7 +174,7 @@ function inputPreview(req: PermissionRequest): Preview | null {
   if (typeof inp.url === 'string' && inp.url) {
     return { kind: 'url', text: inp.url };
   }
-  // Genérico: JSON compacto, sem repetir a descrição já exibida acima.
+  // Generic: compact JSON, without repeating the description already shown above.
   const rest: Record<string, unknown> = { ...inp };
   if (req.description && rest.description === req.description) delete rest.description;
   try {
@@ -190,8 +190,8 @@ function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '\n…' : s;
 }
 
-// Plan mode editável: vê o plano (markdown) ou edita; "Aprovar" executa, "Manter
-// planejando" recusa enviando o plano editado / notas como feedback ao agente.
+// Editable plan mode: view the plan (markdown) or edit it; "Approve" executes, "Keep
+// planning" declines by sending the edited plan / notes as feedback to the agent.
 function PlanModal({ t, req, onDecision }: Props) {
   const plan = String((req.input as Record<string, unknown>)?.plan ?? '');
   const [editing, setEditing] = useState(false);

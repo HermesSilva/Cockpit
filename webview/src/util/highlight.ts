@@ -1,4 +1,4 @@
-// Syntax highlight via highlight.js com um conjunto curado de linguagens.
+// Syntax highlighting via highlight.js with a curated set of languages.
 import { isMisspelled, isIgnored } from '../spell/spell';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -50,7 +50,7 @@ for (const [name, lang] of Object.entries(LANGS)) {
   hljs.registerLanguage(name, lang as never);
 }
 
-// Extensão -> linguagem hljs.
+// Extension -> hljs language.
 const EXT: Record<string, string> = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
   ts: 'typescript', tsx: 'typescript',
@@ -67,7 +67,7 @@ const EXT: Record<string, string> = {
   ini: 'ini', toml: 'ini', conf: 'ini', cfg: 'ini', env: 'ini',
 };
 
-const MAX = 200_000; // não destacar blobs gigantes
+const MAX = 200_000; // don't highlight huge blobs
 
 export function languageFromPath(p?: string): string | undefined {
   if (!p) return undefined;
@@ -99,9 +99,9 @@ export function highlightCode(code: string, language?: string): Highlighted {
 }
 
 /**
- * Detecta o formato `cat -n` (Read do CLI: "  12<TAB>conteúdo" ou "  12→ conteúdo")
- * e separa números de linha do conteúdo, para destacar o código limpo num gutter.
- * Retorna null se a maioria das linhas não tiver numeração.
+ * Detects the `cat -n` format (the CLI's Read: "  12<TAB>content" or "  12→ content")
+ * and splits the line numbers from the content, to highlight the clean code in a gutter.
+ * Returns null when most lines have no numbering.
  */
 export function stripLineNumbers(text: string): { code: string; numbers: (number | null)[] } | null {
   const lines = text.split('\n');
@@ -120,7 +120,7 @@ export function stripLineNumbers(text: string): { code: string; numbers: (number
       out.push(line);
     }
   }
-  // descarta a última linha vazia comum (arquivo termina em \n)
+  // discards the common trailing empty line (the file ends in \n)
   const effective = lines[lines.length - 1].trim() === '' ? lines.length - 1 : lines.length;
   if (matched < effective * 0.6) return null;
   return { code: out.join('\n'), numbers };
@@ -134,20 +134,20 @@ export function escapeHtml(s: string): string {
 }
 
 /**
- * Highlight markdown-aware p/ input e mensagem do usuário: destaca só blocos
- * cercados ``` ``` ``` (por linguagem, ou auto) e código inline `assim`; a prosa
- * fica em texto plano. O CONTEÚDO TEXTUAL do HTML é idêntico ao texto original
- * (markers ``` e ` permanecem como texto), garantindo alinhamento no overlay.
+ * Markdown-aware highlighting for the user's input and message: it highlights only
+ * fenced ``` ``` blocks (by language, or auto) and inline `code`; prose
+ * stays plain text. The HTML's TEXT CONTENT is identical to the original text
+ * (the ``` and ` markers remain as text), guaranteeing alignment in the overlay.
  */
-// Relevância mínima do hljs p/ tratar um trecho SEM cerca como código (e não prosa).
+// Minimum hljs relevance to treat an UNFENCED snippet as code (and not prose).
 const CODE_RELEVANCE = 6;
 
-// `spell`: marca palavras com erro ortográfico na PROSA (nunca em código). O
-// offset global de cada trecho é repassado p/ o data-ss dos spans (o composer
+// `spell`: marks misspelled words in the PROSE (never in code). Each snippet's
+// global offset is passed on to the spans' data-ss (the composer
 // usa p/ ancorar o dropdown e localizar a palavra no texto).
 export function richHighlight(text: string, spell = false): string {
   if (!text) return '';
-  // Sem cercas: decide por relevância — código colore, prosa fica plana.
+  // No fences: decided by relevance — code is colored, prose stays plain.
   if (!text.includes('```')) return autoOrPlain(text, spell, 0);
 
   const fence = /```([\w+#.-]*)([ \t]*\n)([\s\S]*?)```/g;
@@ -157,7 +157,7 @@ export function richHighlight(text: string, spell = false): string {
   while ((m = fence.exec(text))) {
     out += autoOrPlain(text.slice(last, m.index), spell, last);
     const lang = m[1];
-    const sep = m[2]; // espaços + \n após a linguagem
+    const sep = m[2]; // spaces + \n after the language
     const code = m[3];
     const hl = highlightCode(code, lang || undefined).html; // hljs resolve aliases (ts, js…)
     out +=
@@ -170,8 +170,8 @@ export function richHighlight(text: string, spell = false): string {
   return out;
 }
 
-// Auto-detecta: se o trecho "parece código" (relevância alta), destaca; senão
-// trata como prosa (plano + código inline `assim`). Mantém o texto idêntico.
+// Auto-detects: when the snippet "looks like code" (high relevance), it is highlighted; otherwise
+// it is treated as prose (plain + inline `code`). It keeps the text identical.
 function autoOrPlain(s: string, spell: boolean, base: number): string {
   if (!s) return '';
   if (s.length <= MAX && /\S/.test(s)) {
@@ -205,13 +205,13 @@ function emitProse(s: string, spell: boolean, base: number): string {
   return spellWrap(s, base);
 }
 
-// Palavra: letras (com acento) + apóstrofo/hífen internos. Sem dígitos.
+// Word: letters (with accents) + internal apostrophe/hyphen. No digits.
 const WORD_RE = /[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*/g;
 
 /**
- * Envolve palavras com erro ortográfico em `<span class="spell-error">`, mantendo
- * o resto do texto escapado e idêntico (alinhamento no overlay). `data-ss` = offset
- * global da palavra no texto do composer; `data-sw` = a palavra (p/ sugestões).
+ * Wraps misspelled words in `<span class="spell-error">`, keeping
+ * the rest of the text escaped and identical (alignment in the overlay). `data-ss` = the word's
+ * global offset in the composer text; `data-sw` = the word (for suggestions).
  */
 function spellWrap(s: string, base: number): string {
   let out = '';
@@ -233,15 +233,15 @@ function spellWrap(s: string, base: number): string {
   return out;
 }
 
-// Filtra tokens que NÃO devem ser checados: muito curtos, identificadores de
-// código (camelCase), siglas, e tokens dentro de URL/caminho/@menção/comando.
+// Filters tokens that must NOT be checked: too short, code
+// identifiers (camelCase), acronyms, and tokens inside a URL/path/@mention/command.
 function spellable(word: string, ctx: string, start: number): boolean {
   if (word.length < 2) return false;
-  if (/[a-zà-ÿ][A-ZÀ-Ö]/.test(word)) return false; // camelCase → identificador
+  if (/[a-zà-ÿ][A-ZÀ-Ö]/.test(word)) return false; // camelCase → identifier
   if (word.length <= 6 && word === word.toUpperCase()) return false; // sigla
   const prev = start > 0 ? ctx[start - 1] : ' ';
   const next = ctx[start + word.length] ?? ' ';
-  // Coladas a @ / \ : . → menção, caminho, url, namespace, código.
+  // Glued to @ / backslash / : . → mention, path, url, namespace, code.
   if ('@/\\:.'.includes(prev)) return false;
   if ('@/\\:'.includes(next)) return false;
   if (next === '.' && /[A-Za-zÀ-ÿ]/.test(ctx[start + word.length + 1] ?? '')) return false; // foo.bar

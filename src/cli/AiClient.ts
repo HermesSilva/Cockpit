@@ -57,8 +57,8 @@ export function readLoginExpiry(): number | undefined {
 }
 
 export interface AskOpts {
-  prompt: string; // conteúdo da mensagem do usuário
-  system?: string; // instrução de sistema (opcional)
+  prompt: string; // content of the user message
+  system?: string; // system instruction (optional)
   model?: string; // default: Haiku
   maxTokens?: number;
   timeoutMs?: number;

@@ -7,7 +7,7 @@ interface Props {
   label?: string;
 }
 
-// Diff lado-a-lado (antes | depois) com numeração e realce add/del/change.
+// Side-by-side diff (before | after) with line numbers and add/del/change highlighting.
 export function DiffView({ oldText, newText, label }: Props) {
   const diff = useMemo(() => sideBySideDiff(oldText, newText), [oldText, newText]);
 

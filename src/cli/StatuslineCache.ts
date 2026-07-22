@@ -5,11 +5,11 @@ import { USAGE_CACHE } from './StatuslineInstaller';
 import type { LimitWindow, ScopedBucket } from '../../shared/protocol';
 
 export interface RealLimits {
-  fiveHour?: LimitWindow; // janela da sessão atual
+  fiveHour?: LimitWindow; // current session window
   sevenDay?: LimitWindow; // janela semanal de todos os modelos
-  weeklyScoped?: ScopedBucket[]; // janelas semanais por modelo (quando existem)
+  weeklyScoped?: ScopedBucket[]; // per-model weekly windows (when present)
   ageMs?: number; // idade do cache (now - ts); undefined se ts ausente
-  raw?: unknown; // rate_limits cru, para depuração
+  raw?: unknown; // raw rate_limits, for debugging
 }
 
 export function readUsageCache(): RealLimits | undefined {

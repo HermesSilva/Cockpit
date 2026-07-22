@@ -18,25 +18,25 @@ interface Props {
 
 const MARGIN = 8;
 
-// Dropdown de correção ancorado na palavra errada. Sugestões agrupadas por idioma
-// (PT / EN), cada grupo só aparece se houver candidatos. Fecha no Esc / clique fora.
-// Abre abaixo da palavra; se não couber, inverte pra cima e clampa à viewport.
+// Correction dropdown anchored on the wrong word. Suggestions grouped by language
+// (PT / EN), each group only shows when there are candidates. Closes on Esc / outside click.
+// Opens below the word; when it doesn't fit, it flips up and clamps to the viewport.
 export function SpellDropdown({ t, word, sug, loading, left, top, anchorTop, onPick, onAdd, onIgnore, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>({ left, top });
 
-  // Mede o menu já renderizado e reposiciona p/ caber na viewport.
+  // Measures the already rendered menu and repositions it to fit the viewport.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     const vh = window.innerHeight;
     const vw = window.innerWidth;
-    // Vertical: abaixo por padrão; se estourar embaixo e houver espaço acima, inverte.
+    // Vertical: below by default; when it overflows at the bottom and there is room above, it flips.
     let ny = top;
     if (top + height > vh - MARGIN && anchorTop - height > MARGIN) ny = anchorTop - height - 2;
     ny = Math.max(MARGIN, Math.min(ny, vh - height - MARGIN));
-    // Horizontal: clampa à direita.
+    // Horizontal: clamps to the right.
     const nx = Math.max(MARGIN, Math.min(left, vw - width - MARGIN));
     setPos({ left: nx, top: ny });
   }, [left, top, anchorTop, sug, loading]);

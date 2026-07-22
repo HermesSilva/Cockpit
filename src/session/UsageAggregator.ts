@@ -13,7 +13,7 @@ export interface UsageSlice {
   key: string; // id do modelo, ou 'main'|'subagent'
   usd: number;
   tokens: number; // tokens NOVOS: input + output + cache-create
-  cacheRead: number; // contexto relido do cache (exibido à parte: domina o total)
+  cacheRead: number; // context re-read from the cache (displayed separately: it dominates the total)
 }
 
 /** Breakdown of local usage for the 7-day window (categories). */
@@ -34,7 +34,7 @@ export interface ToolContextSlice {
  * Percentages are over the window's NEW tokens (not over cache-read).
  */
 export interface UsageAttribution {
-  longContextPct: number; // 0..1 — parcela gerada com contexto > 150k
+  longContextPct: number; // 0..1 — share generated with context > 150k
   subagentPct: number; // 0..1 — parcela vinda de subagentes (sidechain)
   cacheHitPct?: number; // 0..1 — cache_read / (cache_read + cache_creation)
   byTool: ToolContextSlice[]; // contexto injetado por ferramenta (maior primeiro)
@@ -43,12 +43,12 @@ export interface UsageAttribution {
 export interface LocalUsage {
   fiveHourUsd: number;
   sevenDayUsd: number;
-  fiveHourTokens: number; // tokens NOVOS (sem cache-read)
+  fiveHourTokens: number; // NEW tokens (without cache-read)
   sevenDayTokens: number;
   fiveHourCacheRead: number;
   sevenDayCacheRead: number;
   breakdown: UsageBreakdown; // detalhamento da janela de 7 dias
-  attribution: UsageAttribution; // atribuição da janela de 7 dias
+  attribution: UsageAttribution; // attribution of the 7-day window
 }
 
 /** Context above which a turn counts as "long context" (same cut as /usage). */
@@ -104,7 +104,7 @@ export async function computeLocalUsage(nowMs: number): Promise<LocalUsage> {
       const full = path.join(dir, f.name);
       try {
         const st = await fs.promises.stat(full);
-        if (st.mtimeMs < since7d) continue; // arquivo só com dados antigos
+        if (st.mtimeMs < since7d) continue; // file with old data only
         const content = await fs.promises.readFile(full, 'utf8');
         accumulate(content, nowMs, since7d, since5h, out, byModel, bySource, attr);
       } catch {
@@ -192,7 +192,7 @@ function accumulate(
   bySource: Map<string, UsageSlice>,
   attr: AttrAcc,
 ) {
-  const counted = new Set<string>(); // ids já contados neste arquivo (ver usageKey)
+  const counted = new Set<string>(); // ids already counted in this file (see usageKey)
   // tool_use_id -> the tool's bucket. The tool_result comes in a later `user` line,
   // without the tool name; the link only exists within the same file.
   const toolOf = new Map<string, string>();
@@ -214,7 +214,7 @@ function accumulate(
       for (const b of asBlocks(o.message?.content)) {
         if (b?.type !== 'tool_result') continue;
         const bucket = toolOf.get(b.tool_use_id);
-        if (!bucket) continue; // tool_use fora da janela / arquivo: não atribui
+        if (!bucket) continue; // tool_use outside the window / file: not attributed
         const slice = attr.byTool.get(bucket) ?? { key: bucket, calls: 0, tokens: 0 };
         slice.calls += 1;
         slice.tokens += Math.round(resultChars(b.content) / CHARS_PER_TOKEN);
@@ -233,7 +233,7 @@ function accumulate(
 
     const key = usageKey(o);
     if (key) {
-      if (counted.has(key)) continue; // mesma resposta, outro bloco: usage já somada
+      if (counted.has(key)) continue; // same response, another block: usage already summed
       counted.add(key);
     }
     const u = o.message.usage as Usage;

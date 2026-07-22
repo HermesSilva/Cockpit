@@ -5,3 +5,6 @@ out/
 .DS_Store
 *.log
 .vscode-test/
+
+# Chat/context exports dropped in the repo root by tooling
+context-*.md

@@ -19,7 +19,7 @@ interface Props {
   useLabel: string; // "Usar" (chat: injeta) ou "Copiar" (hub: clipboard)
 }
 
-// Campo de código TOTP de 6 dígitos.
+// 6-digit TOTP code field.
 function CodeInput({
   value,
   onChange,
@@ -58,13 +58,13 @@ export function CredentialsModal({
   useLabel,
 }: Props) {
   const [enrollCode, setEnrollCode] = useState('');
-  const [code, setCode] = useState(''); // código atual p/ ações (add/usar/excluir)
+  const [code, setCode] = useState(''); // current code for actions (add/use/delete)
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [value, setValue] = useState('');
   const [note, setNote] = useState('');
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
-  // Edição inline: id em edição + rascunho dos campos (value vazio = manter atual).
+  // Inline editing: the id being edited + a draft of the fields (empty value = keep current).
   const [editId, setEditId] = useState<string | null>(null);
   const [edit, setEdit] = useState({ name: '', username: '', value: '', note: '' });
 
@@ -98,7 +98,7 @@ export function CredentialsModal({
                 <>
                   <div
                     className="creds-qr"
-                    // SVG gerado no host (lib qrcode) — conteúdo confiável.
+                    // SVG generated in the host (qrcode lib) — trusted content.
                     dangerouslySetInnerHTML={{ __html: setup.qrSvg }}
                   />
                   <p className="creds-hint">{t('creds.enroll.scan')}</p>
@@ -123,7 +123,7 @@ export function CredentialsModal({
               )}
             </div>
           ) : (
-            // ---- Cofre enrolado: código + adicionar + lista ----
+            // ---- Enrolled vault: code + add + list ----
             <div className="creds-vault">
               <div className="creds-codebar">
                 <CodeInput value={code} onChange={setCode} placeholder={t('creds.code')} />
@@ -181,7 +181,7 @@ export function CredentialsModal({
                 {data.items.length === 0 && <li className="creds-empty">{t('creds.empty')}</li>}
                 {data.items.map((c) =>
                   editId === c.id ? (
-                    // ---- Edição inline ----
+                    // ---- Inline editing ----
                     <li key={c.id} className="creds-item editing">
                       <div className="creds-add-form">
                         <input

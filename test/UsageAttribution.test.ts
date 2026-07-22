@@ -1,5 +1,5 @@
-// Atribuição do uso 7d: long context, subagentes, cache hit-rate e contexto
-// injetado por ferramenta. Monta um transcript sintético em disco e varre.
+// 7d usage attribution: long context, subagents, cache hit rate and context
+// injected per tool. It builds a synthetic transcript on disk and scans it.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -11,7 +11,7 @@ const projects = path.join(home, '.claude', 'projects', 'proj');
 const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 
-/** Uma resposta assistant com usage + blocos opcionais. */
+/** An assistant response with usage + optional blocks. */
 function assistant(o: {
   id: string;
   usage: Record<string, number>;
@@ -38,14 +38,14 @@ function toolResult(id: string, text: string) {
 beforeAll(() => {
   fs.mkdirSync(projects, { recursive: true });
   const lines = [
-    // Turno curto: contexto pequeno, chama uma tool de MCP.
+    // Short turn: small context, calls an MCP tool.
     assistant({
       id: 'msg_a',
       usage: { input_tokens: 100, output_tokens: 100, cache_read_input_tokens: 1000 },
       content: [{ type: 'tool_use', id: 'tu_1', name: 'mcp__dase__query', input: {} }],
     }),
     toolResult('tu_1', 'x'.repeat(4000)), // ~1000 tokens
-    // Turno com contexto > 150k: conta como long context (400 tokens novos).
+    // Turn with context > 150k: counts as long context (400 new tokens).
     assistant({
       id: 'msg_b',
       usage: {
@@ -72,9 +72,9 @@ describe('computeLocalUsage — atribuição', () => {
     expect(u.sevenDayTokens).toBe(700);
     expect(u.sevenDayCacheRead).toBe(201_000);
     const a = u.attribution;
-    expect(a.longContextPct).toBeCloseTo(400 / 700, 5); // só msg_b
-    expect(a.subagentPct).toBeCloseTo(100 / 700, 5); // só msg_c
-    expect(a.cacheHitPct).toBe(1); // sem cache_creation
+    expect(a.longContextPct).toBeCloseTo(400 / 700, 5); // msg_b only
+    expect(a.subagentPct).toBeCloseTo(100 / 700, 5); // msg_c only
+    expect(a.cacheHitPct).toBe(1); // no cache_creation
     expect(a.byTool).toEqual([{ key: 'mcp:dase', calls: 1, tokens: 1000 }]);
   });
 });

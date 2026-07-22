@@ -10,6 +10,6 @@
 export function usageKey(entry: any): string | undefined {
   const id = entry?.message?.id;
   const req = entry?.requestId;
-  if (typeof id !== 'string' || !id) return undefined; // sem id: conta a linha
+  if (typeof id !== 'string' || !id) return undefined; // no id: the line is counted
   return `${id}:${typeof req === 'string' ? req : ''}`;
 }

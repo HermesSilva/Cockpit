@@ -1,6 +1,6 @@
-// Reducer do webview: aplica mensagens HostToWebview ao estado da UI.
-// Estado dividido em global (locale, cli, config, sessões em disco) e por aba
-// (cada aba = uma sessão paralela com sua própria conversa/stats/todos).
+// Webview reducer: applies HostToWebview messages to the UI state.
+// The state is split into global (locale, cli, config, sessions on disk) and per tab
+// (each tab = a parallel session with its own conversation/stats/todos).
 import type {
   HostToWebview,
   StatsSnapshot,
@@ -23,10 +23,10 @@ export interface TabState {
   id: string;
   title: string;
   status: 'idle' | 'busy' | 'error';
-  // Tarefas em background (Workflow / run_in_background) ainda executando após o
-  // turno terminar. Independente de `status`: o composer continua liberado, mas a
-  // timeline e o card do Hub mostram o spinner de "executando" e a lista do que
-  // cada processo está fazendo. `bgBusy` = derivado (bgTasks.length > 0).
+  // Background tasks (Workflow / run_in_background) still running after the
+  // turn ended. Independent of `status`: the composer stays enabled, but the
+  // timeline and the Hub card show the "running" spinner and the list of what
+  // each process is doing. `bgBusy` = derived (bgTasks.length > 0).
   bgTasks?: BackgroundTask[];
   bgBusy?: boolean;
   sessionId?: string; // id do transcript (casa com SessionInfo.id); vem do 'tabs'
@@ -38,8 +38,8 @@ export interface TabState {
   slashCommands: string[];
   permission?: PermissionRequest;
   ask?: AskRequest;
-  // Respostas registradas a AskUserQuestion nesta aba (chave = texto da pergunta).
-  // Alimenta a visão inline; sessões retomadas caem no parse do tool_result.
+  // Answers recorded for AskUserQuestion in this tab (key = the question text).
+  // It feeds the inline view; resumed sessions fall back to parsing the tool_result.
   answers?: Record<string, string>;
   authRequired?: boolean;
 }
@@ -48,22 +48,22 @@ export interface UiState {
   locale: string;
   cli: {
     available: boolean;
-    checked?: boolean; // host já reportou o status (false = ainda carregando)
+    checked?: boolean; // the host already reported the status (false = still loading)
     version?: string;
     error?: string;
-    latest?: string; // última versão do Claude CLI (npm)
-    cockpitVersion?: string; // versão da extensão
+    latest?: string; // latest Claude CLI version (npm)
+    cockpitVersion?: string; // the extension's version
   };
   config?: SessionConfig;
   sessions: SessionInfo[];
   sessionsCwd?: string;
-  slashMeta: Record<string, SlashCmdMeta>; // metadados de comandos pesquisados por IA
-  slashResearching: boolean; // pesquisa IA em andamento (indicador no botão)
+  slashMeta: Record<string, SlashCmdMeta>; // metadata of commands researched by AI
+  slashResearching: boolean; // AI research in progress (indicator on the button)
   showSessions: boolean;
   showContext: boolean;
   error?: string;
-  loggedIn: boolean; // estado de login (Sign in vs Sign out). Otimista até confirmar.
-  selectionRef?: string; // @file#a-b da seleção ativa do editor (compartilhável)
+  loggedIn: boolean; // login state (Sign in vs Sign out). Optimistic until confirmed.
+  selectionRef?: string; // @file#a-b of the editor's active selection (shareable)
   tabs: TabState[];
   activeTab: string;
 }
@@ -85,7 +85,7 @@ function emptyTab(id: string, title = '', status: TabState['status'] = 'idle'): 
   return { id, title, status, items: [], todos: [], slashCommands: [] };
 }
 
-/** Aba ativa (ou undefined se ainda não há). */
+/** Active tab (or undefined when there is none yet). */
 export function activeTab(state: UiState): TabState | undefined {
   return state.tabs.find((t) => t.id === state.activeTab);
 }
@@ -117,7 +117,7 @@ export function reducer(state: UiState, action: Action): UiState {
     }));
   }
   if (action.type === 'removeLastUser') {
-    // Desfaz a última bolha do usuário (envio bloqueado pelo gate de effort).
+    // Undoes the user's last bubble (send blocked by the effort gate).
     return patchTab(state, state.activeTab, (tab) => {
       const idx = [...tab.items].reverse().findIndex((i) => i.kind === 'user');
       if (idx < 0) return tab;
@@ -146,7 +146,7 @@ export function reducer(state: UiState, action: Action): UiState {
     return state.error ? { ...state, error: undefined } : state;
   }
   if (action.type === 'interruptUi') {
-    // Stop matou o CLI sem 'assistantDone': encerra o streaming e marca cancelado.
+    // Stop killed the CLI without 'assistantDone': ends the streaming and marks it cancelled.
     return patchTab(state, state.activeTab, (tab) => ({
       ...tab,
       status: 'idle',
@@ -158,7 +158,7 @@ export function reducer(state: UiState, action: Action): UiState {
 
   const msg = action.msg;
   switch (msg.kind) {
-    // --- Globais ---
+    // --- Global ---
     case 'ready':
     case 'locale':
       return { ...state, locale: msg.locale };
@@ -201,7 +201,7 @@ export function reducer(state: UiState, action: Action): UiState {
       return { ...state, tabs, activeTab: msg.activeTab };
     }
 
-    // --- Por aba ---
+    // --- Per tab ---
     default:
       return patchTab(state, (msg as { tab?: string }).tab ?? state.activeTab, (tab) =>
         tabReducer(tab, msg),
@@ -209,7 +209,7 @@ export function reducer(state: UiState, action: Action): UiState {
   }
 }
 
-// Aplica uma mensagem de conversa/stats ao estado de UMA aba.
+// Applies a conversation/stats message to ONE tab's state.
 function tabReducer(tab: TabState, msg: HostToWebview): TabState {
   switch (msg.kind) {
     case 'sessionInit':
@@ -220,7 +220,7 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       };
 
     case 'assistantStart': {
-      // Resposta fluindo = autenticado: limpa eventual aviso de login.
+      // A flowing response = authenticated: clears any login warning.
       const base = tab.authRequired ? { ...tab, authRequired: false } : tab;
       if (base.items.some((i) => i.kind === 'assistant' && i.id === msg.id)) return base;
       const item: AssistantItem = {
@@ -314,8 +314,8 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       return { ...tab, ask: { requestId: msg.requestId, questions: msg.questions } };
 
     case 'turnComplete': {
-      // Anexa custo/uso de tokens do turno ao último assistant (dado de comunicação
-      // que o engine emite no result mas a UI não mostrava em lugar nenhum).
+      // Attaches the turn's cost/token usage to the last assistant (communication data
+      // the engine emits in the result but the UI showed nowhere).
       const u = msg.usage;
       const usage: TurnUsage | undefined = u
         ? {
@@ -355,7 +355,7 @@ function patchTab(state: UiState, tabId: string, fn: (tab: TabState) => TabState
     return t;
   });
   if (!found) {
-    // Evento chegou antes da lista de abas: cria a aba sob demanda.
+    // The event arrived before the tab list: creates the tab on demand.
     tabs.push(fn(emptyTab(tabId)));
   }
   return { ...state, tabs };
@@ -374,7 +374,7 @@ function patchAssistant(tab: TabState, id: string, fn: (a: AssistantItem) => Ass
   return { ...tab, items };
 }
 
-// --- Painel de tarefas: alimentado por TodoWrite e por tools Task* (MCP) ---
+// --- Task panel: fed by TodoWrite and by Task* tools (MCP) ---
 
 type Status = TodoItem['status'];
 
@@ -385,8 +385,8 @@ function todosFromToolUse(name: string, input: unknown, prev: TodoItem[]): TodoI
   return undefined;
 }
 
-// Reconstrói o estado das tarefas ao reabrir uma sessão, refazendo a sequência
-// de tools Task*/TodoWrite do transcript na ordem (create -> result -> update).
+// Rebuilds the task state when reopening a session, replaying the sequence
+// of Task*/TodoWrite tools from the transcript in order (create -> result -> update).
 function todosFromHistory(items: TimelineItem[]): TodoItem[] {
   let todos: TodoItem[] = [];
   for (const it of items) {
@@ -424,8 +424,8 @@ const isTaskListTool = (name: string) => /task.*list|list.*task/i.test(name);
 const isTaskUpdateTool = (name: string) =>
   /task.*(update|status|complete|done|set|edit|patch)|(update|complete|finish).*task/i.test(name);
 
-// Ferramenta que alimenta o painel de tarefas (TodoWrite ou Task* dos MCP).
-// NÃO inclui o "Task"/"Agent" puro (launcher de subagente).
+// Tool that feeds the task panel (TodoWrite or the MCP Task*).
+// It does NOT include the plain "Task"/"Agent" (subagent launcher).
 export const isTodoToolName = (name: string): boolean =>
   name === 'TodoWrite' || isTaskCreateTool(name) || isTaskListTool(name) || isTaskUpdateTool(name);
 
@@ -500,11 +500,11 @@ function contentToText(content: unknown): string {
   return '';
 }
 
-// Result do TaskCreate, ex.: "Task #3 created successfully: Carregar DataCache".
+// TaskCreate result, e.g. "Task #3 created successfully: Load DataCache".
 const CREATE_LINE = /task\s*#(\d+)\b[^\n]*?:\s*(.+?)\s*$/i;
 
-// Liga o id devolvido pelo TaskCreate à tarefa criada (casa por título; senão
-// a primeira sem id) — é o que permite ao TaskUpdate marcar depois pelo id.
+// Links the id returned by TaskCreate to the created task (matched by title; otherwise
+// the first one without an id) — that is what lets TaskUpdate mark it by id later.
 function applyCreateResult(content: unknown, prev: TodoItem[]): TodoItem[] | undefined {
   const m = CREATE_LINE.exec(contentToText(content));
   if (!m) return undefined;

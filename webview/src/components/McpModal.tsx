@@ -5,15 +5,15 @@ import { Portal } from './Portal';
 
 interface Props {
   t: Translator;
-  data: McpData | null; // null = ainda carregando
+  data: McpData | null; // null = still loading
   busy: boolean;
   onRefresh: () => void;
   onClose: () => void;
 }
 
-// Painel "MCP servers" (X4): estado de cada servidor + as tools que ele expõe
-// nesta sessão. Servidor `pending` é o caso que pede ação: um `.mcp.json` do repo
-// que o CLI se recusa a subir enquanto o workspace não for aprovado.
+// "MCP servers" panel (X4): the state of each server + the tools it exposes
+// in this session. A `pending` server is the case that needs action: a repo `.mcp.json`
+// the CLI refuses to start until the workspace is approved.
 export function McpModal({ t, data, busy, onRefresh, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

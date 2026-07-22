@@ -264,7 +264,7 @@ function killGroup(pid: number): void {
     process.kill(-pid, 'SIGTERM');
   } catch {
     try {
-      process.kill(pid, 'SIGTERM'); // sem grupo (raro): mata ao menos o líder
+      process.kill(pid, 'SIGTERM'); // no group (rare): at least kills the leader
     } catch {
       /* already ended */
     }
@@ -276,7 +276,7 @@ function killGroup(pid: number): void {
       /* already ended */
     }
   }, 2000);
-  t.unref?.(); // não segura o event loop
+  t.unref?.(); // doesn't hold the event loop
 }
 
 /** On Windows with a shell, wraps the path in quotes when it has spaces. */

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { OtelReceiver } from '../src/cli/OtelReceiver';
 
-// Payload OTLP/JSON mínimo (ExportMetricsServiceRequest) com as métricas que o
-// Claude Code emite. asInt vem como string no JSON OTLP — o parser converte.
+// Minimal OTLP/JSON payload (ExportMetricsServiceRequest) with the metrics
+// Claude Code emits. asInt comes as a string in OTLP JSON — the parser converts it.
 function metric(name: string, points: { value: number | string; attrs?: Record<string, string> }[]) {
   return {
     name,
@@ -96,7 +96,7 @@ describe('OtelReceiver — ingestMetrics', () => {
                   { key: 'effort', value: { stringValue: 'medium' } },
                 ],
               },
-              // Turno normal, fora de workflow: não cria run.
+              // Normal turn, outside a workflow: no run is created.
               {
                 asDouble: 0.9,
                 attributes: [{ key: 'model', value: { stringValue: 'claude-opus-4-8' } }],
@@ -113,7 +113,7 @@ describe('OtelReceiver — ingestMetrics', () => {
     expect(s.workflows).toHaveLength(1);
     expect(s.workflows?.[0]).toMatchObject({ runId: 'run-1', name: 'code-review', tokens: 900 });
     expect(s.workflows?.[0].usd).toBeCloseTo(0.5, 6);
-    // Efforts distintos da run, ordenados do menor ao maior (2.1.214).
+    // The run's distinct efforts, ordered from lowest to highest (2.1.214).
     expect(s.workflows?.[0].effort).toBe('medium · high');
     // O custo por modelo continua contando tudo (workflow + turno normal).
     expect(s.costByModel?.find((m) => m.key === 'claude-opus-4-8')?.usd).toBeCloseTo(1.2, 6);

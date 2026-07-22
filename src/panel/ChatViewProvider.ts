@@ -1,4 +1,4 @@
-// Provider do webview: ponte entre o CLI (motor) e a UI React.
+// Webview provider: the bridge between the CLI (engine) and the React UI.
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
@@ -54,16 +54,16 @@ import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
 import { log, dlog } from '../util/logger';
 
-// Aliases sempre válidos (resolvem para o mais recente da conta). 'default' = sem flag.
-// O CLI não expõe lista de modelos; a UI complementa com o modelo ativo descoberto
-// ao vivo (evento init) e com entrada livre ("Custom…"). Effort é enum fixo do CLI.
-// Lista plana (sem agrupar). Modelos com variante 1M aparecem só como [1m]
-// (a versão menor de 200K é omitida). O CLI valida no spawn.
+// Always-valid aliases (they resolve to the account's most recent). 'default' = no flag.
+// The CLI doesn't expose a model list; the UI complements it with the active model discovered
+// live (init event) and with free input ("Custom…"). Effort is a fixed CLI enum.
+// Flat list (no grouping). Models with a 1M variant appear only as [1m]
+// (the smaller 200K version is omitted). The CLI validates it at spawn.
 const MODEL_LIST = [
   'default',
   'claude-opus-4-8[1m]',
-  // Sonnet 5: default do CLI desde 2.1.197. Janela de 1M é NATIVA — não tem
-  // variante `[1m]` (por isso fica fora do BASE_OF_1M).
+  // Sonnet 5: the CLI default since 2.1.197. Its 1M window is NATIVE — it has no
+  // `[1m]` variant (hence it stays out of BASE_OF_1M).
   'claude-sonnet-5',
   'claude-opus-4-7[1m]',
   'claude-opus-4-6',
@@ -73,83 +73,83 @@ const MODEL_LIST = [
   'claude-sonnet-4-5',
   'claude-fable-5',
 ];
-// Versões de 200K que têm variante 1M na lista — filtradas da descoberta.
+// 200K versions that have a 1M variant in the list — filtered out of discovery.
 const BASE_OF_1M = new Set(['claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6']);
 const EFFORT_OPTIONS = ['default', 'low', 'medium', 'high', 'xhigh', 'max'];
 const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'];
-// Cache da statusline mais velho que isto não é confiável como % "real" (engana).
+// A statusline cache older than this isn't trustworthy as the "real" % (it misleads).
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
-// Preferências por sessão persistidas em globalState (override da aba).
+// Per-session preferences persisted in globalState (tab override).
 interface SessionPrefs {
   model?: string;
   effort?: string;
   allowAgents?: boolean;
 }
 
-// --- Watchdog de renderização ---
+// --- Render watchdog ---
 // DESATIVADO (2026-06-29): suspeito de causar tempestade de recreate de painel
-// (dispose+create webview nativo + replayTab de timeline gigante em rajada) que
-// precedeu um crash nativo do extension host (0xC0000005). Mantido em código p/
-// avaliação de uso — religar trocando esta flag p/ true. Botão de reload manual
+// (dispose+create native webview + replayTab of a huge timeline in a burst) that
+// preceded a native extension-host crash (0xC0000005). Kept in the code for
+// evaluation — re-enable by flipping this flag to true. The manual reload button
 // (reloadActivePanel) segue funcionando independente disto.
 const WATCHDOG_ENABLED = false;
-const HEARTBEAT_DEAD_MS = 30_000; // sem pulso por isto = render presumido morto
-const WATCHDOG_TICK_MS = 10_000; // frequência de checagem das superfícies visíveis
-const RELOAD_COOLDOWN_MS = 60_000; // não recarrega a mesma superfície antes disto
-const RELOAD_MAX_TRIES = 2; // tentativas antes de desistir (evita loop de reload)
-const HUB_SURFACE = '__hub__'; // chave da superfície do hub no mapa de pulsos
+const HEARTBEAT_DEAD_MS = 30_000; // no beat for this long = render presumed dead
+const WATCHDOG_TICK_MS = 10_000; // how often the visible surfaces are checked
+const RELOAD_COOLDOWN_MS = 60_000; // doesn't reload the same surface before this
+const RELOAD_MAX_TRIES = 2; // attempts before giving up (avoids a reload loop)
+const HUB_SURFACE = '__hub__'; // key of the hub surface in the beat map
 const API_KEY_SECRET = 'cockpit.apiKey'; // chave da API key no SecretStorage (keychain do SO)
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  // O Cockpit vive como aba no editor (WebviewPanel) + hub na Activity Bar
+  // The Cockpit lives as an editor tab (WebviewPanel) + a hub in the Activity Bar
   // (WebviewView). `surfaces` guarda os webviews ativos (broadcast) — o estado
-  // vive no host e é replicado para todas as superfícies.
-  // Cada contexto (sessão) abre como WebviewPanel próprio no editor.
+  // lives in the host and is replicated to every surface.
+  // Each context (session) opens as its own WebviewPanel in the editor.
   private panels = new Map<string, vscode.WebviewPanel>();
   private webviewSession = new Map<vscode.Webview, string>();
   private hubView?: vscode.WebviewView;
 
-  // Watchdog de render: o processo do webview (renderer) pode cair (bug GPU do
-  // VSCode) — a tela fica branca mas o host segue vivo (stream/stats/timeline
-  // continuam). Cada superfície bate um pulso periódico; se uma VISÍVEL para de
-  // bater além do limite, força reload do HTML. NUNCA toca no CLI/contexto.
-  private lastBeat = new Map<string, number>(); // surfaceKey -> epoch ms do último pulso
-  private reloadGuard = new Map<string, { at: number; count: number }>(); // cooldown/cap por superfície
-  private justRecreated = new Set<string>(); // tabIds recriados pelo watchdog: replay forçado no init
+  // Render watchdog: the webview process (renderer) can die (VSCode GPU
+  // bug) — the screen goes blank but the host stays alive (stream/stats/timeline
+  // keep going). Every surface sends a periodic beat; when a VISIBLE one stops
+  // beating past the limit, the HTML is force-reloaded. It NEVER touches the CLI/context.
+  private lastBeat = new Map<string, number>(); // surfaceKey -> epoch ms of the last beat
+  private reloadGuard = new Map<string, { at: number; count: number }>(); // cooldown/cap per surface
+  private justRecreated = new Set<string>(); // tabIds recreated by the watchdog: forced replay on init
   private watchdog?: ReturnType<typeof setInterval>;
-  private watchdogDisabledLogged = false; // loga só 1x que o watchdog está desativado
-  private windowStateSub?: vscode.Disposable; // foco da janela (rearma pulso ao voltar)
+  private watchdogDisabledLogged = false; // logs only once that the watchdog is off
+  private windowStateSub?: vscode.Disposable; // window focus (re-arms the beat on return)
 
-  // Abas: cada uma é uma Session (runtime de CLI + stats + streaming) paralela.
+  // Tabs: each one is a Session (CLI runtime + stats + streaming) in parallel.
   private sessions = new Map<string, Session>();
-  // Keep-alive de cache: renova em background os contextos marcados (até fechados).
+  // Cache keep-alive: renews the ticked contexts in the background (even closed ones).
   private cacheKeeper = new CacheKeeper({
     claudePath: () => this.claudePath(),
     pingOpen: (id) => this.pingOpenSession(id),
   });
   private tabMeta = new Map<string, { title: string; status: 'idle' | 'busy' | 'error' }>();
-  // Rascunho/ditado espelhado por aba (anti-perda): vive no HOST, que sobrevive à
-  // morte do renderer (tela branca). Re-injetado no webview ao (re)montar.
+  // Draft/dictation mirrored per tab (loss prevention): it lives in the HOST, which survives
+  // the renderer's death (blank screen). Re-injected into the webview on (re)mount.
   private draftByTab = new Map<string, string>();
   private tabOrder: string[] = [];
   private activeTab = '';
-  // Última sessão cujo painel foi fechado pelo usuário (p/ "reabrir fechada").
+  // Last session whose panel the user closed (for "reopen closed").
   private lastClosed?: { tabId: string; sessionId?: string };
-  // Ref da seleção ativa do editor (@file#a-b) p/ compartilhar via composer.
+  // Ref of the editor's active selection (@file#a-b) to share via the composer.
   private lastSelRef?: string;
   private selListener?: vscode.Disposable;
   private tabSeq = 0;
 
-  // Overrides de sessão (em memória — não alteram as settings globais do usuário).
+  // Session overrides (in memory — they don't change the user's global settings).
   private modelOverride?: string;
   private effortOverride?: string;
   private permissionOverride?: string;
-  // Baseline dos combos da aba ativa antes de o usuário mexer neles. Se, após
-  // mexer, ele criar um NOVO contexto (em vez de enviar um prompt), a escolha era
-  // para o novo contexto: o novo nasce com os valores escolhidos e a aba anterior
-  // volta a este baseline. Enviar um prompt confirma a escolha na aba atual e
-  // limpa o baseline (comportamento de sempre). Chave = aba que estava sendo editada.
+  // Baseline of the active tab's dropdowns before the user touched them. If, after
+  // touching them, they create a NEW context (instead of sending a prompt), the choice was
+  // for the new context: the new one is born with the chosen values and the previous tab
+  // returns to this baseline. Sending a prompt confirms the choice in the current tab and
+  // clears the baseline (the usual behavior). Key = the tab that was being edited.
   private comboBaseline?: {
     tab: string;
     model?: string;
@@ -158,40 +158,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     allowAgents?: boolean;
   };
   private statusBar?: vscode.StatusBarItem;
-  // Botão de reload na status bar: sempre visível enquanto há painel do Cockpit
-  // aberto. Recupera o webview cinza/morto (mesma ação do watchdog) — funciona no
-  // host, então independe do renderer e das configs de ações do editor.
+  // Reload button in the status bar: always visible while a Cockpit panel is
+  // open. It recovers the gray/dead webview (same action as the watchdog) — it runs in the
+  // host, so it is independent of the renderer and of the editor action settings.
   private reloadBar?: vscode.StatusBarItem;
-  // Modelos descobertos ao vivo (modelo ativo do init + /v1/models). Valor =
-  // janela de contexto real (max_input_tokens) ou undefined se a conta não expõe.
+  // Models discovered live (the init's active model + /v1/models). Value =
+  // real context window (max_input_tokens) or undefined when the account doesn't expose it.
   private discoveredModels = new Map<string, number | undefined>();
   private discoveryTried = false;
-  // Preço por modelo (das docs de pricing; cache 1x/dia). Vazio até carregar.
+  // Price per model (from the pricing docs; cached once a day). Empty until loaded.
   private pricing: PricingMap = {};
   private pricingTried = false;
 
   // Defaults do Claude Code (effort do settings; model do settings ou init cacheado).
   private defaults: { model?: string; effort?: string } = {};
   private observedDefaultModel?: string;
-  // model/effort/permission mudou e ainda não reiniciou a sessão (avisa na UI).
+  // model/effort/permission changed and the session hasn't restarted yet (warns in the UI).
   private pendingRestart = false;
-  // Sessão de ditado por voz ativa (uma de cada vez; o mic é um só).
+  // Active voice dictation session (one at a time; there is only one mic).
   private voice?: VoiceSession;
   private voiceCapture?: AudioCapture;
-  private voiceDict: VoiceDict = { terms: [], replacements: [] }; // dicionário ativo do ditado
+  private voiceDict: VoiceDict = { terms: [], replacements: [] }; // active dictation dictionary
 
-  // Corretor ortográfico (hunspell-asm no host). Lazy: instancia no 1º uso.
+  // Spell-checker (hunspell-asm in the host). Lazy: instantiated on first use.
   private speller?: Speller;
 
-  // Cofre de credenciais protegido por TOTP (SecretStorage). Ausente se o host não
+  // TOTP-protected credential vault (SecretStorage). Absent when the host doesn't
   // forneceu o SecretStorage (ex.: testes).
   private creds?: CredentialsStore;
 
   // SecretStorage do host (keychain do SO). Guarda a API key de descoberta de
-  // modelos cifrada — nunca em texto plano nas settings. Ausente em testes.
+  // models encrypted — never in plain text in the settings. Absent in tests.
   private readonly secrets?: vscode.SecretStorage;
 
-  // Diretório de globalStorage da própria extensão.
+  // The extension's own globalStorage directory.
   private readonly globalStorageDir?: string;
 
   constructor(
@@ -208,22 +208,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
     this.statusBar = statusBar;
     this.updateStatusBar(false);
-    // Botão de reload (status bar, direita). Escondido até abrir um contexto.
+    // Reload button (status bar, right). Hidden until a context is opened.
     this.reloadBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
     this.reloadBar.text = '$(refresh)';
     this.reloadBar.tooltip = vscode.l10n.t('Reload Cockpit view (fix gray/blank panel)');
     this.reloadBar.command = 'tootega.reloadView';
     this.updateReloadBar();
-    setInternalModel(this.cfg().get<string>('internalModel', '')); // modelo das chamadas internas
-    void resolveAccountKey(this.claudePath()); // resolve a conta cedo (chave do dicionário de ditado)
-    // Seleção ativa do editor → ref @file#a-b compartilhável no composer.
+    setInternalModel(this.cfg().get<string>('internalModel', '')); // model of the internal calls
+    void resolveAccountKey(this.claudePath()); // resolves the account early (dictation dictionary key)
+    // Editor's active selection → shareable @file#a-b ref in the composer.
     this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
-    // Ping automático de keep-alive DESLIGADO: qualquer refresh via --resume grava
-    // um turno real no .jsonl (polui a conversa, gasta tokens e chega ao agente).
+    // Automatic keep-alive ping is OFF: any refresh via --resume writes
+    // a real turn into the .jsonl (pollutes the conversation, spends tokens and reaches the agent).
     // O medidor de vida do cache no painel continua (independe do keeper).
-    void this.cacheKeeper; // mantido p/ futura reimplementação limpa (sem poluir o transcript)
-    // Telemetria OTEL (opt-in, padrão OFF): liga o receiver local que coleta LOC/
-    // sessões/commits da CLI. Ao ligar, injeta as env de export antes do 1º spawn.
+    void this.cacheKeeper; // kept for a future clean reimplementation (without polluting the transcript)
+    // OTEL telemetry (opt-in, default OFF): starts the local receiver that collects LOC/
+    // sessions/commits from the CLI. When enabled, it injects the export env before the first spawn.
     if (this.cfg().get<boolean>('otel.enabled', false)) {
       try {
         this.otel.start();
@@ -233,10 +233,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // Receiver OTLP local (opt-in). Sempre instanciado; só escuta se ligado.
+  // Local OTLP receiver (opt-in). Always instantiated; it only listens when enabled.
   private readonly otel = new OtelReceiver();
 
-  /** Encerra recursos de background (chamado no deactivate da extensão). */
+  /** Shuts down background resources (called in the extension's deactivate). */
   dispose(): void {
     this.cacheKeeper.stop();
     this.otel.stop();
@@ -247,7 +247,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.diffProviderReg?.dispose();
   }
 
-  /** Atualiza o ref da seleção (@rel#a-b) e avisa o composer. Vazio = sem seleção. */
+  /** Updates the selection ref (@rel#a-b) and notifies the composer. Empty = no selection. */
   private onSelectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
     const ed = e.textEditor;
     const sel = ed.selection;
@@ -261,7 +261,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'selection', ref });
   }
 
-  /** Mostra o botão de reload enquanto houver ao menos um painel do Cockpit aberto. */
+  /** Shows the reload button while at least one Cockpit panel is open. */
   private updateReloadBar(): void {
     if (!this.reloadBar) return;
     if (this.panels.size > 0) this.reloadBar.show();
@@ -269,10 +269,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Keep-alive de um contexto que está ABERTO numa aba: pinga pelo CLI vivo da
-   * sessão (sem --resume paralelo, que conflita). 'busy' = turno em andamento já
-   * mantém quente; 'pinged' = ping enviado; 'none' = não há sessão aberta (o
-   * keeper então usa o spawn efêmero p/ contexto fechado).
+   * Keep-alive of a context that is OPEN in a tab: it pings through the session's live
+   * CLI (no parallel --resume, which would conflict). 'busy' = a turn in progress already
+   * keeps it warm; 'pinged' = ping sent; 'none' = there is no open session (the
+   * keeper then uses the ephemeral spawn for a closed context).
    */
   private pingOpenSession(sessionId: string): 'busy' | 'pinged' | 'none' {
     for (const s of this.sessions.values()) {
@@ -284,9 +284,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return 'none';
   }
 
-  // ---- Abas / sessões paralelas ----
+  // ---- Tabs / parallel sessions ----
 
-  /** Sessão da aba ativa (cria a primeira aba se ainda não houver). */
+  /** The active tab's session (creates the first tab when there is none yet). */
   private active(): Session {
     if (!this.activeTab || !this.sessions.has(this.activeTab)) this.createTab();
     return this.sessions.get(this.activeTab)!;
@@ -298,11 +298,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       onBusy: (busy) => this.setTabStatus(tabId, busy ? 'busy' : 'idle'),
       onResult: () => {
         this.notifyComplete();
-        void this.refreshUsage(); // busca uso fresco ao fim de cada interação (sem cache persistido)
-        this.sendSessions(); // sessão nova/atualizada já está no disco — reflete na lista de contextos
+        void this.refreshUsage(); // fetches fresh usage at the end of each interaction (no persisted cache)
+        this.sendSessions(); // the new/updated session is already on disk — reflected in the context list
       },
       onInteraction: () => {
-        // Garante o contexto visível (cria/foca seu painel) p/ permissão/pergunta.
+        // Ensures the context is visible (creates/focuses its panel) for the permission/question.
         this.openSessionPanel(tabId);
       },
       onInit: (model, cmds) => this.onSessionInit(model, cmds, tabId),
@@ -334,7 +334,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     };
   }
 
-  /** Cria uma aba nova e sua Session; retorna o id. Vira a aba ativa. */
+  /** Creates a new tab and its Session; returns the id. It becomes the active tab. */
   private createTab(): string {
     const id = `t${++this.tabSeq}`;
     const s = new Session(this.hooksFor(id));
@@ -353,12 +353,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Combos (model/effort/permission) e stats refletem a aba ativa.
     this.sendConfig();
     this.post({ kind: 'stats', stats: this.sessions.get(tabId)!.snapshot() }, tabId);
-    this.sessions.get(tabId)!.sendTimeline(); // timeline/compactações da aba ativa
-    this.replayTab(tabId); // garante o histórico em todas as superfícies
+    this.sessions.get(tabId)!.sendTimeline(); // timeline/compactions of the active tab
+    this.replayTab(tabId); // guarantees the history on every surface
   }
 
-  // Captura o baseline dos combos de `tab` (uma vez por edição). Chamado antes de
-  // aplicar qualquer mudança de combo, p/ poder reverter se o usuário optar por
+  // Captures the baseline of `tab`'s dropdowns (once per edit). Called before
+  // applying any dropdown change, so it can be reverted if the user chooses to
   // levar a escolha a um novo contexto.
   private snapComboBaseline(tab: string): void {
     const s = this.sessions.get(tab);
@@ -374,7 +374,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Cria um contexto novo (conversa vazia) e abre seu painel. */
   private openNewTab(): void {
-    // O novo contexto herda os valores atualmente escolhidos nos combos da aba ativa.
+    // The new context inherits the values currently chosen in the active tab's dropdowns.
     const prevTab = this.activeTab;
     const prev = this.sessions.get(prevTab);
     const inherited = prev
@@ -385,15 +385,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           allowAgents: prev.allowAgentsOverride,
         }
       : undefined;
-    // Se os combos foram editados sobre a aba ativa, a escolha era p/ o novo
-    // contexto: reverte a aba anterior ao baseline (não a muta indevidamente).
+    // If the dropdowns were edited over the active tab, the choice was for the new
+    // context: the previous tab is reverted to the baseline (it isn't mutated unduly).
     if (prev && this.comboBaseline?.tab === prevTab) {
       prev.modelOverride = this.comboBaseline.model;
       prev.effortOverride = this.comboBaseline.effort;
       prev.permissionOverride = this.comboBaseline.permission;
       prev.allowAgentsOverride = this.comboBaseline.allowAgents;
       this.saveSessionModel(prev);
-      this.pendingRestart = false; // aba anterior voltou ao original: sem restart pendente
+      this.pendingRestart = false; // the previous tab is back to the original: no pending restart
     }
     this.comboBaseline = undefined;
 
@@ -466,20 +466,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'tabs', tabs, activeTab: this.activeTab });
   }
 
-  /** Lado global do init de uma sessão: descoberta de modelo + cache do default. */
+  /** Global side of a session's init: model discovery + default cache. */
   private onSessionInit(model?: string, slashCommands?: string[], tabId?: string): void {
     void this.researchSlash(slashCommands);
-    // Modelo REAL resolvido pelo CLI: o escopo de tempos pode ter mudado
-    // ('default' -> id real). Recalibra o gauge com as médias do novo escopo.
+    // REAL model resolved by the CLI: the timing scope may have changed
+    // ('default' -> real id). Recalibrates the gauge with the new scope's averages.
     if (tabId) {
       this.postTaskTimings(tabId);
-      // sessionId agora existe: persiste o override (se houver) desta sessão nova.
+      // the sessionId now exists: persists the override (when there is one) of this new session.
       const s = this.sessions.get(tabId);
       if (s) this.saveSessionModel(s);
     }
     if (typeof model === 'string' && model) {
       if (!this.discoveredModels.has(model)) {
-        this.discoveredModels.set(model, undefined); // contexto vem do /v1/models
+        this.discoveredModels.set(model, undefined); // context comes from /v1/models
         this.sendConfig();
       }
       const settingsModel = this.cfg().get<string>('model', '') || 'default';
@@ -489,7 +489,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendConfig();
       }
     }
-    // Sessão recém-iniciada já tem transcript no disco: atualiza a grade de contextos.
+    // A freshly started session already has a transcript on disk: refreshes the context grid.
     this.sendSessions();
   }
 
@@ -500,7 +500,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private lastScoped?: ScopedBucket[];
   private usageStarted = false;
 
-  /** Inicia (uma vez) o cálculo periódico do uso local (5h/7d). */
+  /** Starts (once) the periodic computation of local usage (5h/7d). */
   private startUsageTimer(): void {
     if (this.usageStarted) return;
     this.usageStarted = true;
@@ -510,7 +510,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async refreshUsage(force = false): Promise<void> {
     try {
-      // 0) Uso REAL da conta via API OAuth (read-only, sem gasto de token). É a
+      // 0) REAL account usage via the OAuth API (read-only, no token spend). It is the
       // mesma fonte do /usage do CLI — bate exatamente. Melhor fonte.
       const api = await fetchAccountUsage(force);
       if (api && (api.fiveHour || api.sevenDay)) {
@@ -519,7 +519,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.lastLimitsSource = 'real';
         this.lastUsageSource = 'api';
       } else {
-        // 1) Cache da statusline (rate_limits). Só confia se FRESCO.
+        // 1) Statusline cache (rate_limits). Only trusted when FRESH.
         const real = readUsageCache();
         const fresh = real != null && (real.ageMs == null || real.ageMs < USAGE_CACHE_MAX_AGE_MS);
         if (real && fresh && (real.fiveHour || real.sevenDay)) {
@@ -528,7 +528,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.lastLimitsSource = 'real';
           this.lastUsageSource = 'statusline';
         } else {
-          // 2) Fallback: uso local por tokens (sem %, só USD/tokens acumulados).
+          // 2) Fallback: local token usage (no %, only accumulated USD/tokens).
           const u = await computeLocalUsage(Date.now());
           this.lastLimits = {
             fiveHour: {
@@ -564,13 +564,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.statusBar.show();
   }
 
-  /** Abre (ou foca) o contexto ativo como WebviewPanel no editor. */
+  /** Opens (or focuses) the active context as a WebviewPanel in the editor. */
   openInEditor(): void {
     const id = this.activeTab && this.sessions.has(this.activeTab) ? this.activeTab : this.createTab();
     this.openSessionPanel(id);
   }
 
-  /** Abre (ou foca) o painel de uma sessão. Cada contexto = um WebviewPanel. */
+  /** Opens (or focuses) a session's panel. Each context = one WebviewPanel. */
   private openSessionPanel(tabId: string): void {
     const existing = this.panels.get(tabId);
     if (existing) {
@@ -596,13 +596,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       ],
       },
     );
-    // Tabs do editor não mascaram o ícone (render cru) -> versão colorida.
+    // Editor tabs don't mask the icon (raw render) -> colored version.
     panel.iconPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'icon-color.svg');
     this.bindPanel(panel, tabId);
     this.setActive(tabId);
   }
 
-  /** Liga um WebviewPanel a uma sessão específica. */
+  /** Binds a WebviewPanel to a specific session. */
   private bindPanel(panel: vscode.WebviewPanel, tabId: string): void {
     try {
       panel.webview.options = {
@@ -624,23 +624,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
     const vs = panel.onDidChangeViewState(() => {
       if (panel.active) this.setActive(tabId);
-      // Context key próprio p/ o botão de refresh no title bar (mais confiável que
-      // activeWebviewPanelId p/ webview panels). True quando ESTE painel está ativo.
+      // A dedicated context key for the refresh button in the title bar (more reliable than
+      // activeWebviewPanelId for webview panels). True when THIS panel is active.
       void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', panel.active);
-      // Reexibido: timers ficaram throttled enquanto oculto — rearma o relógio p/
-      // o watchdog não confundir o gap com render morto.
+      // Shown again: timers were throttled while hidden — re-arms the clock so
+      // the watchdog doesn't mistake the gap for a dead render.
       if (panel.visible) this.lastBeat.set(tabId, Date.now());
     });
-    // Painel recém-criado nasce ativo: arma o context key já.
+    // A freshly created panel is born active: arm the context key right away.
     void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', true);
-    this.lastBeat.set(tabId, Date.now()); // arma já: painel recém-criado ainda não bateu
-    // Ref capturada AGORA: ler `panel.webview`/`panel.active` DEPOIS do dispose
-    // lança "Webview is disposed" (getter assertNotDisposed) e aborta o resto do
+    this.lastBeat.set(tabId, Date.now()); // armed now: a freshly created panel hasn't beaten yet
+    // Ref captured NOW: reading `panel.webview`/`panel.active` AFTER the dispose
+    // throws "Webview is disposed" (assertNotDisposed getter) and aborts the rest of the
     // handler — vazando os listeners e os mapas de pulso. Captura evita o getter.
     const wv = panel.webview;
     panel.onDidDispose(() => {
-      // Fechamento genuíno pelo usuário (não recreate do watchdog): o mapa ainda
-      // aponta p/ ESTE painel. Guarda p/ "reabrir sessão fechada".
+      // A genuine close by the user (not a watchdog recreate): the map still
+      // points to THIS panel. Stored for "reopen closed session".
       if (this.panels.get(tabId) === panel) {
         const s = this.sessions.get(tabId);
         this.lastClosed = { tabId, sessionId: s?.sessionId ?? s?.resumeId };
@@ -650,14 +650,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.lastBeat.delete(tabId);
       this.reloadGuard.delete(tabId);
       this.updateReloadBar();
-      // Não lê panel.active (getter lança pós-dispose): zera o context key direto.
+      // Doesn't read panel.active (the getter throws post-dispose): clears the context key directly.
       void vscode.commands.executeCommand('setContext', 'tootega.cockpitActive', false);
       sub.dispose();
       vs.dispose();
     });
   }
 
-  /** Chave de superfície p/ o watchdog: tabId do painel, ou HUB_SURFACE do hub. */
+  /** Surface key for the watchdog: the panel's tabId, or HUB_SURFACE for the hub. */
   private surfaceKey(webview?: vscode.Webview): string | undefined {
     if (!webview) return undefined;
     const tab = this.webviewSession.get(webview);
@@ -666,28 +666,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return undefined;
   }
 
-  /** Liga o checador periódico de render (idempotente). */
+  /** Starts the periodic render checker (idempotent). */
   private startWatchdog(): void {
     if (!WATCHDOG_ENABLED) {
       if (!this.watchdogDisabledLogged) {
         this.watchdogDisabledLogged = true;
-        log('Watchdog de renderização DESATIVADO (avaliação de uso) — sem reload automático de webview');
+        log('Render watchdog DISABLED (usage evaluation) — no automatic webview reload');
       }
       return;
     }
     if (this.watchdog) return;
     this.watchdog = setInterval(() => this.checkSurfaces(), WATCHDOG_TICK_MS);
-    // Foco da janela: o Chromium CONGELA os timers do renderer quando a janela do
-    // VSCode vai p/ segundo plano (background throttling) — o heartbeat para mesmo
-    // com o painel "visible" e SEM disparar onDidChangeViewState. Ao reganhar foco,
-    // rearma o relógio de pulso de todas as superfícies p/ o watchdog não confundir
-    // esse gap com render morto e fechar/recarregar a aba (e o Hub) indevidamente.
+    // Window focus: Chromium FREEZES the renderer's timers when the VSCode window
+    // goes to the background (background throttling) — the heartbeat stops even
+    // with the panel "visible" and WITHOUT firing onDidChangeViewState. On regaining focus,
+    // it re-arms the beat clock of every surface so the watchdog doesn't mistake
+    // that gap for a dead render and close/reload the tab (and the Hub) unduly.
     this.windowStateSub ??= vscode.window.onDidChangeWindowState((s) => {
       if (s.focused) this.rearmAllBeats();
     });
   }
 
-  /** Rearma o relógio de pulso de todas as superfícies visíveis (agora). */
+  /** Re-arms the beat clock of every visible surface (now). */
   private rearmAllBeats(): void {
     const now = Date.now();
     for (const [tabId, panel] of this.panels) if (panel.visible) this.lastBeat.set(tabId, now);
@@ -695,12 +695,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     dlog('watchdog', 'janela reganhou foco — pulsos rearmados');
   }
 
-  /** Varre superfícies VISÍVEIS; oculta é throttled/descartada, não conta. */
+  /** Sweeps VISIBLE surfaces; a hidden one is throttled/discarded, it doesn't count. */
   private checkSurfaces(): void {
-    // Janela em segundo plano: os timers do renderer estão congelados (não é morte
-    // real). Não recarrega nada — só avalia liveness com a janela em foco.
+    // Window in the background: the renderer's timers are frozen (this isn't a real
+    // death). Nothing is reloaded — liveness is only evaluated with the window focused.
     if (!vscode.window.state.focused) {
-      dlog('watchdog', 'tick ignorado: janela sem foco');
+      dlog('watchdog', 'tick skipped: window not focused');
       return;
     }
     const now = Date.now();
@@ -711,34 +711,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Render presumido morto (pulso parado além do limite) → força reload do HTML:
-   * remonta o React, que reenvia 'init' e o host repinta via replayTab. O custo do
-   * replay (timeline grande) só é pago AQUI, no recovery — jamais no caminho são.
-   * Cooldown + cap evitam loop caso o reload não reviva (ambiente quebrado).
+   * Render presumed dead (beat stopped past the limit) → forces an HTML reload:
+   * it remounts React, which re-sends 'init' and the host repaints via replayTab. The replay
+   * cost (large timeline) is only paid HERE, in the recovery — never on the healthy path.
+   * A cooldown + cap avoid a loop when the reload doesn't revive it (broken environment).
    */
   private maybeReload(key: string, webview: vscode.Webview, now: number): void {
     const beat = this.lastBeat.get(key);
     if (beat === undefined) {
-      this.lastBeat.set(key, now); // 1ª observação: arma o relógio, não age
+      this.lastBeat.set(key, now); // first observation: arms the clock, doesn't act
       return;
     }
     const gap = now - beat;
-    dlog('watchdog', `${key}: ${gap}ms desde o último pulso (limite ${HEARTBEAT_DEAD_MS}ms)`);
+    dlog('watchdog', `${key}: ${gap}ms since the last beat (limit ${HEARTBEAT_DEAD_MS}ms)`);
     if (gap < HEARTBEAT_DEAD_MS) return; // vivo
     const g = this.reloadGuard.get(key) ?? { at: 0, count: 0 };
     if (now - g.at < RELOAD_COOLDOWN_MS) {
-      dlog('watchdog', `${key}: pulso parado (${gap}ms) mas em cooldown — não recarrega`);
+      dlog('watchdog', `${key}: beat stopped (${gap}ms) but in cooldown — no reload`);
       return; // cooldown ativo
     }
     if (g.count >= RELOAD_MAX_TRIES) {
-      dlog('watchdog', `${key}: pulso parado (${gap}ms) mas atingiu o cap de tentativas — desiste`);
-      return; // já tentou demais: desiste (sem loop)
+      dlog('watchdog', `${key}: beat stopped (${gap}ms) but hit the attempt cap — giving up`);
+      return; // already tried too many times: gives up (no loop)
     }
-    // Sempre logado (não só debug): este é o ÚNICO ponto que reinicia uma webview.
-    log(`Watchdog: pulso de '${key}' parado há ${gap}ms (foco=${vscode.window.state.focused}) — vai recarregar`);
+    // Always logged (not only in debug): this is the ONLY place that restarts a webview.
+    log(`Watchdog: beat of '${key}' stopped ${gap}ms ago (focus=${vscode.window.state.focused}) — reloading`);
     try {
-      // Renderer crashado IGNORA reatribuir webview.html — só recriar o painel
-      // respawna o processo. Hub é WebviewView (VSCode dono): só resta o html.
+      // A crashed renderer IGNORES a webview.html reassignment — only recreating the panel
+      // respawns the process. The Hub is a WebviewView (owned by VSCode): only the html is left.
       if (key === HUB_SURFACE) {
         webview.html = this.getHtml(webview, 'hub');
       } else if (!this.recreatePanel(key)) {
@@ -747,14 +747,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch {
       return;
     }
-    this.reloadGuard.set(key, { at: now, count: g.count + 1 }); // depois do recreate (sobrevive ao dispose)
-    this.lastBeat.set(key, now); // janela de graça p/ remontar e voltar a bater
+    this.reloadGuard.set(key, { at: now, count: g.count + 1 }); // after the recreate (survives the dispose)
+    this.lastBeat.set(key, now); // grace window to remount and start beating again
     log(`Webview render dead (${key}) — recovered (try ${g.count + 1})`);
   }
 
   /**
-   * Recria o WebviewPanel de uma aba: dispose do velho + createWebviewPanel novo,
-   * mantendo o MESMO tabId/sessão (CLI e contexto intactos). Único caminho que
+   * Recreates a tab's WebviewPanel: dispose of the old one + a new createWebviewPanel,
+   * keeping the SAME tabId/session (CLI and context untouched). The only path that
    * respawna um renderer morto. O painel novo manda 'init' → replayTab repinta.
    */
   private recreatePanel(tabId: string): boolean {
@@ -762,14 +762,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!old) return false;
     const col = old.viewColumn ?? vscode.ViewColumn.Active;
     const title = this.tabMeta.get(tabId)?.title || 'Tootega Cockpit';
-    // Desvincula antes de descartar: o onDidDispose do velho apagaria os registros
-    // do tabId que passarão a pertencer ao painel novo.
+    // Unbinds before disposing: the old one's onDidDispose would erase the records
+    // of the tabId that will belong to the new panel.
     this.panels.delete(tabId);
     this.webviewSession.delete(old.webview);
     try {
       old.dispose();
     } catch {
-      /* já morto */
+      /* already dead */
     }
     let panel: vscode.WebviewPanel;
     try {
@@ -785,17 +785,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return false;
     }
     panel.iconPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'icon-color.svg');
-    this.justRecreated.add(tabId); // o init do painel novo deve forçar replay mesmo se busy
+    this.justRecreated.add(tabId); // the new panel's init must force a replay even when busy
     log(`recreatePanel: painel da aba '${tabId}' recriado (renderer respawnado)`);
     this.bindPanel(panel, tabId);
     return true;
   }
 
   /**
-   * Reload manual (botão de refresh no title bar da aba): força o mesmo recovery
-   * do watchdog na aba ativa, mas IGNORANDO o cooldown/cap — é pedido explícito do
-   * usuário p/ ressuscitar um painel cinza/branco (renderer morto). Roda no host,
-   * então funciona mesmo com o renderer travado.
+   * Manual reload (refresh button in the tab's title bar): forces the same recovery
+   * as the watchdog on the active tab, but IGNORING the cooldown/cap — it is an explicit
+   * user request to resurrect a gray/blank panel (dead renderer). It runs in the host,
+   * so it works even with the renderer stuck.
    */
   reloadActivePanel(): void {
     let tabId: string | undefined;
@@ -807,7 +807,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     tabId ??= this.activeTab;
     if (!tabId || !this.panels.has(tabId)) return;
-    this.reloadGuard.delete(tabId); // zera o guard: ação do usuário, sem cap
+    this.reloadGuard.delete(tabId); // clears the guard: user action, no cap
     try {
       if (!this.recreatePanel(tabId)) {
         const p = this.panels.get(tabId);
@@ -816,11 +816,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch {
       return;
     }
-    this.lastBeat.set(tabId, Date.now()); // janela de graça p/ remontar
+    this.lastBeat.set(tabId, Date.now()); // grace window to remount
     log(`Webview manual reload (${tabId})`);
   }
 
-  /** Painel restaurado pelo serializer não tem vínculo de sessão: descarta. */
+  /** A panel restored by the serializer has no session binding: discarded. */
   attachPanel(panel: vscode.WebviewPanel): void {
     try {
       panel.dispose();
@@ -829,7 +829,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // ---- Comandos expostos à extensão ----
+  // ---- Commands exposed to the extension ----
 
   newSession(): void {
     this.openNewTab();
@@ -839,7 +839,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   }
 
-  /** Caminho relativo ao cwd se estiver dentro dele; senão absoluto. */
+  /** Path relative to the cwd when inside it; absolute otherwise. */
   private resolvePath(absPathRaw: string): string {
     const absPath = absPathRaw.normalize('NFC');
     const cwd = this.workspaceCwd().normalize('NFC');
@@ -850,12 +850,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return absPath; // fora do contexto -> absoluto
   }
 
-  /** Caminho resolvido entre aspas (lida com espaços). */
+  /** Resolved path in quotes (handles spaces). */
   private quoteResolved(absPath: string): string {
     return `"${this.resolvePath(absPath)}"`;
   }
 
-  /** Abre um link do chat: URL externa ou arquivo (relativo ao cwd / absoluto / por nome). */
+  /** Opens a link from the chat: external URL or file (relative to the cwd / absolute / by name). */
   private async openLink(href: string, preview = false): Promise<void> {
     if (!href) return;
     if (/^https?:\/\//i.test(href)) {
@@ -863,7 +863,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     let raw = href;
-    // âncora de linha (#L12)
+    // line anchor (#L12)
     let line: number | undefined;
     const lm = raw.match(/#L(\d+)\s*$/i);
     if (lm) {
@@ -874,7 +874,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       raw = decodeURIComponent(raw);
     } catch {
-      /* já decodificado */
+      /* already decoded */
     }
     raw = raw.normalize('NFC');
 
@@ -882,7 +882,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     let uri = vscode.Uri.file(abs);
 
     if (!fs.existsSync(abs)) {
-      // fallback: procura pelo nome do arquivo no workspace
+      // fallback: looks for the file name in the workspace
       const base = path.basename(raw);
       const safe = base.replace(/[*?[\]{}]/g, '');
       const found = safe
@@ -895,7 +895,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    // Modo preview (link "View"): markdown -> preview nativo; demais -> abridor padrão.
+    // Preview mode ("View" link): markdown -> native preview; the rest -> default opener.
     if (preview) {
       const cmd = /\.(md|markdown)$/i.test(uri.fsPath)
         ? 'markdown.showPreview'
@@ -922,14 +922,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * "Esquenta" a sessão de uma aba de chat: sobe o processo do CLI já no abrir,
-   * para que o evento `init` traga os slash commands antes do 1º envio. Só age se
-   * ainda não há processo/comandos e o CLI existe (evita spawn inútil/erro).
+   * "Warms up" a chat tab's session: it starts the CLI process right when opening,
+   * so the `init` event brings the slash commands before the first send. It only acts when
+   * there is no process/commands yet and the CLI exists (avoids a useless spawn/error).
    */
   private primeCommands(tabId: string): void {
     const s = this.sessions.get(tabId);
     if (!s || s.cli || s.busy || s.slashCommands.length) return;
-    if (!this.cliAvailable) return; // resolvido em reportCliStatus (roda antes no init)
+    if (!this.cliAvailable) return; // resolved in reportCliStatus (which runs earlier in init)
     try {
       s.ensureCli();
     } catch (e) {
@@ -939,8 +939,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * Enriquece os slash commands via IA (cache global ~/.claude/tootega) e envia os
-   * metadados (categoria/hint/detalhe) ao webview. Best-effort: só pesquisa os que
-   * faltam no cache; falha não quebra a UI. Idioma = locale do Cockpit.
+   * metadata (category/hint/detail) to the webview. Best-effort: it only researches the ones
+   * missing from the cache; a failure doesn't break the UI. Language = the Cockpit locale.
    */
   private async researchSlash(slashCommands?: string[]): Promise<void> {
     if (!slashCommands || slashCommands.length === 0) return;
@@ -968,12 +968,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const sessions = listSessions(cwd).map((s) =>
       names[s.id] ? { ...s, title: names[s.id] } : s,
     );
-    // Sessões VIVAS (abas em memória) podem ainda não ter transcript listável no
-    // disco na 1ª resposta do CLI. Mescla-as para o hub refletir contextos em
-    // execução de imediato, sem esperar o turno terminar.
-    // Só mescla abas OCUPADAS (rodando): uma aba idle com conteúdo já vem de
-    // listSessions (o .jsonl existe no disco); uma aba idle e vazia NÃO deve
-    // reaparecer — senão vira "fantasma" que ressurge após apagar tudo.
+    // LIVE sessions (in-memory tabs) may not have a listable transcript on
+    // disk yet on the CLI's first response. They are merged so the hub reflects running
+    // contexts right away, without waiting for the turn to end.
+    // Only BUSY (running) tabs are merged: an idle tab with content already comes from
+    // listSessions (the .jsonl exists on disk); an idle, empty tab must NOT
+    // reappear — otherwise it becomes a "ghost" that returns after deleting everything.
     const known = new Set(sessions.map((s) => s.id));
     for (const tabId of this.tabOrder) {
       const s = this.sessions.get(tabId);
@@ -994,7 +994,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'sessions', sessions, cwd });
   }
 
-  /** Lista plugins + marketplaces e envia ao modal. force = re-valida URLs (Haiku). */
+  /** Lists plugins + marketplaces and sends them to the modal. force = re-validate URLs (Haiku). */
   private async sendPlugins(force = false): Promise<void> {
     this.post({ kind: 'pluginsBusy', busy: true });
     try {
@@ -1007,7 +1007,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Executa uma ação de plugin (install/uninstall/…); ao fim, recarrega a lista. */
+  /** Runs a plugin action (install/uninstall/…); reloads the list at the end. */
   private async runPluginAction(
     action: 'install' | 'uninstall' | 'enable' | 'disable' | 'update' | 'marketAdd' | 'marketRemove',
     arg: string,
@@ -1027,9 +1027,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Servidores MCP (botão MCP): funde o inventário do `init` da sessão (tools por
-   * servidor) com o `claude mcp list` (pendentes de aprovação + comando/URL).
-   * Se a sessão ainda não fez init (aba nova), o painel mostra só o `mcp list`.
+   * MCP servers (MCP button): merges the session's `init` inventory (tools per
+   * server) with `claude mcp list` (pending approval + command/URL).
+   * When the session hasn't done init yet (new tab), the panel shows only `mcp list`.
    */
   private async sendMcp(s: Session): Promise<void> {
     this.post({ kind: 'mcpBusy', busy: true });
@@ -1045,14 +1045,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Reúne conta + limites reais (quentes) e envia ao webview (botão Usage). */
+  /** Gathers the account + real (hot) limits and sends them to the webview (Usage button). */
   private async sendUsage(): Promise<void> {
     try {
-      await this.refreshUsage(true); // força API fresca (dado quente ao clicar)
+      await this.refreshUsage(true); // forces a fresh API call (hot data on click)
       const account = await fetchAuthStatus(this.claudePath());
       const scoped = this.lastScoped ?? readUsageCache()?.weeklyScoped;
       // Detalhamento local 7d (por modelo / origem) — sempre estimativa de tabela,
-      // independente do % real da conta. Varre os transcripts desta máquina.
+      // independent of the account's real %. It scans this machine's transcripts.
       const [local, tokens] = await Promise.all([
         computeLocalUsage(Date.now()),
         computeDailyTokens(),
@@ -1082,31 +1082,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private autoResumeDone = false;
 
-  /** Retoma a sessão mais recente UMA vez (no 1º init). Sessões criadas depois
-   *  pelo usuário ("New Session") devem começar vazias, não retomar a última. */
+  /** Resumes the most recent session ONCE (on the first init). Sessions created later
+   *  by the user ("New Session") must start empty, not resume the last one. */
   private autoResumeLast(): void {
     if (this.autoResumeDone) return;
     this.autoResumeDone = true;
     if (!this.cfg().get<boolean>('autoResumeLastSession', true)) return;
     const s = this.active();
-    if (s.resumeId || s.cli || s.sessionId) return; // já há sessão ativa
+    if (s.resumeId || s.cli || s.sessionId) return; // there is already an active session
     const id = latestSessionId(this.workspaceCwd());
     if (id) {
       s.resume(id);
       this.restoreSessionModel(s, id); // restaura model/effort salvos
-      this.sendConfig(); // reflete o model/effort restaurado nos combos
+      this.sendConfig(); // reflects the restored model/effort in the dropdowns
     }
   }
 
   /**
-   * Reenvia a conversa de uma aba (do transcript) a TODAS as superfícies — para
-   * popular um painel recém-aberto ou ao trocar de aba. Pula se a aba está
-   * ocupada (streaming ao vivo) para não sobrescrever o turno em andamento.
+   * Re-sends a tab's conversation (from the transcript) to ALL surfaces — to
+   * populate a freshly opened panel or when switching tabs. It is skipped when the tab is
+   * busy (live streaming) so the turn in progress isn't overwritten.
    */
   private replayTab(tabId: string, force = false): void {
     const s = this.sessions.get(tabId);
-    // Normal: pula se busy (não sobrescreve o turno ao vivo). Recovery (force):
-    // o painel acabou de remontar em branco — repinta o histórico persistido; os
+    // Normal: skipped when busy (doesn't overwrite the live turn). Recovery (force):
+    // the panel has just remounted blank — repaints the persisted history; the
     // deltas em voo continuam chegando e se anexam.
     if (!s || (s.busy && !force)) return;
     const id = s.sessionId ?? s.resumeId;
@@ -1120,8 +1120,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Abre uma sessão (duplo clique na lista): foca a aba que já a tem; senão
-   * abre numa aba NOVA. Nunca sobrepõe a conversa da aba ativa.
+   * Opens a session (double click in the list): focuses the tab that already has it; otherwise
+   * opens it in a NEW tab. It never overwrites the active tab's conversation.
    */
   private openSession(sessionId: string): void {
     for (const [id, s] of this.sessions) {
@@ -1132,20 +1132,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     const tab = this.createTab();
     this.resumeInTab(tab, sessionId);
-    this.openSessionPanel(tab); // abre o contexto numa webview própria
+    this.openSessionPanel(tab); // opens the context in its own webview
     this.sendConfig();
   }
 
   /**
-   * Reload (botão ↻ no card): recupera o webview cinza/morto do contexto. Se o
-   * painel está aberto, recria-o (mesmo tabId/sessão intactos) e revela; se não,
-   * abre fresco. Roda no host → funciona mesmo com o renderer travado.
+   * Reload (↻ button on the card): recovers the context's gray/dead webview. When the
+   * panel is open, it recreates it (same tabId/session untouched) and reveals it; otherwise
+   * it opens fresh. It runs in the host → it works even with the renderer stuck.
    */
   private reloadSession(sessionId: string): void {
     for (const [id, s] of this.sessions) {
       if (s.sessionId === sessionId || s.resumeId === sessionId) {
         if (this.panels.has(id)) {
-          this.reloadGuard.delete(id); // pedido explícito: ignora cooldown/cap
+          this.reloadGuard.delete(id); // explicit request: ignores cooldown/cap
           if (this.recreatePanel(id)) this.panels.get(id)?.reveal();
         } else {
           this.openSessionPanel(id);
@@ -1153,16 +1153,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
     }
-    this.openSession(sessionId); // não estava carregada: abre do zero
+    this.openSession(sessionId); // it wasn't loaded: opens it from scratch
   }
 
   /**
-   * Publica a sessão p/ controle remoto (acompanhar/interagir pelo celular): abre
+   * Publishes the session for remote control (follow/interact from the phone): it opens
    * o contexto e roda /remote-control no CLI dele — o CLI devolve o link/QR de
    * pareamento na conversa.
    */
   private remoteControl(sessionId: string): void {
-    this.openSession(sessionId); // garante a sessão aberta/carregada
+    this.openSession(sessionId); // makes sure the session is open/loaded
     for (const [, s] of this.sessions) {
       if (s.sessionId === sessionId || s.resumeId === sessionId) {
         s.send('/remote-control');
@@ -1171,12 +1171,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Reabre a última sessão fechada pelo usuário (Ctrl+Shift+T). */
+  /** Reopens the last session the user closed (Ctrl+Shift+T). */
   reopenClosed(): void {
     const lc = this.lastClosed;
     if (!lc) return;
     this.lastClosed = undefined;
-    // Sessão ainda viva em memória (fechou só o painel): reabre o painel dela.
+    // Session still alive in memory (only the panel was closed): reopens its panel.
     if (this.sessions.has(lc.tabId)) {
       this.openSessionPanel(lc.tabId);
     } else if (lc.sessionId) {
@@ -1184,11 +1184,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Carrega o histórico de uma sessão numa aba específica e arma --resume. */
+  /** Loads a session's history into a specific tab and arms --resume. */
   private resumeInTab(tab: string, sessionId: string): void {
     const s = this.sessions.get(tab);
     s?.resume(sessionId);
-    if (s) this.restoreSessionModel(s, sessionId); // model/effort salvos desta sessão
+    if (s) this.restoreSessionModel(s, sessionId); // model/effort saved for this session
     const items = loadTranscript(this.workspaceCwd(), sessionId);
     const names = this.memory.get<Record<string, string>>('sessionNames', {});
     this.setTabTitle(tab, names[sessionId] || this.titleFromItems(items));
@@ -1197,10 +1197,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     log(`Resuming session ${sessionId} (${items.length} items) in ${tab}`);
   }
 
-  /** Persiste o model/effort (override) da sessão por sessionId, p/ restaurar depois. */
+  /** Persists a session's model/effort (override) by sessionId, to restore later. */
   private saveSessionModel(s: Session): void {
     const id = s.sessionId ?? s.resumeId;
-    if (!id) return; // sessão nova ainda sem id: salva quando o init trouxer o id
+    if (!id) return; // a new session without an id yet: saved when init brings the id
     const map = this.memory.get<Record<string, SessionPrefs>>('sessionModels', {});
     map[id] = {
       model: s.modelOverride,
@@ -1210,7 +1210,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void this.memory.update('sessionModels', map);
   }
 
-  /** Restaura o model/effort salvos de uma sessão (sem reiniciar — ainda sem CLI). */
+  /** Restores a session's saved model/effort (without restarting — there is no CLI yet). */
   private restoreSessionModel(s: Session, id: string): void {
     const map = this.memory.get<Record<string, SessionPrefs>>('sessionModels', {});
     const o = map[id];
@@ -1221,13 +1221,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Rebobina a conversa até o (index)-ésimo prompt do usuário: corta o transcript
-   * nesse prompt (removendo-o e tudo depois), rearma --resume da sessão truncada e
-   * recarrega o histórico na webview. A próxima mensagem continua daquele ponto.
+   * Rewinds the conversation to the (index)-th user prompt: cuts the transcript
+   * at that prompt (removing it and everything after), re-arms --resume of the truncated session and
+   * reloads the history in the webview. The next message continues from that point.
    */
   private rewind(tabId: string, index: number): void {
     const s = this.sessions.get(tabId);
-    if (!s || s.busy) return; // não rebobina turno em andamento
+    if (!s || s.busy) return; // doesn't rewind a turn in progress
     const id = s.sessionId ?? s.resumeId;
     if (!id) return;
     const cwd = this.workspaceCwd();
@@ -1235,40 +1235,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const target = users[index];
     if (!target) return;
     if (!truncateTranscriptAt(cwd, id, target.id)) {
-      log(`rewind: prompt #${index} (uuid ${target.id}) não encontrado no transcript`);
+      log(`rewind: prompt #${index} (uuid ${target.id}) not found in the transcript`);
       return;
     }
     s.resume(id); // limpa a conversa e rearma --resume a partir do transcript truncado
-    this.replayTab(tabId); // recarrega o histórico (já cortado) na webview
+    this.replayTab(tabId); // reloads the (already cut) history in the webview
     this.postTabs();
     this.sendSessions();
-    log(`rewind: sessão ${id} cortada no prompt #${index}`);
+    log(`rewind: session ${id} cut at prompt #${index}`);
   }
 
   /**
    * Inicia o ditado por voz (STT) p/ a aba: abre o WS OAuth, captura o mic NO
-   * HOST (via ffmpeg — o webview bloqueia getUserMedia) e roteia as transcrições
-   * de volta à superfície. Encerra uma sessão anterior, se houver.
+   * HOST (via ffmpeg — the webview blocks getUserMedia) and routes the transcriptions
+   * back to the surface. It ends a previous session, when there is one.
    */
   private async startVoice(tabId: string, language?: string): Promise<void> {
     this.stopVoice();
-    // Idioma: setting explícito (tootega.voiceLanguage) tem prioridade; senão o
-    // locale do webview; senão o locale do Cockpit. Normaliza p/ curto (pt-BR->pt).
+    // Language: an explicit setting (tootega.voiceLanguage) wins; otherwise the
+    // webview locale; otherwise the Cockpit locale. Normalized to short (pt-BR->pt).
     const forced = this.cfg().get<string>('voiceLanguage', '').trim();
     const lang = ((forced || language || this.voiceLanguage()).split('-')[0] || 'en').toLowerCase();
-    // Dicionário da conta: termos viesam o STT (keyterms) + substituições aplicadas
-    // ao texto. Chave resolvida (cacheada) p/ casar com o que o modal salvou.
-    // Recarrega do disco a cada ditado (reflete edições do modal na hora).
+    // Account dictionary: terms bias the STT (keyterms) + replacements applied
+    // to the text. The key is resolved (cached) to match what the modal saved.
+    // Reloaded from disk on every dictation (reflects modal edits immediately).
     this.voiceDict = loadDictionary();
-    // Keyterms = dicionário do usuário (prioridade) + nome do projeto + termos
-    // colhidos do workspace (deps + glossário tech). Como o STT roda monolíngue
-    // (proxy rejeita language=multi), keyterms é a âncora p/ grafia literal de
-    // jargão/inglês ditado dentro do PT.
+    // Keyterms = the user's dictionary (priority) + the project name + terms
+    // harvested from the workspace (deps + tech glossary). Since the STT runs monolingual
+    // (the proxy rejects language=multi), keyterms is the anchor for the literal spelling of
+    // jargon/English dictated inside pt-BR.
     const cwd = this.workspaceCwd();
     const keyterms = buildKeyterms(this.voiceDict, [path.basename(cwd), ...workspaceTerms(cwd)]);
     dlog(
       'voice',
-      `dict: ${this.voiceDict.terms.length} termos, ${this.voiceDict.replacements.length} substituições | keyterms="${keyterms.slice(0, 240)}"`,
+      `dict: ${this.voiceDict.terms.length} terms, ${this.voiceDict.replacements.length} replacements | keyterms="${keyterms.slice(0, 240)}"`,
     );
     const capture = new AudioCapture({
       ffmpegPath: this.cfg().get<string>('ffmpegPath', '') || undefined,
@@ -1277,13 +1277,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     let firstFrame = false; // sinaliza 'pronto' no 1º PCM real (mic vivo + WS aberto)
     this.voice = new VoiceSession(lang, keyterms, {
       onOpen: () => {
-        // WS pronto: começa a capturar e empurrar PCM.
+        // WS ready: start capturing and pushing PCM.
         void capture.start(
           (buf) => {
             if (!firstFrame) {
               firstFrame = true;
-              // Só agora o ditado está REALMENTE válido (WS + áudio fluindo):
-              // o webview tira o spinner e libera o "pode falar". Evita perder
+              // Only now is the dictation REALLY valid (WS + audio flowing):
+              // the webview drops the spinner and enables "you may speak". Avoids losing
               // as 1ªs palavras faladas durante o setup do WS/ffmpeg.
               this.post({ kind: 'voiceReady' }, tabId);
             }
@@ -1300,7 +1300,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
       onTranscript: (text, isFinal) => {
         const fixed = applyReplacements(text, this.voiceDict);
-        if (isFinal && fixed !== text) dlog('voice', `substituição aplicada: "${text}" → "${fixed}"`);
+        if (isFinal && fixed !== text) dlog('voice', `replacement applied: "${text}" → "${fixed}"`);
         this.post({ kind: 'voiceTranscript', text: fixed, isFinal }, tabId);
       },
       onError: (message) => this.post({ kind: 'voiceError', message }, tabId),
@@ -1321,26 +1321,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.voice?.stop();
   }
 
-  /** Corrige o texto ditado via Haiku (one-shot isolado) e devolve à superfície. */
+  /** Corrects the dictated text via Haiku (isolated one-shot) and returns it to the surface. */
   private async correctVoice(tabId: string, text: string): Promise<void> {
     const t = text.trim();
     if (!t) {
       this.post({ kind: 'voiceCorrectError' }, tabId);
       return;
     }
-    // Aplica as substituições do dicionário ANTES e orienta o Haiku a preservar
-    // os termos da conta (não "corrigir" nomes próprios/jargão).
+    // Applies the dictionary replacements BEFORE and steers Haiku to preserve
+    // the account's terms (not to "fix" proper nouns/jargon).
     const dict = loadDictionary();
     const pre = applyReplacements(t, dict);
     const corrected = await correctText(pre, correctorHints(dict));
     if (corrected) this.post({ kind: 'voiceCorrected', text: corrected }, tabId);
-    else this.post({ kind: 'voiceCorrected', text: pre }, tabId); // falha do Haiku: ao menos as substituições
+    else this.post({ kind: 'voiceCorrected', text: pre }, tabId); // Haiku failed: at least the replacements
   }
 
   /**
    * Exporta a conversa p/ um .md na RAIZ do projeto. mode 'direct' grava o
-   * markdown mecânico; 'ai' reescreve via CLI (mesmo modelo/effort da aba, gasta
-   * tokens). Nome único (evita sobrescrever); abre o arquivo ao final.
+   * mechanical markdown; 'ai' rewrites it via the CLI (same model/effort as the tab, spends
+   * tokens). Unique name (avoids overwriting); opens the file at the end.
    */
   private async exportConversation(
     tabId: string,
@@ -1371,8 +1371,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Gera o documento via one-shot do CLI (processo separado — NÃO polui a aba),
-   * com o MESMO modelo/effort efetivos da sessão. Gasta tokens da assinatura.
+   * Generates the document via a CLI one-shot (a separate process — it does NOT pollute the tab),
+   * with the session's SAME effective model/effort. It spends subscription tokens.
    * Retorna o Markdown gerado, ou undefined em falha.
    */
   private generateDocAI(tabId: string, sourceMd: string): Promise<string | undefined> {
@@ -1380,8 +1380,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const model = s.model();
     const effort = s.effort();
     const prompt = `${DOC_PROMPT}\n\n--- REGISTRO DA CONVERSA ---\n\n${sourceMd}`;
-    // Prompt vai por STDIN (não argv): a conversa pode ser longa e estourar o
-    // limite de linha de comando (Windows ~32k). `claude -p` sem arg lê o stdin.
+    // The prompt goes through STDIN (not argv): the conversation can be long and blow the
+    // command-line limit (Windows ~32k). `claude -p` with no arg reads stdin.
     const args = ['-p', '--output-format', 'json'];
     if (model && model !== 'default') args.push('--model', model);
     if (effort && effort !== 'default') args.push('--effort', effort);
@@ -1420,13 +1420,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       : `Generating document with AI (model ${m}, effort ${e})…`;
   }
 
-  /** Carrega o dicionário da máquina (ditado + corretor) e envia ao modal. */
+  /** Loads the machine dictionary (dictation + spell-checker) and sends it to the modal. */
   private sendVoiceDict(tabId: string): void {
     const d = loadDictionary();
     this.post({ kind: 'voiceDict', data: { ...d, spellWords: this.getSpeller().userDict() } }, tabId);
   }
 
-  /** Salva ditado + dicionário do corretor (arquivo único da máquina). */
+  /** Saves dictation + spell-checker dictionary (single per-machine file). */
   private saveVoiceDict(
     tabId: string,
     terms: string[],
@@ -1434,36 +1434,36 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     spellWords?: string[],
   ): void {
     if (spellWords) this.getSpeller().setUserDict(spellWords);
-    // Termos de ditado mudaram: reflete no corretor (não são erro).
+    // The dictation terms changed: reflected in the spell-checker (they aren't errors).
     this.getSpeller().setProjectTerms([...workspaceTerms(this.workspaceCwd()), ...terms]);
     const words = this.getSpeller().userDict();
     saveDictionary({ terms, replacements, spellWords: words });
-    this.voiceDict = loadDictionary(); // aplica já às próximas transcrições
+    this.voiceDict = loadDictionary(); // applied right away to the next transcriptions
     this.post({ kind: 'voiceDict', data: { ...this.voiceDict, spellWords: words } }, tabId);
   }
 
-  /** Corretor ortográfico (lazy). Dicionários em dict/ (arquivos de dados). */
+  /** Spell-checker (lazy). Dictionaries in dict/ (data files). */
   private getSpeller(): Speller {
     if (!this.speller) {
       const dir = vscode.Uri.joinPath(this.extensionUri, 'dict').fsPath;
-      // Palavras do corretor vêm do arquivo único da máquina (~/.claude/tootega).
+      // The spell-checker words come from the single per-machine file (~/.claude/tootega).
       const dict = loadDictionary();
       this.speller = new Speller(dir, dict.spellWords ?? []);
-      // Termos técnicos (deps/glossário do workspace + termos do dicionário de
-      // ditado) contam como conhecidos: o corretor não os marca como erro.
+      // Technical terms (workspace deps/glossary + dictation dictionary terms)
+      // count as known: the spell-checker doesn't flag them as errors.
       this.speller.setProjectTerms([...workspaceTerms(this.workspaceCwd()), ...dict.terms]);
     }
     return this.speller;
   }
 
-  /** Checa um lote de palavras e devolve as erradas à aba que pediu. */
+  /** Checks a batch of words and returns the wrong ones to the tab that asked. */
   private async handleSpellCheck(tabId: string, words: string[]): Promise<void> {
     const sp = this.getSpeller();
     await sp.ensure();
     this.post({ kind: 'spellResult', bad: sp.check(words) }, tabId);
   }
 
-  /** Sugestões de correção (por idioma) p/ uma palavra. */
+  /** Correction suggestions (per language) for a word. */
   private async handleSpellSuggest(tabId: string, requestId: string, word: string): Promise<void> {
     const sp = this.getSpeller();
     await sp.ensure();
@@ -1471,28 +1471,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'spellSuggestResult', requestId, word, pt: s.pt, en: s.en }, tabId);
   }
 
-  /** Idioma do ditado: locale do Cockpit -> código BCP47 curto (pt-BR -> pt). */
+  /** Dictation language: Cockpit locale -> short BCP47 code (pt-BR -> pt). */
   private voiceLanguage(): string {
     const loc = resolveLocale();
     return (loc.split('-')[0] || 'en').toLowerCase();
   }
 
   /**
-   * Idioma das perguntas do agente (AskUserQuestion). Mesma prioridade do ditado:
-   * setting explícito `tootega.voiceLanguage` > locale do Cockpit. Código curto.
+   * Language of the agent's questions (AskUserQuestion). Same priority as dictation:
+   * explicit `tootega.voiceLanguage` setting > Cockpit locale. Short code.
    */
   private askLanguageCode(): string {
     const forced = this.cfg().get<string>('voiceLanguage', '').trim();
     return ((forced || resolveLocale()).split('-')[0] || 'en').toLowerCase();
   }
 
-  /** Título curto a partir da primeira fala do usuário no transcript. */
+  /** Short title from the user's first utterance in the transcript. */
   private titleFromItems(items: { kind: string; text?: string }[]): string {
     const first = items.find((i) => i.kind === 'user' && i.text)?.text ?? '';
     return first.replace(/\s+/g, ' ').trim().slice(0, 28);
   }
 
-  /** Conteúdo atual do arquivo (p/ diff do Write). Vazio se novo/ilegível/grande. */
+  /** Current file content (for the Write diff). Empty when new/unreadable/large. */
   private currentFileText(tool: string, input: unknown): string | undefined {
     if (tool !== 'Write') return undefined;
     const fp = (input as { file_path?: unknown })?.file_path;
@@ -1508,8 +1508,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // Auto-save: antes do agente ler/escrever um arquivo, grava o buffer aberto se
-  // estiver sujo (evita o agente operar numa versão velha). Setting tootega.autosave.
+  // Auto-save: before the agent reads/writes a file, it saves the open buffer when
+  // dirty (prevents the agent from working on an old version). Setting tootega.autosave.
   private autoSaveForTool(tool: string, input: unknown): void {
     if (!this.cfg().get<boolean>('autosave', true)) return;
     if (!/^(Edit|Write|MultiEdit|NotebookEdit|Read)$/.test(tool)) return;
@@ -1524,7 +1524,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // Conteúdo virtual (lado "proposto") do diff nativo, por URI.
+  // Virtual content (the "proposed" side) of the native diff, per URI.
   private diffContent = new Map<string, string>();
   private diffProviderReg?: vscode.Disposable;
   private diffSeq = 0;
@@ -1578,14 +1578,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const uris = await vscode.workspace.findFiles(glob, '**/node_modules/**', 30);
       items = uris.map((u) => vscode.workspace.asRelativePath(u, false)).sort((a, b) => a.length - b.length);
     } catch {
-      /* sem workspace */
+      /* no workspace */
     }
     this.post({ kind: 'mentionResults', requestId, items: items.slice(0, 12) }, tabId);
   }
 
   private notifyComplete(): void {
     if (!this.cfg().get<boolean>('notifyOnComplete', true)) return;
-    // Notifica se nenhum painel de chat está visível.
+    // Notifies when no chat panel is visible.
     for (const p of this.panels.values()) if (p.visible) return;
     void vscode.window.showInformationMessage(vscode.l10n.t('Claude finished responding.'));
   }
@@ -1597,8 +1597,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (trimmed) next[id] = trimmed;
     else delete next[id];
     void this.memory.update('sessionNames', next);
-    // Atualiza de imediato o título da aba/webview aberta dessa sessão (se houver).
-    // Casa por sessionId (turno já rodou) OU resumeId (retomada ainda sem turno).
+    // Immediately updates the title of that session's open tab/webview (when there is one).
+    // Matched by sessionId (a turn already ran) OR resumeId (resumed without a turn yet).
     for (const [tabId, s] of this.sessions) {
       if (s.sessionId === id || s.resumeId === id) {
         this.setTabTitle(tabId, trimmed);
@@ -1609,10 +1609,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Desliga o CLI vivo de uma aba antes de apagar seu transcript. Sem isto o
-   * processo `claude` da sessão aberta segura o handle do `.jsonl` (no Windows o
-   * unlink falha e o arquivo sobrevive) OU o recria no próximo flush/keep-alive —
-   * a "sessão-fantasma" que reaparece no hub. clearConversation() mata o processo
+   * Shuts down a tab's live CLI before deleting its transcript. Without this the
+   * open session's `claude` process holds the `.jsonl` handle (on Windows the
+   * unlink fails and the file survives) OR recreates it on the next flush/keep-alive —
+   * the "ghost session" that reappears in the hub. clearConversation() kills the process
    * e zera sessionId/resumeId, detachando a aba do transcript apagado.
    * `all=true` detacha todas as abas vivas (usado no "apagar tudo").
    */
@@ -1629,7 +1629,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // Refletem a aba ativa (override da aba ?? default das settings).
+  // They reflect the active tab (tab override ?? settings default).
   private currentModel(): string {
     return this.active().model();
   }
@@ -1654,17 +1654,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Consulta /v1/models uma vez. Usa API key (se houver) ou o token OAuth da
-   * assinatura — assim modelos novos liberados na conta aparecem sem editar a
-   * lista estática. No-op só quando não há credencial alguma.
+   * Queries /v1/models once. It uses the API key (when present) or the subscription's
+   * OAuth token — so new models released to the account show up without editing the
+   * static list. It is a no-op only when there is no credential at all.
    */
   private async tryDiscoverModels(): Promise<void> {
-    // Preço é independente da credencial (docs públicas) — busca em paralelo.
+    // The price is independent of the credential (public docs) — fetched in parallel.
     void this.tryFetchPricing();
     if (this.discoveryTried) return;
     this.discoveryTried = true;
     const creds = resolveCreds(await this.getApiKey());
-    if (!creds) return; // sem API key nem token OAuth: usa fallback estático
+    if (!creds) return; // no API key and no OAuth token: uses the static fallback
     try {
       const models = await discoverModels(creds);
       let added = false;
@@ -1676,14 +1676,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (added) {
         log(`Discovered ${models.length} models via /v1/models`);
         this.sendConfig();
-        this.refreshContextLimits(); // descoberta pós-init: corrige a barra dos modelos 1M
+        this.refreshContextLimits(); // post-init discovery: fixes the bar of the 1M models
       }
     } catch {
-      /* silencioso — fallback já cobre */
+      /* silent — the fallback already covers it */
     }
   }
 
-  /** Carrega o preço das docs (cache 1x/dia). No-op após a 1ª vez. */
+  /** Loads prices from the docs (cached once a day). No-op after the first time. */
   private async tryFetchPricing(): Promise<void> {
     if (this.pricingTried || !this.globalStorageDir) return;
     this.pricingTried = true;
@@ -1695,12 +1695,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendConfig();
       }
     } catch {
-      /* silencioso — coluna de preço fica vazia */
+      /* silent — the price column stays empty */
     }
   }
 
-  // Reaplica o limite de contexto (auto) de todas as abas e reemite os stats das
-  // que mudaram. Usado quando a descoberta chega depois do init da sessão.
+  // Reapplies the (auto) context limit of every tab and re-emits the stats of the
+  // ones that changed. Used when discovery arrives after the session init.
   private refreshContextLimits(): void {
     for (const [tab, s] of this.sessions) {
       if (s.stats.refreshContextLimit()) {
@@ -1710,8 +1710,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private sendConfig(): void {
-    // Descobertos ao vivo que não estão na lista — pulando as versões de 200K
-    // cuja variante 1M já é oferecida.
+    // Discovered live but missing from the list — skipping the 200K versions
+    // whose 1M variant is already offered.
     const discoveredExtra = [...this.discoveredModels.keys()].filter(
       (m) => !MODEL_LIST.includes(m) && !BASE_OF_1M.has(m),
     );
@@ -1741,10 +1741,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Metadados por modelo para as colunas do seletor. Contexto é REAL da Models
-   * API quando descoberto; senão derivado ([1m]→1M, senão 200K). Preço vem das
-   * docs (id base, sem sufixo [1m]); multiplicador normaliza a entrada pelo
-   * Opus 4.8 (=1x), ou pelo maior preço se o Opus não estiver na tabela.
+   * Per-model metadata for the selector columns. The context is REAL from the Models
+   * API when discovered; otherwise derived ([1m]→1M, else 200K). The price comes from the
+   * docs (base id, without the [1m] suffix); the multiplier normalizes the input by
+   * Opus 4.8 (=1x), or by the highest price when Opus isn't in the table.
    */
   private buildModelMeta(models: string[]): Record<string, ModelMeta> {
     const anchor =
@@ -1754,7 +1754,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     for (const id of models) {
       if (id === 'default' || /^(opus|sonnet|haiku|fable|mythos)$/i.test(id)) continue;
       const is1m = /\[1m\]/i.test(id);
-      // Chave de preço: sem sufixo [1m] e sem snapshot datado (-YYYYMMDD).
+      // Price key: without the [1m] suffix and without a dated snapshot (-YYYYMMDD).
       const baseId = id.replace(/\[1m\]/i, '').replace(/-\d{8}$/, '');
       const contextTokens = is1m ? 1_000_000 : (this.discoveredModels.get(id) ?? 200_000);
       const price = this.pricing[baseId];
@@ -1777,7 +1777,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'locale', locale: resolveLocale() });
   }
 
-  /** Re-tenta a descoberta de modelos (ex.: após mudar a API key). */
+  /** Retries model discovery (e.g. after changing the API key). */
   refreshModels(): void {
     this.discoveryTried = false;
     void this.tryDiscoverModels();
@@ -1794,8 +1794,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Pede a API key ao usuário (input mascarado) e grava no SecretStorage.
-   * Vazio = remove a chave. Reexecuta a descoberta de modelos ao final.
+   * Asks the user for the API key (masked input) and writes it to SecretStorage.
+   * Empty = removes the key. It re-runs model discovery at the end.
    * Comando `tootega.setApiKey`.
    */
   async setApiKeyInteractive(): Promise<void> {
@@ -1834,7 +1834,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Migração única: se a antiga setting `tootega.apiKey` (texto plano) tiver valor,
+   * One-off migration: when the old `tootega.apiKey` setting (plain text) has a value,
    * move p/ o SecretStorage e apaga a setting. Best-effort, silencioso.
    */
   async migrateApiKeyFromSettings(): Promise<void> {
@@ -1845,7 +1845,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (!(await this.secrets.get(API_KEY_SECRET))) {
         await this.secrets.store(API_KEY_SECRET, legacy);
       }
-      // Limpa dos 3 escopos p/ não deixar rastro em texto plano.
+      // Cleared from all 3 scopes so no plain-text trace is left.
       const cfg = this.cfg();
       await cfg.update('apiKey', undefined, vscode.ConfigurationTarget.Global);
       await cfg.update('apiKey', undefined, vscode.ConfigurationTarget.Workspace);
@@ -1853,44 +1853,44 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       log('[apiKey] migrada da setting p/ SecretStorage; setting removida');
       this.refreshModels();
     } catch (e) {
-      log(`[apiKey] migração falhou: ${String(e)}`);
+      log(`[apiKey] migration failed: ${String(e)}`);
     }
   }
 
-  /** Aplica o modelo interno (tootega.internalModel) ao helper de IA. */
+  /** Applies the internal model (tootega.internalModel) to the AI helper. */
   applyInternalModel(): void {
     setInternalModel(this.cfg().get<string>('internalModel', ''));
   }
 
-  /** Recalcula o uso local (ex.: após mudar orçamento nas settings). */
+  /** Recomputes local usage (e.g. after changing the budget in the settings). */
   refreshUsageNow(): void {
     void this.refreshUsage();
   }
 
-  /** Settings de model/effort mudaram: limpa overrides e reflete nos combos da UI. */
+  /** The model/effort settings changed: clears overrides and reflects them in the UI dropdowns. */
   applyDefaultsFromSettings(): void {
-    // Settings de default mudaram: abas sem override passam a segui-las.
+    // The default settings changed: tabs without an override now follow them.
     this.active().stop();
     this.sendConfig();
   }
 
-  /** Prefs só de UI (thinking/tool cards/nome/verbosity): re-empurra config sem mexer na sessão. */
+  /** UI-only prefs (thinking/tool cards/name/verbosity): re-pushes the config without touching the session. */
   pushConfig(): void {
     this.sendConfig();
     if (this.activeTab) this.postTaskTimings(this.activeTab); // verbosity muda o escopo do gauge
   }
 
-  /** Abre a lista de sessões na UI (comando/atalho). */
+  /** Opens the session list in the UI (command/shortcut). */
   openSessions(): void {
     this.post({ kind: 'openSessions' });
     this.sendSessions();
   }
 
   // Escopo (modelo, effort) p/ segmentar os tempos: prefere o modelo REAL
-  // resolvido pelo CLI (snapshot), caindo p/ o selecionado. Effort: o CLI não
-  // ecoa o nível no stream, então resolvemos 'default' p/ o setting do Cockpit e,
-  // se ainda 'default', p/ o effortLevel REAL do CLI (~/.claude/settings.json) —
-  // assim a chave não fica num 'default' ambíguo.
+  // resolved by the CLI (snapshot), falling back to the selected one. Effort: the CLI doesn't
+  // echo the level in the stream, so we resolve 'default' to the Cockpit setting and,
+  // when still 'default', to the CLI's REAL effortLevel (~/.claude/settings.json) —
+  // that way the key doesn't stay on an ambiguous 'default'.
   private timingScope(s: Session): { model: string; effort: string; verbosity: string } {
     const model = s.stats.snapshot().model || s.model() || 'default';
     let effort = s.effort() || 'default';
@@ -1900,7 +1900,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return { model, effort, verbosity };
   }
 
-  /** Envia ao(s) surface(s) as médias do escopo atual da aba (gauge calibrado). */
+  /** Sends the averages of the tab's current scope to the surface(s) (calibrated gauge). */
   private postTaskTimings(tabId: string): void {
     const s = this.sessions.get(tabId) ?? this.active();
     const { model, effort, verbosity } = this.timingScope(s);
@@ -1910,14 +1910,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // ---- Mensagens vindas do webview ----
 
   private onWebviewMessage(m: WebviewToHost, webview?: vscode.Webview): void {
-    // Qualquer mensagem prova que o render está vivo: arma o relógio do watchdog.
+    // Any message proves the render is alive: arms the watchdog clock.
     const sk = this.surfaceKey(webview);
     if (sk) {
       this.lastBeat.set(sk, Date.now());
       const g = this.reloadGuard.get(sk);
       if (g && Date.now() - g.at > RELOAD_COOLDOWN_MS) this.reloadGuard.delete(sk); // recuperou: zera o cap
     }
-    // Sessão de origem: painel de chat -> sua sessão; hub/sem vínculo -> ativa.
+    // Origin session: chat panel -> its session; hub/unbound -> the active one.
     const bound = webview ? this.webviewSession.get(webview) : undefined;
     const srcTab = bound && this.sessions.has(bound) ? bound : this.activeTab;
     const srcSession = (): Session => this.sessions.get(srcTab) ?? this.active();
@@ -1933,17 +1933,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.reportCliStatus();
         void this.tryDiscoverModels();
         this.startUsageTimer();
-        this.reportAuth(); // estado de login p/ o botão Sign in/out
-        this.postTaskTimings(bound ?? this.activeTab); // médias do escopo p/ calibrar o gauge
+        this.reportAuth(); // login state for the Sign in/out button
+        this.postTaskTimings(bound ?? this.activeTab); // scope averages to calibrate the gauge
         this.autoResumeLast();
         this.postTabs();
-        // init = painel recém-montado (abrir/reabrir/recriar). Força replay do
-        // histórico SEMPRE, mesmo com a sessão ocupada: senão reabrir um contexto
-        // em execução mostra só o trecho que chega após reabrir. Os deltas em voo
-        // se anexam ao histórico repintado.
+        // init = a freshly mounted panel (open/reopen/recreate). It ALWAYS forces a replay
+        // of the history, even with the session busy: otherwise reopening a running
+        // context would show only the part that arrives after reopening. The deltas in flight
+        // append to the repainted history.
         this.justRecreated.delete(bound ?? this.activeTab);
         this.replayTab(bound ?? this.activeTab, true);
-        if (bound) this.primeCommands(bound); // carrega slash commands sem esperar o 1º envio
+        if (bound) this.primeCommands(bound); // loads slash commands without waiting for the first send
         // Recupera o rascunho/ditado espelhado (ex.: tela branca durante o ditado).
         {
           const draft = this.draftByTab.get(bound ?? this.activeTab);
@@ -1951,9 +1951,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
         break;
       case 'sendMessage': {
-        // Gate de effort mínimo: resolvido AGORA do CLAUDE.md aplicável à pasta de
-        // trabalho da sessão (não vive em config — pastas diferentes, valores
-        // diferentes). Abaixo do mínimo e sem 'force' → pede confirmação e NÃO envia.
+        // Minimum effort gate: resolved NOW from the CLAUDE.md applicable to the session's
+        // working folder (it doesn't live in the config — different folders, different
+        // values). Below the minimum and without 'force' → asks for confirmation and does NOT send.
         const s = srcSession();
         const cwd = this.workspaceCwd();
         const min = resolveMinEffort(cwd, cwd);
@@ -1966,21 +1966,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           EFFORT_RANK[eff] < (EFFORT_RANK[min] ?? 0)
         ) {
           this.post({ kind: 'effortGate', selected: eff, min }, srcTab);
-          break; // bloqueia: webview confirma e reenvia com force
+          break; // blocked: the webview confirms and re-sends with force
         }
         const body = m.text;
         if (!this.tabMeta.get(srcTab)?.title && body.trim()) {
           this.setTabTitle(srcTab, body.replace(/\s+/g, ' ').trim().slice(0, 28));
         }
         // Enviar prompt confirma as escolhas de combo na aba atual: descarta o
-        // baseline (não há mais reversão pendente para um novo contexto).
+        // baseline (there is no pending revert for a new context anymore).
         if (this.comboBaseline?.tab === srcTab) this.comboBaseline = undefined;
         if (this.pendingRestart) {
-          // A mudança de model/effort/permission é aplicada agora (reinício): some o aviso.
+          // The model/effort/permission change is applied now (restart): the warning goes away.
           this.pendingRestart = false;
           this.sendConfig();
         }
-        // Compartilha a seleção do editor como contexto, se o composer pediu.
+        // Shares the editor selection as context, when the composer asked for it.
         const sel = m.selection ? `${m.selection}\n` : '';
         const text = `${sel}${body}`;
         s.send(text, m.images);
@@ -2060,15 +2060,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.remoteControl(m.sessionId);
         break;
       case 'deleteSession':
-        // Confirmação já feita no webview (modal elegante). Detacha a aba viva
-        // (libera o handle / impede recriação) e então apaga o transcript.
+        // Confirmation already done in the webview (elegant modal). Detaches the live tab
+        // (releases the handle / prevents recreation) and then deletes the transcript.
         this.detachLiveSessions(m.sessionId);
         deleteSession(this.workspaceCwd(), m.sessionId);
         this.sendSessions();
         break;
       case 'deleteAllSessions':
-        // Confirmação já feita no webview. Detacha TODAS as abas vivas antes de
-        // apagar — senão a sessão aberta segura/recria seu .jsonl e reaparece.
+        // Confirmation already done in the webview. Detaches ALL live tabs before
+        // deleting — otherwise the open session holds/recreates its .jsonl and it reappears.
         this.detachLiveSessions(undefined, true);
         deleteAllSessions(this.workspaceCwd());
         this.sendSessions();
@@ -2129,7 +2129,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.openNativeDiff(m.tool, m.input);
         break;
       case 'draftChanged':
-        // Espelha o rascunho/ditado no host (sobrevive à morte do renderer).
+        // Mirrors the draft/dictation in the host (survives the renderer's death).
         if (m.text) this.draftByTab.set(srcTab, m.text);
         else this.draftByTab.delete(srcTab);
         break;
@@ -2153,15 +2153,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.handleSpellSuggest(srcTab, m.requestId, m.word);
         break;
       case 'spellAdd': {
-        // Persiste no arquivo único da máquina (preserva ditado existente).
+        // Persists into the single per-machine file (preserves the existing dictation data).
         this.getSpeller().addWord(m.word);
         const cur = loadDictionary();
         saveDictionary({ ...cur, spellWords: this.getSpeller().userDict() });
         break;
       }
       case 'taskDuration': {
-        // Amostra de duração: agrega/persiste segmentada por (modelo, effort,
-        // verbosity, tipo) e devolve ao surface da aba as médias do escopo atual.
+        // Duration sample: aggregated/persisted segmented by (model, effort,
+        // verbosity, type) and returns the current scope's averages to the tab's surface.
         const { model, effort, verbosity } = this.timingScope(srcSession());
         recordTaskTiming(model, effort, verbosity, m.type, m.ms);
         this.postTaskTimings(srcTab);
@@ -2200,10 +2200,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.runPluginAction(m.action, m.arg, m.scope);
         break;
       case 'fetchUsage':
-        void this.sendUsage(); // dado quente: busca conta + limites + breakdown ao clicar
+        void this.sendUsage(); // hot data: fetches account + limits + breakdown on click
         break;
       case 'enableUsageTracking': {
-        // Instala o wrapper de statusline (captura rate_limits real no próximo render).
+        // Installs the statusline wrapper (captures the real rate_limits on the next render).
         const r = enableUsageTracking(this.memory);
         const msg =
           r === 'ok'
@@ -2227,7 +2227,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Cofre de credenciais (TOTP 2FA). Toda ação sensível valida o código no host. */
+  /** Credential vault (TOTP 2FA). Every sensitive action validates the code in the host. */
   private async handleCreds(m: WebviewToHost): Promise<void> {
     const tab = this.activeTab;
     const store = this.creds;
@@ -2303,12 +2303,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
       }
     } catch (e) {
-      // Nunca logar valores/segredos: só a mensagem genérica do erro.
+      // Never log values/secrets: only the error's generic message.
       this.post({ kind: 'credsError', message: String((e as Error)?.message ?? e) }, tab);
     }
   }
 
-  /** Salva uma imagem colada (base64) em disco via diálogo nativo do VSCode. */
+  /** Saves a pasted image (base64) to disk via VSCode's native dialog. */
   private async saveImage(mediaType: string, data: string): Promise<void> {
     const ext = (mediaType.split('/')[1] || 'png').replace('+xml', '').replace('jpeg', 'jpg');
     const def = `image-${Date.now()}.${ext}`;
@@ -2316,7 +2316,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       defaultUri: vscode.Uri.file(path.join(this.workspaceCwd(), def)),
       filters: { [vscode.l10n.t('Images')]: [ext] },
     });
-    if (!uri) return; // usuário cancelou
+    if (!uri) return; // the user cancelled
     try {
       fs.writeFileSync(uri.fsPath, Buffer.from(data, 'base64'));
     } catch (e) {
@@ -2334,7 +2334,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private resolvedCliPath?: string; // caminho funcional do claude (PATH ou ~/.local/bin)
   private cliAvailable = false;
-  private pathFixed = false; // já tentou adicionar ~/.local/bin ao PATH do usuário
+  private pathFixed = false; // already tried adding ~/.local/bin to the user's PATH
 
   /** Caminho efetivo do CLI (resolvido) — usado p/ spawn/pesquisa/install. */
   private claudePath(): string {
@@ -2342,7 +2342,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** Comando p/ rodar o claude num TERMINAL (PATH ou ~/.local/bin fora do PATH).
-   *  Sem espaços: roda direto (PowerShell e cmd). Com espaços: usa call operator. */
+   *  Without spaces: runs directly (PowerShell and cmd). With spaces: uses the call operator. */
   private claudeCmd(): string {
     const exe = this.claudePath();
     if (!/\s/.test(exe)) return exe;
@@ -2357,8 +2357,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'cliStatus', available: r.ok, version: r.version, error: r.error, cockpitVersion });
     if (r.ok) {
       log(`CLI detected: ${r.version} @ ${r.path}`);
-      this.ensureLocalBinOnPath(r.path); // installer nativo: garante ~/.local/bin no PATH do usuário
-      // Última versão (npm) em background → repost com `latest` p/ marcar desatualizado.
+      this.ensureLocalBinOnPath(r.path); // native installer: makes sure ~/.local/bin is in the user's PATH
+      // Latest version (npm) in the background → repost with `latest` to flag it as outdated.
       void getLatestCliVersion().then((latest) => {
         if (latest) {
           this.post({ kind: 'cliStatus', available: true, version: r.version, latest, cockpitVersion });
@@ -2370,15 +2370,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Garante que o dir do installer nativo (~/.local/bin) esteja no PATH do USUÁRIO
-   * (Windows). Idempotente, escopo User apenas (não toca no PATH do sistema). Só
-   * age quando o claude foi resolvido daquele dir e ele ainda não está no PATH.
+   * Makes sure the native installer's dir (~/.local/bin) is in the USER's PATH
+   * (Windows). Idempotent, User scope only (it doesn't touch the system PATH). It only
+   * acts when claude was resolved from that dir and it isn't in the PATH yet.
    */
   private ensureLocalBinOnPath(exePath: string): void {
     if (process.platform !== 'win32' || this.pathFixed) return;
     const bin = path.dirname(exePath);
-    if (!/[\\/]\.local[\\/]bin$/i.test(bin)) return; // só o dir do installer nativo
-    if ((process.env.PATH ?? '').toLowerCase().includes(bin.toLowerCase())) return; // já no PATH
+    if (!/[\\/]\.local[\\/]bin$/i.test(bin)) return; // only the native installer's dir
+    if ((process.env.PATH ?? '').toLowerCase().includes(bin.toLowerCase())) return; // already in the PATH
     this.pathFixed = true;
     const ps =
       `$b='${bin.replace(/'/g, "''")}'; ` +
@@ -2397,14 +2397,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Roda `claude update` num terminal visível (usuário acompanha o progresso). */
+  /** Runs `claude update` in a visible terminal (the user follows the progress). */
   private updateCli(): void {
     const term = vscode.window.createTerminal('Claude Update');
     term.show();
     term.sendText(`${this.claudeCmd()} update`);
   }
 
-  /** Versão desta extensão (lida do package.json do bundle). */
+  /** This extension's version (read from the bundle's package.json). */
   private cockpitVersion(): string | undefined {
     try {
       const p = path.join(this.extensionUri.fsPath, 'package.json');
@@ -2414,7 +2414,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Na ativação: se o CLI faltar, pergunta (com consentimento) e instala. */
+  /** On activation: when the CLI is missing, it asks (with consent) and installs. */
   async promptInstallIfMissing(): Promise<void> {
     const path = this.cfg().get<string>('claudePath', 'claude');
     if (CliProcessManager.detect(path).ok) return;
@@ -2437,8 +2437,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private installCli(): void {
     const term = vscode.window.createTerminal('Claude Code · install');
     term.show();
-    // Installer NATIVO oficial: não depende de Node/npm (resolve o caso "npm não
-    // reconhecido"). Traz o runtime próprio do Claude Code.
+    // Official NATIVE installer: it doesn't depend on Node/npm (solves the "npm not
+    // recognized" case). It brings Claude Code's own runtime.
     const cmd =
       process.platform === 'win32'
         ? 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"'
@@ -2450,7 +2450,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.pollForCli();
   }
 
-  /** Após instalar: re-sonda o CLI (inclui ~/.local/bin) até achar; então faz refresh. */
+  /** After installing: re-probes the CLI (including ~/.local/bin) until it is found; then refreshes. */
   private pollForCli(): void {
     let tries = 0;
     const iv = setInterval(() => {
@@ -2459,7 +2459,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (r.ok || tries > 60) {
         clearInterval(iv);
         if (r.ok) {
-          this.reportCliStatus(); // valida + repõe versão/latest no Cockpit
+          this.reportCliStatus(); // validates + restores version/latest in the Cockpit
           void vscode.window.showInformationMessage(
             vscode.l10n.t('Claude Code CLI detected: {0}', r.version ?? ''),
           );
@@ -2470,8 +2470,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * Login NATIVO do CLI via OAuth no browser (`claude auth login`, default
-   * --claudeai = assinatura). Subcomando dedicado conduz o fluxo; não é preciso
-   * abrir o REPL nem digitar /login. O Cockpit não toca em credenciais.
+   * --claudeai = subscription). A dedicated subcommand drives the flow; there is no need
+   * to open the REPL or type /login. The Cockpit never touches credentials.
    */
   loginCli(): void {
     const term = vscode.window.createTerminal('Claude Code · login');
@@ -2480,10 +2480,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void vscode.window.showInformationMessage(
       vscode.l10n.t('Signing in via your browser. Approve the request, then click "Re-check".'),
     );
-    this.scheduleAuthRefresh(); // o fluxo é assíncrono no terminal: re-checa em seguida
+    this.scheduleAuthRefresh(); // the flow is asynchronous in the terminal: re-check right after
   }
 
-  /** Logout nativo do CLI (`claude auth logout`) num terminal. O Cockpit não toca em credenciais. */
+  /** Native CLI logout (`claude auth logout`) in a terminal. The Cockpit never touches credentials. */
   logoutCli(): void {
     const term = vscode.window.createTerminal('Claude Code · logout');
     term.show();
@@ -2494,9 +2494,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.scheduleAuthRefresh();
   }
 
-  /** Busca o estado de login e empurra ao webview (mostra Sign in OU Sign out). */
+  /** Fetches the login state and pushes it to the webview (shows Sign in OR Sign out). */
   reportAuth(): void {
-    resetAccountKey(); // login/logout pode ter mudado a conta → re-resolve o dicionário
+    resetAccountKey(); // login/logout may have changed the account → re-resolve the dictionary
     void resolveAccountKey(this.claudePath());
     void fetchAuthStatus(this.claudePath()).then((a) => this.post({ kind: 'auth', loggedIn: a.loggedIn }));
   }
@@ -2510,13 +2510,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private post(msg: HostToWebview, tab?: string): void {
     const payload = tab ? { ...msg, tab } : msg;
-    // Hub recebe tudo (espelha estado global + sessão ativa).
+    // The hub receives everything (it mirrors the global state + the active session).
     this.trySend(this.hubView?.webview, payload);
     if (tab) {
-      // Mensagem de uma sessão: só o painel daquela sessão.
+      // Message from one session: only that session's panel.
       this.trySend(this.panels.get(tab)?.webview, payload);
     } else {
-      // Global (config/cli/tabs/locale): todos os painéis de chat.
+      // Global (config/cli/tabs/locale): every chat panel.
       for (const p of this.panels.values()) this.trySend(p.webview, payload);
     }
   }
@@ -2534,8 +2534,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const base = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(base, 'main.js'));
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(base, 'main.css'));
-    // Ícone da extensão p/ o indicador de atividade (img no webview). media/ não
-    // está em localResourceRoots por padrão — incluído junto com dist/webview.
+    // The extension icon for the activity indicator (img in the webview). media/ isn't
+    // in localResourceRoots by default — included alongside dist/webview.
     const iconUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'icon.png'));
     const nonce = makeNonce();
     const csp = [
@@ -2579,7 +2579,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.onWebviewMessage(m, view.webview),
     );
     const visSub = view.onDidChangeVisibility(() => {
-      if (view.visible) this.lastBeat.set(HUB_SURFACE, Date.now()); // reexibido: rearma o relógio
+      if (view.visible) this.lastBeat.set(HUB_SURFACE, Date.now()); // shown again: re-arms the clock
     });
     view.onDidDispose(() => {
       sub.dispose();
@@ -2595,20 +2595,20 @@ function dedupe(arr: string[]): string[] {
   return Array.from(new Set(arr.filter(Boolean)));
 }
 
-// Instrução p/ a opção "Gerar com IA": produz um documento organizado e coerente
-// a partir do registro da conversa. Foca no raciocínio/decisões e no resultado;
-// omite ruído técnico. Mantém o idioma da conversa.
+// Instruction for the "Generate with AI" option: it produces an organized, coherent document
+// from the conversation record. It focuses on the reasoning/decisions and the outcome;
+// it omits technical noise. It keeps the conversation's language.
 const DOC_PROMPT = [
-  'Você é um editor técnico. A partir do registro de conversa abaixo (entre um desenvolvedor e um assistente de IA),',
-  'escreva um DOCUMENTO em Markdown — organizado, de alto nível e coerente — que conte a história do trabalho:',
-  'o que foi pedido, o que foi pensado e decidido, o que foi feito, POR QUE e COMO, e o resultado final.',
-  'Priorize o raciocínio, as decisões e a motivação. OMITA ruído técnico (comandos, saídas de ferramentas, diffs crus).',
-  'Estruture com títulos, seções e listas quando ajudar a leitura. Seja fiel ao conteúdo — não invente.',
-  'Escreva no MESMO idioma predominante da conversa.',
-  'Responda SOMENTE com o Markdown do documento — sem comentários, sem cercas de código ao redor do todo.',
+  'You are a technical editor. From the conversation record below (between a developer and an AI assistant),',
+  'write a DOCUMENT in Markdown — organized, high level and coherent — telling the story of the work:',
+  'what was asked, what was thought and decided, what was done, WHY and HOW, and the final outcome.',
+  'Prioritize the reasoning, the decisions and the motivation. OMIT technical noise (commands, tool output, raw diffs).',
+  'Structure it with headings, sections and lists when that helps reading. Be faithful to the content — do not invent.',
+  'Write in the SAME language that predominates in the conversation.',
+  'Answer ONLY with the document Markdown — no comments, no code fence around the whole thing.',
 ].join(' ');
 
-/** Caminho único: se o arquivo já existe, insere -2, -3… antes da extensão. */
+/** Unique path: when the file already exists, it inserts -2, -3… before the extension. */
 function uniqueFilePath(full: string): string {
   if (!safeExistsSync(full)) return full;
   const dir = path.dirname(full);
@@ -2640,12 +2640,12 @@ function extractCliResult(out: string): string | undefined {
       if (typeof o?.result === 'string' && o.result.trim()) return stripWrappingFence(o.result.trim());
     }
   } catch {
-    /* não-JSON: usa o texto cru como fallback */
+    /* non-JSON: uses the raw text as a fallback */
   }
   return stripWrappingFence(trimmed);
 }
 
-/** Remove uma cerca de código que envolva o documento inteiro (```markdown … ```). */
+/** Removes a code fence wrapping the whole document (```markdown … ```). */
 function stripWrappingFence(s: string): string {
   const m = s.match(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/);
   return m ? m[1] : s;
@@ -2657,10 +2657,10 @@ function toBucket(w?: LimitWindow): UsageBucket | undefined {
   return { usedPct: w.usedPct, resetsAt: w.resetsAt, tokens: w.tokens, usd: w.usd };
 }
 
-// Locale de REGIÃO do SO (formato de data/hora), NÃO o idioma da UI.
-// No Windows o VS Code força o locale do Node pro idioma de exibição (en),
-// então o Intl do Node não serve — leio a cultura regional via PowerShell
-// `(Get-Culture).Name` (= "pt-BR", o mesmo que a barra de tarefas usa). Memoizado.
+// The OS REGION locale (date/time format), NOT the UI language.
+// On Windows VS Code forces Node's locale to the display language (en),
+// so Node's Intl is useless — we read the regional culture via PowerShell
+// `(Get-Culture).Name` (= "pt-BR", the same the taskbar uses). Memoized.
 let cachedRegion: string | undefined;
 function osRegionLocale(): string {
   if (cachedRegion) return cachedRegion;

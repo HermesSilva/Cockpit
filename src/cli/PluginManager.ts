@@ -184,7 +184,7 @@ function componentKind(installPath?: string): string | undefined {
   const strong = present.filter((p) => p !== 'hooks');
   if (strong.length > 1) return 'mixed';
   if (strong.length === 1) return strong[0];
-  return present[0]; // só hooks
+  return present[0]; // hooks only
 }
 interface RawMarket {
   name?: string;
@@ -325,7 +325,7 @@ export async function listPlugins(claudePath: string, forceUrls = false): Promis
           enabled: p.enabled !== false,
           description: man.description,
           url: man.url,
-          kind: componentKind(p.installPath), // preciso, dos componentes locais
+          kind: componentKind(p.installPath), // accurate, from the local components
         };
       }),
     available: (raw.available ?? [])

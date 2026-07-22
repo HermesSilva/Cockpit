@@ -24,12 +24,12 @@ function min(ms: number): string {
 }
 
 const TICK_MS = 60_000; // varre 1x por minuto
-const REFRESH_LEAD_MS = 5 * 60_000; // renova quando faltam < 5 min p/ expirar (~55 min)
+const REFRESH_LEAD_MS = 5 * 60_000; // renews when < 5 min are left before expiry (~55 min)
 const PING_TIMEOUT_MS = 90_000; // mata o one-shot se travar
 // Minimal prompt: it only needs to hit the cached prefix to restart the TTL. The
 // explicit instruction avoids actions; in headless without --permission-prompt-tool the
 // CLI denies tools by itself (without hanging waiting for approval).
-const PING_PROMPT = 'keep-alive: responda apenas "ok". Não use ferramentas nem altere arquivos.';
+const PING_PROMPT = 'keep-alive: answer only "ok". Do not use tools and do not change files.';
 
 export interface CacheKeeperDeps {
   claudePath: () => string;
@@ -41,7 +41,7 @@ export interface CacheKeeperDeps {
 
 export class CacheKeeper {
   private timer?: ReturnType<typeof setInterval>;
-  private inFlight = new Set<string>(); // sessões com spawn efêmero em andamento
+  private inFlight = new Set<string>(); // sessions with an ephemeral spawn in progress
 
   constructor(private deps: CacheKeeperDeps) {}
 
@@ -49,9 +49,9 @@ export class CacheKeeper {
   start(): void {
     if (this.timer) return;
     this.timer = setInterval(() => this.tick(), TICK_MS);
-    this.timer.unref?.(); // não segura o processo aberto
+    this.timer.unref?.(); // doesn't hold the process open
     dlog('cache', `CacheKeeper started (tick ${min(TICK_MS)}, lead ${min(REFRESH_LEAD_MS)})`);
-    this.tick(); // checa já na ativação (cobre reabertura do VSCode)
+    this.tick(); // checks right at activation (covers reopening VSCode)
   }
 
   stop(): void {
@@ -83,7 +83,7 @@ export class CacheKeeper {
       const expiresIn = last + CACHE_LIFE_MS - now;
       if (expiresIn <= 0) {
         dlog('cache', `skip ${id}: EXPIRED ${min(-expiresIn)} ago — not revived`);
-        continue; // JÁ VENCIDO: não revive (regra do usuário)
+        continue; // ALREADY EXPIRED: don't revive it (user's rule)
       }
       if (expiresIn > REFRESH_LEAD_MS) {
         dlog('cache', `skip ${id}: healthy (expires in ${min(expiresIn)})`);
@@ -110,7 +110,7 @@ export class CacheKeeper {
         const open = this.deps.pingOpen(id);
         if (open === 'busy') {
           dlog('cache', `skip ${id}: tab busy (an active turn already keeps it warm)`);
-          continue; // turno real em curso bumpará o lastTurnTs
+          continue; // a real turn in progress will bump lastTurnTs
         }
         // Bump on disk RIGHT AWAY: restarts the 1h window at the instant of the ping. Every
         // instance/tick then reads expires≈1h and backs off ~55min. If the ping
@@ -118,7 +118,7 @@ export class CacheKeeper {
         bumpCacheActivity(id, now);
         if (open === 'pinged') {
           dlog('cache', `due ${id}: expires in ${min(expiresIn)} → ping through the open session`);
-          continue; // a sessão também bumpará no result (mais preciso)
+          continue; // the session will bump on result too (more accurate)
         }
         dlog('cache', `due ${id}: expires in ${min(expiresIn)} → ephemeral spawn (closed)`);
         this.refresh(id, s.cwd);
@@ -135,7 +135,7 @@ export class CacheKeeper {
     const args = [
       '--resume', sessionId,
       '-p', PING_PROMPT,
-      '--output-format', 'json', // one-shot: termina sozinho (sem stream interativo)
+      '--output-format', 'json', // one-shot: it finishes on its own (no interactive stream)
       // Without --permission-prompt-tool: in headless the CLI denies tools by itself,
       // without hanging waiting for approval (which used to blow the timeout in plan mode).
     ];
@@ -146,7 +146,7 @@ export class CacheKeeper {
         cwd,
         env: process.env,
         shell: useShell,
-        stdio: ['ignore', 'ignore', 'pipe'], // captura stderr p/ diagnóstico
+        stdio: ['ignore', 'ignore', 'pipe'], // captures stderr for diagnostics
       });
       proc.stderr?.setEncoding('utf8');
       proc.stderr?.on('data', (t: string) => dlog('cache', `ping stderr ${sessionId}: ${t.trim()}`));

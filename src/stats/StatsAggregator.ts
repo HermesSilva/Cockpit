@@ -148,7 +148,7 @@ export class StatsAggregator {
 
   private sessionCostUsd = 0;
   private lastTurnCostUsd = 0;
-  private lastTurnHitRate = 0; // cr/total do último turno consolidado
+  private lastTurnHitRate = 0; // cr/total of the last consolidated turn
   private costIsEstimate = true;
 
   private sessionStartTs?: number;
@@ -322,7 +322,7 @@ export class StatsAggregator {
       case 'stream_event': {
         const raw = (ev as any).event;
         if (raw?.type === 'message_start') {
-          this.setModel(raw.message?.model, false); // id da API, sem [1m]
+          this.setModel(raw.message?.model, false); // API id, without [1m]
           if (raw.message?.usage) this.applyPromptUsage(raw.message.usage);
         } else if (raw?.type === 'message_delta' && raw.usage) {
           // Cumulative output of the turn in flight (real time, token by token).
@@ -332,7 +332,7 @@ export class StatsAggregator {
       }
       case 'assistant': {
         const usage = (ev as any).message?.usage as Usage | undefined;
-        this.setModel((ev as any).message?.model, false); // id da API, sem [1m]
+        this.setModel((ev as any).message?.model, false); // API id, without [1m]
         if (usage) this.applyPromptUsage(usage, true);
         break;
       }
@@ -452,7 +452,7 @@ export class StatsAggregator {
       });
       dlog(
         'stats',
-        `compactação #${this.compactionCount}: ${this.prevContextUsed} → ${total} tok (−${this.prevContextUsed - total})`,
+        `compaction #${this.compactionCount}: ${this.prevContextUsed} → ${total} tok (−${this.prevContextUsed - total})`,
       );
     }
 
@@ -544,7 +544,7 @@ export class StatsAggregator {
       cacheLifeMs: CACHE_LIFE_MS,
       cacheAgeMs: age,
       cacheExpiresInMs: Math.max(0, CACHE_LIFE_MS - age),
-      cacheExpiresAt: this.lastTurnTs + CACHE_LIFE_MS, // epoch ms — p/ contagem ao vivo na UI
+      cacheExpiresAt: this.lastTurnTs + CACHE_LIFE_MS, // epoch ms — for the live countdown in the UI
       cacheAlive: age < CACHE_LIFE_MS,
     };
   }
@@ -661,7 +661,7 @@ export class StatsAggregator {
       sessionStartTs: this.sessionStartTs,
       contextUsed: this.contextUsed,
       contextLimit: this.contextLimit,
-      contextBreakdown: undefined, // preenchido quando /context estiver disponível
+      contextBreakdown: undefined, // filled in once /context is available
       inputTokens: input,
       outputTokens: output,
       cacheCreateTokens: create,

@@ -2,10 +2,12 @@
 // AiClient helper (direct Messages API, clean: only instruction + text, ~1.7s).
 import { ask } from './AiClient';
 
+// The instruction is in English; the ANSWER must stay in the user's language — stated
+// explicitly so the model never translates the dictated text.
 const SYSTEM =
-  'Corrija apenas erros de ortografia, acentuação e gramática do texto do usuário. ' +
-  'Mantenha exatamente a mesma língua, sentido e tom. ' +
-  'Responda SOMENTE com o texto corrigido — sem comentários, sem aspas, sem prefixos.';
+  "Fix only spelling, accentuation and grammar mistakes in the user's text. " +
+  'Keep exactly the same language, meaning and tone — never translate. ' +
+  'Answer ONLY with the corrected text — no comments, no quotes, no prefixes.';
 
 /**
  * Corrects the text. `hints` (from the dictation dictionary) steers the model to keep

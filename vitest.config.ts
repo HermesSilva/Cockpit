@@ -1,9 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import * as path from 'node:path';
 
-// Testes de unidade do host (lógica pura, sem a API do VSCode).
-// O webview e a integração no Electron ficam fora deste runner.
-// `vscode` é apontado p/ um stub (node não tem o runtime do editor).
+// Host unit tests (pure logic, without the VSCode API).
+// The webview and the Electron integration are outside this runner.
+// `vscode` is pointed at a stub (node doesn't have the editor runtime).
 export default defineConfig({
   resolve: {
     alias: { vscode: path.resolve(__dirname, 'test/vscode-stub.ts') },

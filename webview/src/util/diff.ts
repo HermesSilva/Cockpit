@@ -1,4 +1,4 @@
-// Diff de linhas (LCS) para visualização lado-a-lado. Sem dependências.
+// Line diff (LCS) for the side-by-side view. No dependencies.
 
 export type DiffRow = {
   type: 'equal' | 'add' | 'del' | 'change';
@@ -13,7 +13,7 @@ export interface DiffResult {
   truncated: boolean;
 }
 
-const MAX_CELLS = 400_000; // limite do DP (n*m) para evitar travar em arquivos enormes
+const MAX_CELLS = 400_000; // DP limit (n*m) to avoid freezing on huge files
 
 export function sideBySideDiff(oldText: string, newText: string): DiffResult {
   const a = oldText.length ? oldText.split('\n') : [];
@@ -21,7 +21,7 @@ export function sideBySideDiff(oldText: string, newText: string): DiffResult {
   const n = a.length;
   const m = b.length;
 
-  // Arquivo grande: pula o LCS e mostra remoção-em-bloco + adição-em-bloco.
+  // Large file: skips the LCS and shows a block removal + block addition.
   if (n * m > MAX_CELLS) {
     const rows: DiffRow[] = [];
     for (let i = 0; i < n; i++) rows.push({ type: 'del', left: { num: i + 1, text: a[i] } });
@@ -29,7 +29,7 @@ export function sideBySideDiff(oldText: string, newText: string): DiffResult {
     return { rows, added: m, removed: n, truncated: true };
   }
 
-  // LCS por programação dinâmica.
+  // LCS via dynamic programming.
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
@@ -57,7 +57,7 @@ export function sideBySideDiff(oldText: string, newText: string): DiffResult {
   while (i < n) ops.push({ t: 'del', ai: i++ });
   while (j < m) ops.push({ t: 'add', bi: j++ });
 
-  // Monta linhas: pareia corridas del+add adjacentes como "change".
+  // Builds the rows: pairs adjacent del+add runs as a "change".
   const rows: DiffRow[] = [];
   let added = 0;
   let removed = 0;

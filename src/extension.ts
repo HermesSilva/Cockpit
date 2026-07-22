@@ -28,7 +28,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.secrets,
     context.globalStorageUri,
   );
-  context.subscriptions.push({ dispose: () => provider.dispose() }); // para o CacheKeeper
+  context.subscriptions.push({ dispose: () => provider.dispose() }); // for the CacheKeeper
 
   // The Cockpit lives as an editor tab (WebviewPanel). No sidebar view.
   // The status bar item (created by the provider) and the command/shortcut open the editor.
@@ -206,7 +206,7 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  flushStats(); // grava as estatísticas pendentes de cada sessão antes de sair
+  flushStats(); // writes each session's pending statistics before exiting
   log('Tootega Cockpit deactivated.');
 }
 
@@ -239,7 +239,7 @@ async function maybeOfferUsageTracking(
   provider: ChatViewProvider,
 ): Promise<void> {
   if (process.platform !== 'win32') return; // instalador Windows-only por ora
-  if (isEnabled()) return; // já ativo
+  if (isEnabled()) return; // already on
   if (context.globalState.get<boolean>('usageTrackingPrompted')) return;
   void context.globalState.update('usageTrackingPrompted', true);
   const enable = vscode.l10n.t('Enable');

@@ -23,17 +23,17 @@ const DIR = path.join(os.homedir(), '.claude', 'tootega');
 const FILE = path.join(DIR, 'task-timings.json');
 const LOCK = path.join(DIR, 'task-timings.lock');
 const VERSION = 4; // v4: chave inclui verbosity (model::effort::verbosity::type)
-const EMA_ALPHA = 0.3; // peso da amostra nova depois de estabilizada (0..1)
-const MIN_MS = 150; // ignora ruído (reinícios quase instantâneos)
+const EMA_ALPHA = 0.3; // weight of the new sample once stabilized (0..1)
+const MIN_MS = 150; // ignores noise (near-instant restarts)
 const MAX_MS = 30 * 60_000; // ignora outliers (processo travado)
-const MIN_SAMPLES = 3; // amostras p/ a média ser confiável o bastante p/ expor
+const MIN_SAMPLES = 3; // samples needed for the average to be reliable enough to expose
 const SEP = ' :: '; // separador legível: `<model> :: <effort> :: <type>`
-const FLUSH_MS = 5_000; // debounce do flush (não grava a cada amostra)
-const LOCK_RETRY_MS = 250; // se o lock está ocupado, tenta o flush de novo
-const LOCK_STALE_MS = 15_000; // lock mais velho que isso é considerado órfão
+const FLUSH_MS = 5_000; // flush debounce (doesn't write on every sample)
+const LOCK_RETRY_MS = 250; // when the lock is busy, it retries the flush
+const LOCK_STALE_MS = 15_000; // a lock older than this is considered orphaned
 
 interface Stat {
-  ms: number; // média (incremental → EMA)
+  ms: number; // average (incremental → EMA)
   n: number; // nº de amostras acumuladas
 }
 interface Store {
@@ -80,7 +80,7 @@ function applySample(store: Store, key: string, ms: number): void {
     return;
   }
   const n = st.n + 1;
-  const alpha = Math.max(EMA_ALPHA, 1 / n); // média verdadeira até EMA assumir
+  const alpha = Math.max(EMA_ALPHA, 1 / n); // true average until the EMA takes over
   st.ms = st.ms + (ms - st.ms) * alpha;
   st.n = n;
 }
@@ -88,12 +88,12 @@ function applySample(store: Store, key: string, ms: number): void {
 /** Tries to create the exclusive lockfile; removes it when orphaned. Returns the fd or undefined. */
 function acquireLock(): number | undefined {
   try {
-    return fs.openSync(LOCK, 'wx'); // cria com exclusividade (falha se já existe)
+    return fs.openSync(LOCK, 'wx'); // creates it exclusively (fails when it already exists)
   } catch {
     try {
       const st = fs.statSync(LOCK);
       if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
-        fs.rmSync(LOCK, { force: true }); // lock órfão (processo morto): rouba
+        fs.rmSync(LOCK, { force: true }); // orphan lock (dead process): stolen
         return fs.openSync(LOCK, 'wx');
       }
     } catch {
@@ -117,7 +117,7 @@ function releaseLock(fd: number): void {
 }
 
 function scheduleSave(delay = FLUSH_MS): void {
-  if (saveTimer) return; // já há um flush agendado (debounce)
+  if (saveTimer) return; // a flush is already scheduled (debounce)
   saveTimer = setTimeout(() => {
     saveTimer = undefined;
     flush();
@@ -129,18 +129,18 @@ function flush(): void {
   if (pending.length === 0) return;
   const fd = acquireLock();
   if (fd == null) {
-    scheduleSave(LOCK_RETRY_MS); // lock ocupado: re-tenta logo, sem perder o buffer
+    scheduleSave(LOCK_RETRY_MS); // lock busy: retries soon, without losing the buffer
     return;
   }
   // Takes the batch now; new samples during the flush go to the next one.
   const batch = pending.splice(0, pending.length);
   try {
-    const base = readStore(); // estado fresco (inclui o que outras janelas gravaram)
+    const base = readStore(); // fresh state (includes what other windows wrote)
     for (const s of batch) applySample(base, s.key, s.ms);
     fs.mkdirSync(DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(base, null, 2));
-    fs.renameSync(tmp, FILE); // troca atômica (libuv usa replace-existing)
+    fs.renameSync(tmp, FILE); // atomic swap (libuv uses replace-existing)
     cache = base; // espelho passa a refletir o estado mesclado
   } catch (e) {
     pending.unshift(...batch); // falhou: devolve o lote p/ tentar de novo

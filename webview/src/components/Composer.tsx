@@ -21,7 +21,7 @@ interface Props {
   t: Translator;
   locale: string;
   correctEnabled: boolean;
-  spellCheck: boolean; // corretor ortográfico ao digitar (marca palavras no overlay)
+  spellCheck: boolean; // spell-check while typing (marks words in the overlay)
   busy: boolean;
   disabled: boolean;
   slashCommands: string[];
@@ -31,23 +31,23 @@ interface Props {
   // Draft a restaurar no input (ex.: cancelou o gate de effort). Muda de ref p/ disparar.
   injectDraft?: { text: string; images: ImageAttachment[] } | null;
   onDraftInjected?: () => void;
-  // Texto a inserir no input sem apagar o que já existe (ex.: valor de credencial
-  // liberado pelo cofre). Muda de ref p/ disparar a inserção.
+  // Text to insert into the input without erasing what is already there (e.g. a credential value
+  // released by the vault). Its ref changes to trigger the insertion.
   injectText?: { text: string } | null;
   onTextInjected?: () => void;
   onToggleExpandAll: () => void;
   onSend: (text: string, images: ImageAttachment[], selection?: string) => void;
-  selectionRef?: string; // @file#a-b da seleção ativa do editor
+  selectionRef?: string; // @file#a-b of the editor's active selection
   onStop: () => void;
-  onVoiceDict?: () => void; // abre o modal do dicionário de ditado
+  onVoiceDict?: () => void; // opens the dictation dictionary modal
   onCredentials?: () => void; // abre o cofre de credenciais (TOTP 2FA)
 }
 
 interface PendingImage {
   id: string;
   mediaType: string;
-  data: string; // base64 sem prefixo
-  url: string; // data URL para preview
+  data: string; // base64 without the prefix
+  url: string; // data URL for the preview
 }
 
 let seq = 0;
@@ -81,35 +81,35 @@ export function Composer({
   const openImage = useImageViewer();
   const [slashIdx, setSlashIdx] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
-  // @-mention: token sendo digitado + resultados do host + índice selecionado.
+  // @-mention: the token being typed + the host's results + the selected index.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [mentionItems, setMentionItems] = useState<string[]>([]);
   const [mentionIdx, setMentionIdx] = useState(0);
   const mentionReq = useRef('');
   const ref = useRef<HTMLTextAreaElement>(null);
-  const hadFocus = useRef(false); // textarea estava focado quando a janela perdeu o foco
-  const hlRef = useRef<HTMLPreElement>(null); // espelho com syntax highlight atrás do textarea
-  const baseH = useRef(0); // altura padrão (rows=2), capturada na 1ª medição
-  // Ditado por voz: estado do botão + base do texto ao começar. A captura do mic
-  // acontece NO HOST (webview do VSCode bloqueia getUserMedia); aqui só sinaliza.
+  const hadFocus = useRef(false); // the textarea was focused when the window lost focus
+  const hlRef = useRef<HTMLPreElement>(null); // syntax-highlight mirror behind the textarea
+  const baseH = useRef(0); // default height (rows=2), captured on the first measurement
+  // Voice dictation: button state + the text base when it started. The mic capture
+  // happens IN THE HOST (the VSCode webview blocks getUserMedia); here we only signal it.
   const [recording, setRecording] = useState(false);
-  const [connecting, setConnecting] = useState(false); // clicou no mic, aguardando WS+áudio (spinner)
+  const [connecting, setConnecting] = useState(false); // mic clicked, waiting for WS+audio (spinner)
   const [correcting, setCorrecting] = useState(false); // corrigindo texto (input readonly)
-  const recordingRef = useRef(false); // espelho síncrono p/ os listeners (sem stale closure)
+  const recordingRef = useRef(false); // synchronous mirror for the listeners (no stale closure)
   const voiceBaseRef = useRef('');
-  // Corretor ortográfico: tick força re-render do overlay quando os dicionários
-  // terminam de carregar; spellMenu controla o dropdown de correção aberto.
+  // Spell-checker: tick forces an overlay re-render when the dictionaries
+  // finish loading; spellMenu controls the open correction dropdown.
   const [spellTick, setSpellTick] = useState(0);
   const [spellMenu, setSpellMenu] = useState<{
     word: string;
     start: number;
     left: number;
-    top: number; // y abaixo da palavra (posição preferida)
+    top: number; // y below the word (preferred position)
     anchorTop: number; // y do topo da palavra (p/ inverter o menu pra cima)
-    sug: Suggestions | null; // null = carregando sugestões do host
+    sug: Suggestions | null; // null = loading suggestions from the host
   } | null>(null);
 
-  // Cliente do corretor: liga o listener e re-renderiza o overlay sempre que
+  // Spell-checker client: hooks the listener and re-renders the overlay whenever
   // chega veredito novo do host (palavras marcadas/desmarcadas).
   useEffect(() => {
     void ensureSpell();
@@ -117,25 +117,25 @@ export function Composer({
     return off;
   }, []);
 
-  // Auto-expande a altura (até 4x) e atualiza o espelho de highlight.
+  // Auto-expands the height (up to 4x) and updates the highlight mirror.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (!baseH.current) baseH.current = el.clientHeight; // 2 linhas, antes de qualquer height inline
+    if (!baseH.current) baseH.current = el.clientHeight; // 2 lines, before any inline height
     el.style.height = 'auto';
     const max = baseH.current * 4;
     el.style.height = `${Math.max(Math.min(el.scrollHeight, max), baseH.current)}px`;
     el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
     const hl = hlRef.current;
-    // \n final garante que a última linha (e quebras finais) tenham altura no espelho.
-    // spell=true marca palavras erradas (após os dicionários carregarem; spellTick).
+    // The trailing \n guarantees the last line (and trailing breaks) have height in the mirror.
+    // spell=true marks wrong words (after the dictionaries load; spellTick).
     if (hl) hl.innerHTML = `${richHighlight(text, spellCheck && spellReady())}\n`;
   }, [text, spellTick, spellCheck]);
 
-  // Foco perdido ao voltar de outro app: quando a janela do VSCode é reativada, o
-  // webview reconcilia o foco e BLURa o elemento ativo LOGO APÓS o clique — o
-  // textarea, que o clique acabara de focar, perde o foco. Rearma: se o textarea
-  // estava focado ao sair, restaura ao voltar, a menos que o usuário já tenha
+  // Focus lost when coming back from another app: when the VSCode window is reactivated, the
+  // webview reconciles focus and BLURs the active element RIGHT AFTER the click — the
+  // textarea, which the click had just focused, loses focus. Re-arm: if the textarea
+  // was focused on the way out, restore it on return, unless the user has already
   // focado outro controle (activeElement !== body/null/textarea).
   useEffect(() => {
     const onWinBlur = () => {
@@ -153,7 +153,7 @@ export function Composer({
     };
     const onWinFocus = () => {
       if (!hadFocus.current) return;
-      // O blur do VSCode é assíncrono; tenta em alguns instantes até pegar.
+      // VSCode's blur is asynchronous; it retries for a few moments until it catches.
       requestAnimationFrame(() => restore());
       window.setTimeout(restore, 50);
       window.setTimeout(restore, 150);
@@ -175,7 +175,7 @@ export function Composer({
     }
   };
 
-  // Menu de slash: aberto quando o texto é um único token "/..." e há matches.
+  // Slash menu: open when the text is a single "/..." token and there are matches.
   const slashQuery =
     !slashDismissed && /^\/[^\s]*$/.test(text) ? text.slice(1).toLowerCase() : null;
   const slashMatches =
@@ -189,10 +189,10 @@ export function Composer({
     setSlashDismissed(true);
     requestAnimationFrame(() => ref.current?.focus());
   };
-  // requestId -> contexto do paste (bitmaps p/ screenshot; directPaths p/ fallback não-Windows).
+  // requestId -> paste context (bitmaps for a screenshot; directPaths for the non-Windows fallback).
   const pending = useRef<Map<string, { bitmaps: File[]; directPaths: string[] }>>(new Map());
 
-  // Resposta do host: tem caminho(s) -> insere; vazio -> fallback (bitmap ou directPaths).
+  // Host response: has path(s) -> insert; empty -> fallback (bitmap or directPaths).
   useEffect(() => {
     const h = (e: MessageEvent) => {
       const m = e.data;
@@ -200,25 +200,25 @@ export function Composer({
         const ctx = pending.current.get(m.requestId) ?? { bitmaps: [], directPaths: [] };
         pending.current.delete(m.requestId);
         if (m.text) insertAtCaret(m.text); // host autoritativo (Windows): acentos OK
-        else if (ctx.directPaths.length) requestPaths(ctx.directPaths); // não-Windows
-        else ctx.bitmaps.forEach(attachImage); // foi screenshot
+        else if (ctx.directPaths.length) requestPaths(ctx.directPaths); // non-Windows
+        else ctx.bitmaps.forEach(attachImage); // it was a screenshot
       }
     };
     window.addEventListener('message', h);
     return () => window.removeEventListener('message', h);
   }, []);
 
-  // Junta dois trechos com um espaço se necessário.
+  // Joins two snippets with a space when needed.
   const joinText = (a: string, b: string) => (a && !/\s$/.test(a) ? `${a} ${b}` : `${a}${b}`);
 
-  // Transcrições vindas do host (STT): parcial atualiza ao vivo; final fixa.
+  // Transcriptions coming from the host (STT): a partial updates live; a final one pins it.
   useEffect(() => {
     const h = (e: MessageEvent) => {
       const m = e.data;
       if (m?.kind === 'voiceReady') {
-        setConnecting(false); // WS + áudio fluindo: tira o spinner, pode falar
+        setConnecting(false); // WS + audio flowing: drop the spinner, you may speak
       } else if (m?.kind === 'voiceTranscript') {
-        if (!recordingRef.current) return; // ignora transcrições tardias (parou/digitou)
+        if (!recordingRef.current) return; // ignores late transcriptions (stopped/typed)
         if (m.isFinal) {
           voiceBaseRef.current = joinText(voiceBaseRef.current, m.text);
           setText(voiceBaseRef.current);
@@ -233,11 +233,11 @@ export function Composer({
         stopVoice();
       } else if (m?.kind === 'voiceCorrected') {
         voiceBaseRef.current = m.text;
-        setText(m.text); // troca pelo corrigido
+        setText(m.text); // swaps in the corrected text
         setCorrecting(false); // libera o input p/ RW
         requestAnimationFrame(() => ref.current?.focus());
       } else if (m?.kind === 'voiceCorrectError') {
-        setCorrecting(false); // mantém o original, libera
+        setCorrecting(false); // keeps the original, unblocks
       }
     };
     window.addEventListener('message', h);
@@ -255,7 +255,7 @@ export function Composer({
   const toggleVoice = () => {
     if (recording) {
       stopVoice();
-      // Correção habilitada: trava o input (readonly) e manda corrigir via Haiku.
+      // Correction enabled: locks the input (readonly) and asks Haiku to correct it.
       if (correctEnabled && text.trim()) {
         setCorrecting(true);
         send({ kind: 'voiceCorrect', text });
@@ -265,9 +265,9 @@ export function Composer({
       voiceBaseRef.current = text;
       recordingRef.current = true;
       setRecording(true);
-      setConnecting(true); // spinner até o host sinalizar voiceReady (mic vivo)
+      setConnecting(true); // spinner until the host signals voiceReady (mic alive)
       send({ kind: 'voiceStart', language: locale }); // host abre o WS e captura o mic (ffmpeg)
-      requestAnimationFrame(() => ref.current?.focus()); // foco no input ao ligar
+      requestAnimationFrame(() => ref.current?.focus()); // focus the input when turning it on
     }
   };
 
@@ -308,7 +308,7 @@ export function Composer({
   };
 
   // Drag-to-attach: solta arquivos no composer. Usa o path do arquivo (ou o
-  // uri-list) p/ anexar; imagens sem path entram como bitmap.
+  // uri-list) to attach; images without a path come in as bitmaps.
   const onDrop = (e: DragEvent<HTMLTextAreaElement>) => {
     const dt = e.dataTransfer;
     if (!dt) return;
@@ -340,7 +340,7 @@ export function Composer({
 
     e.preventDefault();
 
-    // Fallbacks do webview (usados só se o host não retornar arquivos — ex.: não-Windows).
+    // Webview fallbacks (used only when the host returns no files — e.g. non-Windows).
     const directPaths: string[] = [];
     const bitmaps: File[] = [];
     for (const it of fileItems) {
@@ -357,15 +357,15 @@ export function Composer({
       }
     }
 
-    // Fonte autoritativa: host lê o FileDropList do SO (path Unicode exato, acentos OK).
-    // Se vier vazio (foi screenshot ou SO não-Windows) -> bitmap/directPaths.
+    // Authoritative source: the host reads the OS FileDropList (exact Unicode path, accents OK).
+    // When it comes back empty (it was a screenshot or a non-Windows OS) -> bitmap/directPaths.
     const requestId = rid();
     pending.current.set(requestId, { bitmaps, directPaths });
     send({ kind: 'readClipboardFiles', requestId });
   };
 
   // Anti-perda do rascunho/ditado: na montagem, restaura do estado local do
-  // webview (sobrevive a reload/crash do renderer e a reinício do VSCode).
+  // webview (survives a renderer reload/crash and a VSCode restart).
   useEffect(() => {
     const saved = readState<{ draft?: string }>()?.draft;
     if (saved && !text) {
@@ -375,13 +375,13 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Espelha o texto atual no estado local (setState) e no HOST (sobrevive à morte
-  // do renderer — tela branca). Debounce p/ não floodar. Restaurado no reload.
+  // Mirrors the current text in the local state (setState) and in the HOST (survives the
+  // renderer's death — blank screen). Debounced so it doesn't flood. Restored on reload.
   const draftTimer = useRef<number | undefined>(undefined);
   const mirroredOnce = useRef(false);
   useEffect(() => {
-    // Não apaga o rascunho do host na montagem com texto vazio (corrida com o
-    // restore que ainda vai chegar). Só passa a espelhar após o 1º conteúdo.
+    // Doesn't erase the host's draft on mount with empty text (a race with the
+    // restore still on its way). It only starts mirroring after the first content.
     if (!mirroredOnce.current && !text) return;
     mirroredOnce.current = true;
     window.clearTimeout(draftTimer.current);
@@ -393,7 +393,7 @@ export function Composer({
   }, [text]);
 
   // Restaura um draft (ex.: cancelou o gate de effort: o texto havia sido limpo;
-  // ou recuperação pós-crash vinda do host).
+  // or post-crash recovery coming from the host).
   useEffect(() => {
     if (!injectDraft) return;
     setText(injectDraft.text);
@@ -410,7 +410,7 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectDraft]);
 
-  // Insere texto (valor de credencial) na posição do cursor, sem apagar o resto.
+  // Inserts text (a credential value) at the cursor position, without erasing the rest.
   useEffect(() => {
     if (!injectText) return;
     const ins = injectText.text;
@@ -426,17 +426,17 @@ export function Composer({
   }, [injectText]);
 
   const submit = () => {
-    // Enviar durante o ditado: encerra a captura JÁ (sem correção) e cancela uma
-    // correção pendente — senão o botão segue gravando e transcrições tardias
-    // repopulam a área após o clear. recordingRef=false ANTES p/ o listener de
-    // voiceTranscript ignorar o que ainda chegar.
+    // Sending during dictation: ends the capture NOW (without correction) and cancels a
+    // pending correction — otherwise the button keeps recording and late transcriptions
+    // repopulate the area after the clear. recordingRef=false BEFORE so the
+    // voiceTranscript listener ignores whatever still arrives.
     if (recordingRef.current) {
       recordingRef.current = false;
       setRecording(false);
       setConnecting(false);
       send({ kind: 'voiceStop' });
     }
-    if (correcting) setCorrecting(false); // cancela correção em curso, envia o que tem
+    if (correcting) setCorrecting(false); // cancels the correction in progress, sends what it has
     const v = text.trim();
     if ((!v && images.length === 0) || disabled) return;
     onSend(
@@ -447,7 +447,7 @@ export function Composer({
     setText('');
     setImages([]);
     setMention(null);
-    // Enviado: zera o rascunho espelhado (local + host) p/ não restaurar texto velho.
+    // Sent: clears the mirrored draft (local + host) so old text isn't restored.
     saveState({ draft: '' });
     send({ kind: 'draftChanged', text: '' });
     requestAnimationFrame(() => ref.current?.focus());
@@ -500,11 +500,11 @@ export function Composer({
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      submit(); // submit() já encerra ditado/correção em curso e envia
+      submit(); // submit() already ends dictation/correction in progress and sends
     }
   };
 
-  // Clique no textarea: se o caret cair sobre uma palavra marcada (.spell-error no
+  // Click on the textarea: when the caret lands on a marked word (.spell-error in the
   // overlay), abre o dropdown ancorado no span correspondente.
   const openSpellAt = (caret: number) => {
     const hl = hlRef.current;
@@ -515,7 +515,7 @@ export function Composer({
       if (caret >= start && caret <= start + word.length) {
         const r = sp.getBoundingClientRect();
         setSpellMenu({ word, start, left: r.left, top: r.bottom + 2, anchorTop: r.top, sug: null });
-        // Sugestões vêm do host (assíncrono); preenche quando chegarem.
+        // Suggestions come from the host (asynchronous); filled in when they arrive.
         void suggest(word).then((s) =>
           setSpellMenu((cur) => (cur && cur.word === word && cur.start === start ? { ...cur, sug: s } : cur)),
         );
@@ -553,7 +553,7 @@ export function Composer({
     setSpellTick((n) => n + 1);
   };
 
-  // @-mention: detecta um token "@..." imediatamente antes do caret e pede arquivos.
+  // @-mention: detects an "@..." token immediately before the caret and asks for files.
   const mentionTimer = useRef<number | undefined>(undefined);
   const detectMention = (value: string, caret: number) => {
     const m = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, caret));
@@ -592,7 +592,7 @@ export function Composer({
     setMentionItems([]);
   };
 
-  // Resultados do host p/ a @-mention (só aplica o pedido mais recente).
+  // Host results for the @-mention (only the most recent request is applied).
   useEffect(() => {
     const h = (e: MessageEvent) => {
       const m = e.data;
@@ -684,7 +684,7 @@ export function Composer({
         <div
           className="composer-input-wrap"
           onMouseDown={(e) => {
-            // Clique na área vazia (abaixo do texto): mantém o foco no textarea.
+            // Click on the empty area (below the text): keeps the focus in the textarea.
             if (e.target !== ref.current && !correcting) {
               e.preventDefault();
               const el = ref.current;

@@ -2141,10 +2141,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.setActive(m.tabId);
         break;
       case 'openSettings':
-        void vscode.commands.executeCommand(
-          'workbench.action.openSettings',
-          '@ext:tootega.tootega-cockpit',
-        );
+        // Single entry point: the command resolves the extension id from the manifest.
+        void vscode.commands.executeCommand('tootega.settings');
         break;
       case 'openLink':
         void this.openLink(m.href, m.preview);

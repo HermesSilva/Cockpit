@@ -4,6 +4,15 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.225] - 2026-07-22
+
+### Fixed
+- **Settings opened empty.** The *Settings* command (and the webview button) filtered the
+  Settings editor by `@ext:tootega.tootega-cockpit`, an id that does not exist — the manifest
+  publisher is `HermesSilva`, so the panel showed *No Settings Found*. The filter is now built
+  from `context.extension.id`, which comes from the manifest and cannot drift again, and the
+  webview reuses the `tootega.settings` command instead of repeating the string.
+
 ## [1.0.224] - 2026-07-22
 
 ### Added

@@ -64,9 +64,11 @@ export function activate(context: vscode.ExtensionContext): void {
       provider.openSessions();
     }),
     vscode.commands.registerCommand('tootega.settings', () => {
+      // The id comes from the manifest (publisher.name): hardcoding it breaks the
+      // filter whenever the extension is republished under another publisher.
       void vscode.commands.executeCommand(
         'workbench.action.openSettings',
-        '@ext:tootega.tootega-cockpit',
+        `@ext:${context.extension.id}`,
       );
     }),
     vscode.commands.registerCommand('tootega.openInEditor', () => {

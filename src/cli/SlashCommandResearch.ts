@@ -1,8 +1,8 @@
-// Pesquisa, via IA, metadados de slash commands desconhecidos: categoria (p/
-// agrupar), hint curto e detalhe — no idioma do Cockpit. Resultado é cacheado num
-// arquivo GLOBAL em ~/.claude/tootega/ (serve qualquer projeto). No carregamento,
-// só os comandos ausentes no cache são pesquisados. Usa o helper AiClient (API
-// direta, ~1-2s) — antes era one-shot do CLI (~5s de cold start).
+// Researches, via AI, metadata for unknown slash commands: category (for
+// grouping), a short hint and a detail — in the Cockpit's language. The result is cached in a
+// GLOBAL file under ~/.claude/tootega/ (serves any project). On load,
+// only the commands missing from the cache are researched. Uses the AiClient helper (direct
+// API, ~1-2s) — it used to be a CLI one-shot (~5s of cold start).
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -43,7 +43,7 @@ interface Cache {
   locales: Record<string, Record<string, CmdInfo>>;
 }
 
-// Built-ins já cobertos pelo catálogo estático do webview — não gastam IA.
+// Built-ins already covered by the webview's static catalog — they don't spend AI.
 const BUILTIN = new Set([
   'clear', 'compact', 'context', 'memory', 'resume', 'model', 'config', 'permissions',
   'review', 'init', 'mcp', 'agents', 'hooks', 'login', 'logout', 'cost', 'usage', 'status',
@@ -57,7 +57,7 @@ function loadCache(): Cache {
     const o = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
     if (o && typeof o === 'object' && o.locales) return o as Cache;
   } catch {
-    /* arquivo ausente/corrompido: começa vazio */
+    /* missing/corrupted file: starts empty */
   }
   return { version: 1, locales: {} };
 }
@@ -78,9 +78,9 @@ function langName(locale: string): string {
 let inFlight = false;
 
 /**
- * Devolve o mapa cmd->CmdInfo do locale (cache + recém-pesquisados). Pesquisa via
- * IA só os comandos ausentes no cache e fora do catálogo built-in. Best-effort:
- * falha de IA mantém o cache atual.
+ * Returns the cmd->CmdInfo map for the locale (cache + freshly researched). Researches via
+ * AI only the commands missing from the cache and outside the built-in catalog. Best-effort:
+ * an AI failure keeps the current cache.
  */
 export async function researchCommands(opts: {
   commands: string[];
@@ -134,7 +134,7 @@ function buildPrompt(missing: string[], locale: string): string {
 }
 
 function parseAI(text: string, missing: string[]): Record<string, AiInfo> {
-  // O helper devolve o texto do modelo direto (o JSON pedido).
+  // The helper returns the model's text directly (the JSON we asked for).
   const raw = JSON.parse(extractJson(text)) as Record<string, unknown>;
   const out: Record<string, AiInfo> = {};
   for (const name of missing) {

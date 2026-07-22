@@ -1,19 +1,19 @@
-// Colheita automática de termos técnicos do workspace para alimentar os keyterms
-// do STT (header x-config-keyterms). Como o proxy Anthropic NÃO aceita
-// language=multi (testado: 1003), o modelo roda monolíngue e deforma palavra
-// inglesa em fonema PT. Keyterms é a alavanca que ancora a grafia literal de
-// nomes/jargão — então quanto mais termos relevantes do projeto, melhor o
-// reconhecimento de "deploy", "commit", "WebSocket", nomes de deps etc.
+// Automatic harvesting of technical terms from the workspace to feed the STT
+// keyterms (x-config-keyterms header). Since the Anthropic proxy does NOT accept
+// language=multi (tested: 1003), the model runs monolingual and warps English
+// words into pt-BR phonemes. Keyterms is the lever that anchors the literal spelling of
+// names/jargon — so the more relevant project terms, the better the
+// recognition of "deploy", "commit", "WebSocket", dependency names and so on.
 //
-// Fontes (baratas, sem parse de AST): nomes das dependências do package.json +
-// um glossário técnico fixo. Tudo deduplicado; o teto final é aplicado em
-// buildKeyterms (orçamento de chars do header).
+// Sources (cheap, no AST parsing): the package.json dependency names +
+// a fixed technical glossary. All deduplicated; the final cap is applied in
+// buildKeyterms (the header's char budget).
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { log } from '../util/logger';
 
-// Glossário técnico neutro: palavras que o modelo PT costuma deformar e que
-// aparecem em ditado de dev. Não inclui nomes de projeto (vêm do workspace).
+// Neutral technical glossary: words the pt-BR model tends to warp and that
+// show up in developer dictation. It excludes project names (those come from the workspace).
 const TECH_GLOSSARY = [
   'TypeScript', 'JavaScript', 'Node', 'npm', 'React', 'Vite', 'WebSocket',
   'API', 'JSON', 'HTTP', 'HTTPS', 'URL', 'CLI', 'GUI', 'SDK', 'UUID',
@@ -24,20 +24,20 @@ const TECH_GLOSSARY = [
   'TypeScript', 'Claude', 'Anthropic', 'Deepgram', 'OpenTelemetry', 'OTEL',
 ];
 
-// Cache por diretório: ler package.json a cada ditado é barato, mas evita
-// retrabalho dentro da mesma janela. TTL curto reflete edição do package.json.
+// Per-directory cache: reading package.json on every dictation is cheap, but this avoids
+// redoing it within the same window. The short TTL reflects package.json edits.
 const CACHE_TTL_MS = 30_000;
 let cache: { cwd: string; at: number; terms: string[] } | undefined;
 
-/** Limpa um nome de dependência npm em termos pronunciáveis. */
+/** Cleans an npm dependency name into pronounceable terms. */
 function depToTerms(name: string): string[] {
-  // "@scope/pkg-name" -> ["scope", "pkg", "name"] + o nome inteiro sem escopo.
+  // "@scope/pkg-name" -> ["scope", "pkg", "name"] + the whole name without the scope.
   const noScope = name.replace(/^@/, '').replace(/\//g, '-');
   const parts = noScope.split(/[-_.]/g).filter((p) => p.length >= 3 && /[a-z]/i.test(p));
   return parts;
 }
 
-/** Lê nomes de deps/devDeps do package.json (vazio se ausente/inválido). */
+/** Reads deps/devDeps names from package.json (empty when missing/invalid). */
 function harvestPackageJson(cwd: string): string[] {
   try {
     const raw = fs.readFileSync(path.join(cwd, 'package.json'), 'utf8');
@@ -52,8 +52,8 @@ function harvestPackageJson(cwd: string): string[] {
 }
 
 /**
- * Termos técnicos colhidos do workspace + glossário fixo, deduplicados.
- * Resultado entra como "extras" de buildKeyterms (depois dos termos do usuário).
+ * Technical terms harvested from the workspace + the fixed glossary, deduplicated.
+ * The result goes in as buildKeyterms "extras" (after the user's terms).
  */
 export function workspaceTerms(cwd: string): string[] {
   const now = Date.now();
@@ -68,6 +68,6 @@ export function workspaceTerms(cwd: string): string[] {
     }
   }
   cache = { cwd, at: now, terms: out };
-  log(`[voice] workspace terms colhidos: ${out.length}`);
+  log(`[voice] workspace terms harvested: ${out.length}`);
   return out;
 }

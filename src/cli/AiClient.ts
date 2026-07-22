@@ -1,11 +1,11 @@
-// Helper reusável p/ chamadas de IA "utilitárias" (correção de ditado, pesquisa de
-// metadados de comandos, etc.). Usa a Messages API da Anthropic direto, com o
-// token OAuth da assinatura (mesma auth do CLI). É LIMPO de propósito: manda só
-// system + user, NENHUMA tool/MCP/CLAUDE.md/contexto. Rápido (~1-2s) — sem o cold
-// start (~5s) e o system prompt + tools do one-shot do CLI.
+// Reusable helper for "utility" AI calls (dictation correction, command metadata
+// research, etc.). Uses Anthropic's Messages API directly, with the
+// subscription's OAuth token (the same auth as the CLI). It is CLEAN on purpose: it sends only
+// system + user, NO tools/MCP/CLAUDE.md/context. Fast (~1-2s) — without the cold
+// start (~5s) and the system prompt + tools of a CLI one-shot.
 //
-// NÃO é o loop do agente (esse continua no CLI). É um utilitário isolado, na
-// exceção do CLAUDE.md. Só LEITURA do token; nunca grava nem loga credenciais.
+// This is NOT the agent loop (that stays in the CLI). It is an isolated utility, under
+// the CLAUDE.md exception. Token is READ-only; credentials are never written or logged.
 import * as https from 'node:https';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -17,17 +17,17 @@ const DEFAULT_MODEL = 'claude-haiku-4-5';
 const DEFAULT_MAX_TOKENS = 4096;
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-// Modelo das chamadas internas (correção, pesquisa de comandos…). O host injeta
-// da config (tootega.internalModel); vazio = Haiku. Override por chamada via
-// opts.model ainda vence.
+// Model for internal calls (correction, command research…). The host injects it
+// from the config (tootega.internalModel); empty = Haiku. A per-call override via
+// opts.model still wins.
 let internalModel = DEFAULT_MODEL;
 
-/** Define o modelo interno (chamado pelo host na config). Vazio = Haiku. */
+/** Sets the internal model (called by the host from the config). Empty = Haiku. */
 export function setInternalModel(model?: string): void {
   internalModel = model && model.trim() ? model.trim() : DEFAULT_MODEL;
 }
 
-/** accessToken OAuth (só leitura). undefined se ausente/ilegível. */
+/** OAuth accessToken (read-only). undefined when missing/unreadable. */
 export function readOauthToken(): string | undefined {
   try {
     const o = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
@@ -39,11 +39,11 @@ export function readOauthToken(): string | undefined {
 }
 
 /**
- * Validade do LOGIN (epoch ms), só leitura. É o `refreshTokenExpiresAt`: o
- * `expiresAt` é do accessToken (horas) e o CLI o renova sozinho pelo refresh —
- * quem realmente vence o login, e obriga a rodar `/login`, é o refresh token.
- * Cai no `expiresAt` só quando o campo do refresh não existe. undefined se
- * ausente/ilegível (ex.: conta por API key, credencial em keychain do SO).
+ * LOGIN validity (epoch ms), read-only. This is `refreshTokenExpiresAt`: the
+ * `expiresAt` belongs to the accessToken (hours) and the CLI renews it by itself via refresh —
+ * what actually expires the login, and forces a `/login`, is the refresh token.
+ * Falls back to `expiresAt` only when the refresh field is absent. undefined when
+ * missing/unreadable (e.g. API-key account, credential in the OS keychain).
  */
 export function readLoginExpiry(): number | undefined {
   try {
@@ -65,8 +65,8 @@ export interface AskOpts {
 }
 
 /**
- * Faz uma pergunta one-shot e devolve o texto da resposta, ou undefined em
- * falha (sem token, HTTP != 2xx, timeout, parse). Não lança.
+ * Asks a one-shot question and returns the response text, or undefined on
+ * failure (no token, HTTP != 2xx, timeout, parse). Does not throw.
  */
 export function ask(opts: AskOpts): Promise<string | undefined> {
   return new Promise((resolve) => {

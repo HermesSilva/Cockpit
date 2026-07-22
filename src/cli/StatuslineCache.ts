@@ -1,5 +1,5 @@
-// Lê ~/.claude/.tootega-usage.json (gravado pelo wrapper de statusline) e
-// extrai os limites reais da conta. Parser tolerante a variações de campo.
+// Reads ~/.claude/.tootega-usage.json (written by the statusline wrapper) and
+// extracts the real account limits. Parser tolerant to field variations.
 import * as fs from 'node:fs';
 import { USAGE_CACHE } from './StatuslineInstaller';
 import type { LimitWindow, ScopedBucket } from '../../shared/protocol';
@@ -31,7 +31,7 @@ export function readUsageCache(): RealLimits | undefined {
   return { fiveHour, sevenDay, weeklyScoped, ageMs, raw: rl };
 }
 
-/** Formato atual: `limits[]` com kind session|weekly_all|weekly_scoped + scope.model.display_name. */
+/** Current format: `limits[]` with kind session|weekly_all|weekly_scoped + scope.model.display_name. */
 function parseKinds(limits: unknown): Omit<RealLimits, 'ageMs' | 'raw'> {
   if (!Array.isArray(limits)) return {};
   const out: Omit<RealLimits, 'ageMs' | 'raw'> = {};
@@ -68,7 +68,7 @@ function legacyScoped(rl: any): ScopedBucket[] | undefined {
   return scoped.length ? scoped : undefined;
 }
 
-/** Idade (ms) do cache a partir do campo `ts` (ISO). undefined se ausente/inválido. */
+/** Cache age (ms) from the `ts` field (ISO). undefined when missing/invalid. */
 function cacheAge(ts: unknown): number | undefined {
   if (typeof ts !== 'string') return undefined;
   const t = Date.parse(ts);

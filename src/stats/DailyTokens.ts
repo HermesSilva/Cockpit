@@ -1,18 +1,18 @@
-// Contador GLOBAL de tokens (enviado / recebido / total), agregado por dia.
-// Fonte: os transcripts em ~/.claude/projects/**/*.jsonl — escritos pelo CLI e
-// COMPARTILHADOS por todos os contextos e por todas as instâncias do VSCode na
-// máquina. Por isso o número é naturalmente "global": qualquer janela/contexto
-// que tenha rodado um turno deixou rastro aqui.
+// GLOBAL token counter (sent / received / total), aggregated per day.
+// Source: the transcripts in ~/.claude/projects/**/*.jsonl — written by the CLI and
+// SHARED by every context and every VSCode instance on the
+// machine. That's why the number is naturally "global": any window/context
+// that ran a turn left a trace here.
 //
-// "enviado"  = input + cache_read + cache_creation (tudo que foi mandado ao modelo)
-// "recebido" = output
-// "total"    = enviado + recebido
+// "sent"     = input + cache_read + cache_creation (everything sent to the model)
+// "received" = output
+// "total"    = sent + received
 //
-// Performance: varrer TODO o histórico a cada abertura seria caro. Mantemos um
-// rollup incremental em ~/.claude/tootega/tokens-rollup.json: por arquivo guarda
-// mtime+size e o mapa dia→{s,r}; só re-lê o arquivo se ele mudou. O rollup é um
-// CACHE derivado (a verdade são os .jsonl): escrita atômica, last-write-wins
-// entre instâncias, sem necessidade de lock.
+// Performance: scanning the WHOLE history on every open would be expensive. We keep an
+// incremental rollup in ~/.claude/tootega/tokens-rollup.json: per file it stores
+// mtime+size and the day→{s,r} map; a file is only re-read when it changed. The rollup is a
+// derived CACHE (the .jsonl files are the truth): atomic write, last-write-wins
+// between instances, no lock needed.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -20,14 +20,14 @@ import { log } from '../util/logger';
 import { usageKey } from './usageKey';
 import type { Usage } from '../../shared/events';
 
-/** Tokens de um único dia (chave local YYYY-MM-DD). */
+/** Tokens of a single day (local YYYY-MM-DD key). */
 export interface DailyTokens {
   date: string; // YYYY-MM-DD no fuso local
   sent: number; // input + cache_read + cache_creation
   received: number; // output
 }
 
-/** Totais globais (all-time) + recorte por dia (mais recente primeiro). */
+/** Global totals (all-time) + per-day slice (most recent first). */
 export interface TokenTotals {
   sent: number;
   received: number;
@@ -35,12 +35,12 @@ export interface TokenTotals {
   days: DailyTokens[]; // limitado p/ exibição; total é all-time
 }
 
-// v2: linhas da mesma resposta deixaram de ser somadas repetidamente (usageKey).
-// Bump força o descarte do rollup antigo, que guarda totais inflados.
+// v2: lines of the same response are no longer summed repeatedly (usageKey).
+// The bump forces discarding the old rollup, which holds inflated totals.
 const ROLLUP_VERSION = 2;
 const ROLLUP = path.join(os.homedir(), '.claude', 'tootega', 'tokens-rollup.json');
 
-/** Mapa dia→{s:sent, r:received} de UM arquivo. */
+/** day→{s:sent, r:received} map of ONE file. */
 type FileDays = Record<string, { s: number; r: number }>;
 interface FileEntry {
   mtimeMs: number;
@@ -52,7 +52,7 @@ interface Rollup {
   files: Record<string, FileEntry>;
 }
 
-/** YYYY-MM-DD no fuso LOCAL (não UTC — "por dia" é o dia do usuário). */
+/** YYYY-MM-DD in the LOCAL timezone (not UTC — "per day" is the user's day). */
 function localDay(ts: number): string {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -66,7 +66,7 @@ function loadRollup(): Rollup {
     const o = JSON.parse(fs.readFileSync(ROLLUP, 'utf8'));
     if (o && o.version === ROLLUP_VERSION && o.files) return o as Rollup;
   } catch {
-    /* ausente/corrompido/versão antiga: recomeça do zero */
+    /* missing/corrupted/old version: starts from scratch */
   }
   return { version: ROLLUP_VERSION, files: {} };
 }
@@ -82,7 +82,7 @@ function saveRollup(r: Rollup): void {
   }
 }
 
-/** Lê um .jsonl e devolve o mapa dia→{s,r} das linhas assistant com usage. */
+/** Reads a .jsonl and returns the day→{s,r} map of the assistant lines with usage. */
 function parseFile(content: string): FileDays {
   const days: FileDays = {};
   const counted = new Set<string>(); // ids já contados neste arquivo (ver usageKey)
@@ -118,8 +118,8 @@ function parseFile(content: string): FileDays {
 }
 
 /**
- * Agrega tokens por dia em TODA a máquina (global). `maxDays` limita só o recorte
- * exibido; os totais sent/received/total são all-time.
+ * Aggregates tokens per day across the WHOLE machine (global). `maxDays` only limits the
+ * displayed slice; the sent/received/total figures are all-time.
  */
 export async function computeDailyTokens(maxDays = 30): Promise<TokenTotals> {
   const base = path.join(os.homedir(), '.claude', 'projects');
@@ -147,7 +147,7 @@ export async function computeDailyTokens(maxDays = 30): Promise<TokenTotals> {
       try {
         const st = await fs.promises.stat(full);
         const cached = prev.files[full];
-        // Inalterado (mesmo mtime+size): reaproveita o agregado, não re-lê.
+        // Unchanged (same mtime+size): reuses the aggregate, doesn't re-read.
         if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
           next.files[full] = cached;
           continue;
@@ -155,14 +155,14 @@ export async function computeDailyTokens(maxDays = 30): Promise<TokenTotals> {
         const content = await fs.promises.readFile(full, 'utf8');
         next.files[full] = { mtimeMs: st.mtimeMs, size: st.size, days: parseFile(content) };
       } catch {
-        /* arquivo problemático: ignora (entradas órfãs caem fora do next) */
+        /* problematic file: ignored (orphan entries fall out of next) */
       }
     }
   }
 
   saveRollup(next);
 
-  // Soma todos os arquivos → mapa dia→{s,r} global.
+  // Sums every file → global day→{s,r} map.
   const byDay = new Map<string, { s: number; r: number }>();
   let sent = 0;
   let received = 0;

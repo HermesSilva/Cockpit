@@ -1,7 +1,7 @@
-// Integração de statusline para capturar o rate_limits real da conta.
-// Instala um wrapper que: (1) grava rate_limits/context em ~/.claude/.tootega-usage.json,
-// (2) re-invoca a statusline original do usuário (preservando, ex.: o badge caveman).
-// Reversível. Windows (PowerShell) por enquanto.
+// Statusline integration to capture the account's real rate_limits.
+// Installs a wrapper that: (1) writes rate_limits/context to ~/.claude/.tootega-usage.json,
+// (2) re-invokes the user's original statusline (preserving, e.g., the caveman badge).
+// Reversible. Windows (PowerShell) for now.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -59,9 +59,9 @@ function isOurWrapper(cmd: unknown): boolean {
 }
 
 /**
- * Extrai e decodifica o argumento -Original "<b64>" de um comando wrapper.
- * Permite recuperar a statusline original mesmo quando a memória da extensão
- * está vazia (ex.: wrapper instalado por fora do fluxo normal). '' -> undefined.
+ * Extracts and decodes the -Original "<b64>" argument of a wrapper command.
+ * Allows recovering the original statusline even when the extension's memory
+ * is empty (e.g. wrapper installed outside the normal flow). '' -> undefined.
  */
 function decodeOriginalArg(cmd: string): string | undefined {
   const m = cmd.match(/-Original\s+"([^"]*)"/);
@@ -82,7 +82,7 @@ export function isEnabled(): boolean {
   }
 }
 
-/** Instala o wrapper. Retorna mensagem para o usuário. */
+/** Installs the wrapper. Returns a message for the user. */
 export function enableUsageTracking(memory: vscode.Memento): string {
   if (process.platform !== 'win32') {
     return 'unsupported';
@@ -92,7 +92,7 @@ export function enableUsageTracking(memory: vscode.Memento): string {
   try {
     settings = JSON.parse(fs.readFileSync(sp, 'utf8'));
   } catch {
-    // arquivo pode não existir ou ter comentários
+    // the file may not exist or may have comments
     try {
       fs.accessSync(sp);
       return 'parse-error';
@@ -102,12 +102,12 @@ export function enableUsageTracking(memory: vscode.Memento): string {
   }
 
   const cur = settings?.statusLine?.command;
-  // Captura a statusline original (a não ser que já seja a nossa).
+  // Captures the original statusline (unless it is already ours).
   if (typeof cur === 'string' && cur) {
     if (!isOurWrapper(cur)) {
       void memory.update('statuslineOriginal', cur);
     } else if (!memory.get<string>('statuslineOriginal', '')) {
-      // Re-enable sobre wrapper instalado por fora: recupera a original do -Original.
+      // Re-enable over a wrapper installed elsewhere: recovers the original from -Original.
       const recovered = decodeOriginalArg(cur);
       if (recovered) void memory.update('statuslineOriginal', recovered);
     }
@@ -125,7 +125,7 @@ export function enableUsageTracking(memory: vscode.Memento): string {
   return 'ok';
 }
 
-/** Remove o wrapper, restaurando a statusline original. */
+/** Removes the wrapper, restoring the original statusline. */
 export function disableUsageTracking(memory: vscode.Memento): string {
   const sp = settingsPath();
   let settings: any = {};
@@ -136,7 +136,7 @@ export function disableUsageTracking(memory: vscode.Memento): string {
   }
   let original = memory.get<string>('statuslineOriginal', '');
   if (!original) {
-    // Memória vazia (wrapper instalado por fora): recupera do -Original do comando atual.
+    // Empty memory (wrapper installed elsewhere): recovers it from the current command's -Original.
     const cur = settings?.statusLine?.command;
     if (typeof cur === 'string' && isOurWrapper(cur)) original = decodeOriginalArg(cur) ?? '';
   }

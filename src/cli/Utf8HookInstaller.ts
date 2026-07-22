@@ -1,36 +1,36 @@
-// Correção de acentuação (UTF-8) nas tools de shell do Windows.
+// Accent (UTF-8) fix for the Windows shell tools.
 //
-// Problema: o Cockpit sobe o `claude` headless (stdio em pipes, SEM console).
-// Sem console anexado, o .NET resolve [Console]::OutputEncoding pelo OEMCP do
-// sistema (ex.: 437) em vez de UTF-8 — então `powershell`/`cmd` escrevem a saída
-// em code page legada e o CLI, que lê como UTF-8, mostra mojibake. Pior: chars
-// fora da CP (ex.: 'ã' na 437) são PERDIDOS na escrita, então não há conserto
-// possível do lado do decode. No terminal isso não aparece porque o console já
-// está em `chcp 65001`.
+// Problem: the Cockpit starts `claude` headless (stdio over pipes, WITHOUT a console).
+// With no console attached, .NET resolves [Console]::OutputEncoding from the system
+// OEMCP (e.g. 437) instead of UTF-8 — so `powershell`/`cmd` write their output
+// in a legacy code page and the CLI, which reads it as UTF-8, shows mojibake. Worse: chars
+// outside that CP (e.g. 'ã' in 437) are LOST at write time, so there is no possible
+// fix on the decoding side. In a terminal this doesn't happen because the console is already
+// at `chcp 65001`.
 //
-// Solução: um hook PreToolUse que prefixa todo comando da tool PowerShell com o
-// ajuste de encoding. Independe de code page da máquina, não exige reboot e não
-// altera nenhuma configuração do sistema.
+// Solution: a PreToolUse hook that prefixes every PowerShell tool command with the
+// encoding setup. It is independent of the machine's code page, requires no reboot and
+// changes no system setting.
 //
-// Segurança: o hook NUNCA bloqueia nem nega uma tool — qualquer erro vira no-op
-// silencioso (exit 0 sem saída). É idempotente (marcador no prefixo) e reversível.
+// Safety: the hook NEVER blocks or denies a tool — any error becomes a silent
+// no-op (exit 0 with no output). It is idempotent (marker in the prefix) and reversible.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-/** Marcador usado para (a) idempotência do prefixo e (b) identificar nosso hook. */
+/** Marker used for (a) prefix idempotency and (b) identifying our hook. */
 const MARK = 'tootega-utf8';
 
-const HOOK_PS = String.raw`# Tootega Cockpit — PreToolUse: força UTF-8 na saída da tool PowerShell.
-# Lê o evento do hook no stdin e devolve o mesmo tool_input com o comando
-# prefixado. Qualquer falha => no-op silencioso (nunca bloqueia a tool).
+const HOOK_PS = String.raw`# Tootega Cockpit — PreToolUse: forces UTF-8 on the PowerShell tool output.
+# Reads the hook event from stdin and returns the same tool_input with the command
+# prefixed. Any failure => silent no-op (it never blocks the tool).
 $ErrorActionPreference = 'Stop'
 
 $MARK = '# tootega-utf8'
 $PREAMBLE = 'try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); $OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {} ' + $MARK
 
 try {
-  # Lê o stdin como UTF-8 explícito (não depende do console/code page da máquina).
+  # Reads stdin as explicit UTF-8 (independent of the machine's console/code page).
   $stdin = [System.IO.StreamReader]::new([Console]::OpenStandardInput(), [System.Text.UTF8Encoding]::new($false))
   $raw = $stdin.ReadToEnd()
   if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
@@ -42,11 +42,11 @@ try {
   if ($null -eq $ti) { exit 0 }
   $cmd = [string]$ti.command
   if ([string]::IsNullOrEmpty($cmd)) { exit 0 }
-  if ($cmd.Contains($MARK)) { exit 0 }   # já prefixado
+  if ($cmd.Contains($MARK)) { exit 0 }   # already prefixed
 
-  # LF (e não ';') p/ não quebrar comentários, here-strings e comandos multilinha.
-  # LF puro, nunca CRLF: o CLI valida o updatedInput e REJEITA caracteres de
-  # controle no comando (só TAB e LF passam) — um CR invalidaria a reescrita.
+  # LF (and not ';') so comments, here-strings and multiline commands don't break.
+  # Pure LF, never CRLF: the CLI validates updatedInput and REJECTS control
+  # characters in the command (only TAB and LF pass) — a CR would invalidate the rewrite.
   $ti.command = $PREAMBLE + [string][char]10 + $cmd
 
   $out = [ordered]@{
@@ -56,8 +56,8 @@ try {
     }
   }
   $json = $out | ConvertTo-Json -Depth 20 -Compress
-  # Escreve BYTES UTF-8 direto no stdout: [Console]::Out usaria o OutputEncoding
-  # do processo (o mesmo OEMCP que estamos consertando) e corromperia o JSON.
+  # Writes UTF-8 BYTES straight to stdout: [Console]::Out would use the process
+  # OutputEncoding (the very OEMCP we are fixing) and would corrupt the JSON.
   $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($json)
   $stdout = [Console]::OpenStandardOutput()
   $stdout.Write($bytes, 0, $bytes.Length)
@@ -80,7 +80,7 @@ function hookCommand(): string {
   return `powershell -NoProfile -ExecutionPolicy Bypass -File "${hookPath()}"`;
 }
 
-/** true se a entrada de PreToolUse é a nossa (pelo caminho do script). */
+/** true when the PreToolUse entry is ours (by the script path). */
 function isOurEntry(entry: any): boolean {
   const hooks = entry?.hooks;
   if (!Array.isArray(hooks)) return false;
@@ -97,7 +97,7 @@ export function isEnabled(): boolean {
   }
 }
 
-/** Lê o settings.json global. `undefined` = arquivo existe mas não é JSON válido. */
+/** Reads the global settings.json. `undefined` = the file exists but isn't valid JSON. */
 function readSettings(): any | undefined {
   const sp = settingsPath();
   try {
@@ -105,17 +105,17 @@ function readSettings(): any | undefined {
   } catch {
     try {
       fs.accessSync(sp);
-      return undefined; // existe e está ilegível (comentários?) — não sobrescrever
+      return undefined; // exists and is unreadable (comments?) — don't overwrite
     } catch {
-      return {}; // ainda não existe
+      return {}; // doesn't exist yet
     }
   }
 }
 
-/** Instala o hook em ~/.claude/settings.json. Retorna 'ok' | 'unsupported' | 'parse-error'. */
+/** Installs the hook in ~/.claude/settings.json. Returns 'ok' | 'unsupported' | 'parse-error'. */
 export function enableUtf8Fix(): string {
-  // O problema (e a tool PowerShell) só existem no Windows. Em Linux/macOS as
-  // shells já são UTF-8 — nada a instalar.
+  // The problem (and the PowerShell tool) only exist on Windows. On Linux/macOS the
+  // shells are already UTF-8 — nothing to install.
   if (process.platform !== 'win32') return 'unsupported';
 
   const settings = readSettings();
@@ -127,7 +127,7 @@ export function enableUtf8Fix(): string {
 
   if (typeof settings.hooks !== 'object' || settings.hooks === null) settings.hooks = {};
   const list: any[] = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
-  // Remove versões anteriores da nossa entrada e preserva as dos outros.
+  // Removes previous versions of our entry and preserves everyone else's.
   const kept = list.filter((e) => !isOurEntry(e));
   kept.push({
     matcher: 'PowerShell',
@@ -139,7 +139,7 @@ export function enableUtf8Fix(): string {
   return 'ok';
 }
 
-/** Remove o hook, preservando as demais entradas de PreToolUse. */
+/** Removes the hook, preserving the other PreToolUse entries. */
 export function disableUtf8Fix(): string {
   const settings = readSettings();
   if (!settings) return 'parse-error';
@@ -155,7 +155,7 @@ export function disableUtf8Fix(): string {
   try {
     fs.unlinkSync(hookPath());
   } catch {
-    /* já removido */
+    /* already removed */
   }
   return 'ok';
 }

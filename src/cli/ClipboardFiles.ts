@@ -1,9 +1,9 @@
-// Lê os caminhos de arquivos copiados no gerenciador de arquivos do SO — info que
-// o webview sandbox não expõe (File.path ausente). Por plataforma:
+// Reads the paths of files copied in the OS file manager — information the webview
+// sandbox does not expose (File.path is absent). Per platform:
 //   win32  : PowerShell Get-Clipboard -Format FileDropList (CF_HDROP)
 //   darwin : AppleScript (the clipboard as «class furl») → POSIX path
 //   linux  : text/uri-list via wl-paste (Wayland) ou xclip (X11) → file:// decodificado
-// Best-effort: ferramenta ausente / sem arquivos → [].
+// Best-effort: missing tool / no files → [].
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -29,7 +29,7 @@ function readWindows(): string[] {
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      // Força UTF-8 na saída (evita corrupção de acentos por code page).
+      // Forces UTF-8 on the output (avoids accent corruption from the code page).
       '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }',
     ],
     { encoding: 'utf8', timeout: 5000 },
@@ -42,7 +42,7 @@ function readWindows(): string[] {
 }
 
 function readMac(): string[] {
-  // Finder copia arquivos como file-url. AppleScript devolve o POSIX path.
+  // Finder copies files as file-urls. AppleScript returns the POSIX path.
   const res = spawnSync(
     'osascript',
     ['-e', 'POSIX path of (the clipboard as «class furl»)'],
@@ -54,8 +54,8 @@ function readMac(): string[] {
 }
 
 function readLinux(): string[] {
-  // Gerenciadores de arquivo expõem a seleção como text/uri-list (file://...).
-  // Tenta Wayland (wl-paste) e depois X11 (xclip); decodifica file:// → caminho.
+  // File managers expose the selection as text/uri-list (file://...).
+  // Tries Wayland (wl-paste) then X11 (xclip); decodes file:// → path.
   const tries: Array<[string, string[]]> = [
     ['wl-paste', ['-t', 'text/uri-list']],
     ['xclip', ['-selection', 'clipboard', '-t', 'text/uri-list', '-o']],

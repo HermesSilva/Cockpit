@@ -1,6 +1,6 @@
 // Conta da assinatura via `claude auth status --json` (fonte oficial do CLI).
-// Equivale ao bloco ACCOUNT do /usage: método de auth, e-mail, org e plano.
-// Assíncrono p/ não bloquear o host da extensão.
+// Equivalent to the ACCOUNT block of /usage: auth method, e-mail, org and plan.
+// Asynchronous so it doesn't block the extension host.
 import { spawn } from 'node:child_process';
 import { readLoginExpiry } from './AiClient';
 
@@ -11,13 +11,13 @@ export interface AccountInfo {
   email?: string;
   orgName?: string;
   plan?: string; // subscriptionType ('max' | 'pro' | …)
-  // Validade do login (epoch ms). NÃO vem do `auth status --json` — é lida do
-  // ~/.claude/.credentials.json. Serve p/ avisar antes do login vencer (o CLI
-  // passou a avisar na 2.1.203) e não interromper sessões longas/background.
+  // Login validity (epoch ms). It does NOT come from `auth status --json` — it is read
+  // from ~/.claude/.credentials.json. Used to warn before the login expires (the CLI
+  // started warning in 2.1.203) so long/background sessions aren't interrupted.
   loginExpiresAt?: number;
 }
 
-/** Busca a conta ao vivo (dado quente). Tolerante: falha/timeout → { loggedIn:false }. */
+/** Fetches the account live (hot data). Tolerant: failure/timeout → { loggedIn:false }. */
 export function fetchAuthStatus(claudePath: string): Promise<AccountInfo> {
   return new Promise((resolve) => {
     let done = false;

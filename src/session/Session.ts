@@ -1,7 +1,7 @@
-// Um runtime de conversa: encapsula um processo do CLI, suas estatísticas e
-// todo o estado de streaming. Emite mensagens de UI por um callback (o provider
-// as etiqueta com o id da aba e encaminha ao webview). Várias instâncias rodam
-// em paralelo — uma por aba.
+// A conversation runtime: it wraps a CLI process, its statistics and
+// all the streaming state. It emits UI messages through a callback (the provider
+// tags them with the tab id and forwards them to the webview). Several instances run
+// in parallel — one per tab.
 import { CliProcessManager } from '../cli/CliProcessManager';
 import { StatsAggregator } from '../stats/StatsAggregator';
 import { loadStats, saveStats } from '../stats/StatsStore';
@@ -23,19 +23,19 @@ export interface SessionHooks {
   onInteraction: () => void;
   onInit: (model?: string, slashCommands?: string[]) => void;
   onAuthRequired: () => void;
-  // Turno encerrou de forma anormal: o host localiza e mostra o aviso na aba.
-  //  - 'aborted': o processo do CLI morreu no meio do turno (sem result).
-  //  - 'error':   o CLI reportou um result de erro (texto da própria CLI).
-  //  - 'transient': queda/stall (CLI re-tenta); aviso brando.
+  // The turn ended abnormally: the host locates it and shows the warning in the tab.
+  //  - 'aborted': the CLI process died mid-turn (no result).
+  //  - 'error':   the CLI reported an error result (the CLI's own text).
+  //  - 'transient': drop/stall (the CLI retries); soft warning.
   onTurnError?: (info: { kind: 'aborted' | 'error' | 'transient'; code?: number | null; text?: string }) => void;
   fileText: (tool: string, input: unknown) => string | undefined;
-  // Cada tool_use (antes da execução): permite autosave de arquivos read/write.
+  // Each tool_use (before execution): enables autosaving read/write files.
   onToolUse?: (tool: string, input: unknown) => void;
   claudePath: () => string;
   cwd: () => string;
-  // Defaults vindos das settings (o que 'default' resolve quando não há override).
+  // Defaults coming from the settings (what 'default' resolves to when there is no override).
   settings: () => { model: string; effort: string; permission: string; allowAgents: boolean };
-  // Idioma (código curto: pt, en…) p/ as perguntas do agente (AskUserQuestion).
+  // Language (short code: pt, en…) for the agent's questions (AskUserQuestion).
   askLanguage: () => string;
 }
 
@@ -46,34 +46,34 @@ export class Session {
   busy = false;
   slashCommands: string[] = [];
   sessionId?: string;
-  // Último inventário do `system/init` (tools + servidores MCP). Fonte do painel MCP:
-  // diz quais tools cada servidor expõe — algo que o `claude mcp list` não informa.
+  // Latest `system/init` inventory (tools + MCP servers). The MCP panel's source:
+  // it says which tools each server exposes — something `claude mcp list` doesn't report.
   lastTools?: string[];
   lastMcpServers?: { name: string; status: string }[];
 
-  // Tarefas em background ainda rodando (Workflow / tool com run_in_background).
-  // O turno que as lança termina (`result` zera o busy), mas o trabalho continua;
-  // mantemos o indicador de "executando" vivo enquanto este mapa não esvaziar.
-  // Chave = `task_id` do engine; valor = {tool, label} mostrado ao usuário.
+  // Background tasks still running (Workflow / tool with run_in_background).
+  // The turn that launches them ends (`result` clears busy), but the work goes on;
+  // we keep the "running" indicator alive while this map isn't empty.
+  // Key = the engine's `task_id`; value = {tool, label} shown to the user.
   //
-  // A fonte da verdade são os eventos `system` do stream (`background_tasks_changed`,
-  // `task_started`, `task_updated`, `task_notification`). NÃO dá para deduzir do texto
-  // `<task-notification>`: quando a tarefa termina com um turno em voo, a CLI enfileira
-  // a notificação e ela nunca chega ao stdout como mensagem — só o evento `system` chega.
+  // The source of truth is the stream's `system` events (`background_tasks_changed`,
+  // `task_started`, `task_updated`, `task_notification`). It can NOT be deduced from the
+  // `<task-notification>` text: when a task finishes with a turn in flight, the CLI queues
+  // the notification and it never reaches stdout as a message — only the `system` event arrives.
   private bgTasks = new Map<string, { tool: string; label: string }>();
 
-  // tool_use id → nome da tool, para dar nome à tarefa quando o `task_started` chega
-  // (o evento traz o tool_use id, não o nome). Só guarda o que ainda pode virar tarefa.
+  // tool_use id → tool name, to name the task when `task_started` arrives
+  // (the event brings the tool_use id, not the name). It only keeps what can still become a task.
   private toolNames = new Map<string, string>();
 
-  // Overrides POR ABA (em memória). Vazio = usa o default das settings.
+  // PER-TAB overrides (in memory). Empty = uses the settings default.
   modelOverride?: string;
   effortOverride?: string;
   permissionOverride?: string;
-  // Liberar agentes (Task) e workflows (Workflow). undefined = usa o default das settings.
+  // Allow agents (Task) and workflows (Workflow). undefined = uses the settings default.
   allowAgentsOverride?: boolean;
 
-  // Estado de streaming
+  // Streaming state
   private currentAssistantId?: string;
   private streamedText = new Set<string>();
   private blockKind = new Map<number, string>();
@@ -85,9 +85,9 @@ export class Session {
     this.stats = new StatsAggregator(0);
   }
 
-  // ---- ciclo de vida ----
+  // ---- lifecycle ----
 
-  // Valores efetivos (override da aba ?? default das settings).
+  // Effective values (tab override ?? settings default).
   model(): string {
     if (this.modelOverride) return this.modelOverride;
     return this.hooks.settings().model;
@@ -129,11 +129,11 @@ export class Session {
       model: model && model !== 'default' ? model : undefined,
       effort: effort && effort !== 'default' ? effort : undefined,
       permissionMode: this.permission(),
-      // Bloqueia subagentes/workflows quando desligado (economia de tokens).
+      // Blocks subagents/workflows when off (token saving).
       disallowedTools: this.allowAgents() ? undefined : ['Task', 'Workflow'],
-      // resumeId ?? sessionId: defesa contra qualquer caminho que conheça o
-      // sessionId mas não tenha fixado o resumeId — evita spawn sem --resume
-      // (que duplicaria o contexto). clearConversation() zera ambos p/ nova conversa.
+      // resumeId ?? sessionId: a defense against any path that knows the
+      // sessionId but hasn't pinned the resumeId — avoids a spawn without --resume
+      // (which would duplicate the context). clearConversation() clears both for a new conversation.
       resumeSessionId: this.resumeId ?? this.sessionId,
       askLanguage: this.hooks.askLanguage(),
     });
@@ -144,9 +144,9 @@ export class Session {
     });
     this.cli.on('exit', (code) => {
       log(`CLI exited (${code})`);
-      // Morte no meio de um turno (busy ainda ligado = não foi stop()/interrupt(),
-      // que zeram busy antes): o processo abortou sem emitir `result`. Sem aviso, o
-      // indicador some e o usuário acha que ainda roda. Finaliza e avisa.
+      // Death mid-turn (busy still on = it wasn't stop()/interrupt(),
+      // which clear busy first): the process aborted without emitting `result`. Without a warning the
+      // indicator disappears and the user thinks it is still running. Finish and warn.
       const abortedMidTurn = this.busy;
       if (abortedMidTurn) {
         if (this.currentAssistantId) this.emit({ kind: 'assistantDone', id: this.currentAssistantId });
@@ -168,8 +168,8 @@ export class Session {
     this.ensureCli();
     this.setBusy(true);
     this.stats.beginTurn(); // cronômetro do tempo de execução ativo (sem ociosidade)
-    // Estado ANTES do turno: principalmente o cache (idade/vida), p/ entender o
-    // que cada prompt encontra (cache quente vs. frio = re-pagar cacheWrite).
+    // State BEFORE the turn: mainly the cache (age/life), to understand what
+    // each prompt finds (warm vs. cold cache = re-paying the cacheWrite).
     const s = this.stats.snapshot();
     const cacheState =
       s.cacheExpiresInMs == null
@@ -195,7 +195,7 @@ export class Session {
     dlog('session', `interrupt (${this.sessionId ?? '?'})`);
   }
 
-  /** Encerra o processo; mantém as estatísticas. A próxima mensagem respawna. */
+  /** Stops the process; keeps the statistics. The next message respawns it. */
   stop(): void {
     this.resetStreamingState();
     this.pendingPerm.clear();
@@ -208,13 +208,13 @@ export class Session {
     this.resetBgTasks();
   }
 
-  /** Limpa a conversa por completo (novo/retomar): zera estatísticas também. */
+  /** Clears the conversation entirely (new/resume): also resets the statistics. */
   clearConversation(): void {
     this.stop();
     this.sessionId = undefined;
-    // Limpa também o resumeId: conversa REALMENTE nova. Sem isto, após "limpar
-    // contexto" numa sessão retomada o próximo send() respawnaria com --resume da
-    // sessão antiga (não limparia) — e o pinning do init deixaria esse id grudado.
+    // Also clears the resumeId: a REALLY new conversation. Without this, after "clear
+    // context" on a resumed session the next send() would respawn with --resume of the
+    // old session (it wouldn't clear) — and the init pinning would keep that id glued on.
     this.resumeId = undefined;
     this.stats = new StatsAggregator(0);
   }
@@ -222,8 +222,8 @@ export class Session {
   resume(sessionId: string): void {
     this.clearConversation();
     this.resumeId = sessionId;
-    // Hidrata os acumuladores persistidos: a sessão CONTINUA coerente (o CLI não
-    // re-emite o usage dos turnos antigos no --resume).
+    // Hydrates the persisted accumulators: the session KEEPS being coherent (the CLI doesn't
+    // re-emit the usage of old turns on --resume).
     const persisted = loadStats(sessionId);
     if (persisted) this.stats.hydrate(persisted);
     this.stats.markReopen(); // contador de reaberturas do contexto
@@ -236,17 +236,17 @@ export class Session {
     this.emitTimeline();
   }
 
-  /** Persiste as estatísticas desta sessão (debounced/atômico). Requer sessionId. */
+  /** Persists this session's statistics (debounced/atomic). Requires a sessionId. */
   private persist(): void {
     const id = this.sessionId ?? this.resumeId;
     if (id) saveStats(this.stats.serialize(id, this.hooks.cwd()));
   }
 
   /**
-   * Ping de keep-alive pelo CLI VIVO desta sessão (não por --resume paralelo, que
-   * conflitaria com o processo aberto). Reutiliza o fluxo normal de turno: o
-   * `result` fecha o cronômetro e persiste o lastTurnTs → reinicia a vida do cache.
-   * Devolve false se ocupado (turno em andamento já mantém o cache quente).
+   * Keep-alive ping through this session's LIVE CLI (not through a parallel --resume, which
+   * would conflict with the open process). It reuses the normal turn flow: the
+   * `result` stops the stopwatch and persists lastTurnTs → restarting the cache life.
+   * Returns false when busy (a turn in progress already keeps the cache warm).
    */
   keepAlivePing(): boolean {
     if (this.busy) return false;
@@ -258,7 +258,7 @@ export class Session {
     return true;
   }
 
-  /** Liga/desliga o keep-alive de cache deste contexto e persiste o estado. */
+  /** Turns this context's cache keep-alive on/off and persists the state. */
   setKeepCacheAlive(value: boolean): void {
     this.stats.setKeepCacheAlive(value);
     this.persist();
@@ -266,7 +266,7 @@ export class Session {
     dlog('session', `keepCacheAlive=${value} (${this.sessionId ?? this.resumeId ?? '?'})`);
   }
 
-  /** Envia a timeline/compactações (pesado) — por turno, não por token. */
+  /** Sends the timeline/compactions (heavy) — per turn, not per token. */
   private emitTimeline(): void {
     const { timeline, compactions } = this.stats.timelineSnapshot();
     this.emit({ kind: 'statsTimeline', timeline, compactions });
@@ -280,23 +280,23 @@ export class Session {
     return this.stats.snapshot();
   }
 
-  /** Reenvia a timeline/compactações desta sessão (ao trocar/abrir a aba). */
+  /** Re-sends this session's timeline/compactions (when switching/opening the tab). */
   sendTimeline(): void {
     this.emitTimeline();
   }
 
-  // ---- protocolo de controle (permissão / AskUserQuestion) ----
+  // ---- control protocol (permission / AskUserQuestion) ----
 
   decide(requestId: string, decision: 'allow' | 'deny' | 'allow_always', message?: string): void {
     const pend = this.pendingPerm.get(requestId);
     this.pendingPerm.delete(requestId);
     if (pend?.tool) {
-      // Em negações, registra a razão (feedback do usuário) no log de negações.
+      // On denials, records the reason (the user's feedback) in the denial log.
       this.stats.recordDecision(pend.tool, decision, decision === 'deny' ? message : undefined);
       this.emit({ kind: 'stats', stats: this.stats.snapshot() });
     }
     if (decision === 'deny') {
-      // `message` = feedback do usuário (ex.: notas no plan mode editável).
+      // `message` = the user's feedback (e.g. notes in editable plan mode).
       this.cli?.sendControlResponse(requestId, {
         behavior: 'deny',
         message: message?.trim() || 'Denied by user',
@@ -320,14 +320,14 @@ export class Session {
     });
   }
 
-  // ---- internos ----
+  // ---- internals ----
 
   private setBusy(b: boolean): void {
     this.busy = b;
     this.hooks.onBusy(b);
   }
 
-  /** Insere ou refina (o `task_started` chega depois e sabe a tool de verdade). */
+  /** Inserts or refines it (`task_started` arrives later and knows the real tool). */
   private addBgTask(id: string, tool: string, label: string): void {
     const cur = this.bgTasks.get(id);
     if (cur && cur.tool === tool && cur.label === label) return;
@@ -341,10 +341,10 @@ export class Session {
   }
 
   /**
-   * `background_tasks_changed` traz a lista COMPLETA do que roda agora — é a fonte da
-   * verdade. Reconcilia contra ela: some o que morreu (inclusive tarefas mortas pelo
-   * agente, que não emitem notificação) e aparece o que a UI não viu nascer (ex.: sessão
-   * retomada com tarefa já em andamento).
+   * `background_tasks_changed` brings the COMPLETE list of what is running now — it is the source of
+   * truth. Reconcile against it: whatever died disappears (including tasks killed by the
+   * agent, which emit no notification) and whatever the UI didn't see being born appears (e.g. a session
+   * resumed with a task already in progress).
    */
   private syncBgTasks(tasks: any[]): void {
     const live = new Map<string, any>();
@@ -364,7 +364,7 @@ export class Session {
     if (changed) this.emitBackground();
   }
 
-  /** Zera o estado de background (parada/limpeza da sessão). */
+  /** Clears the background state (session stop/cleanup). */
   private resetBgTasks(): void {
     this.toolNames.clear();
     if (this.bgTasks.size === 0) return;
@@ -399,15 +399,15 @@ export class Session {
           break;
         }
         if (s.subtype === 'task_notification' || s.subtype === 'task_updated') {
-          // Qualquer estado que não seja `running` = a tarefa saiu do ar (concluída,
-          // falhou, morta pelo agente). `background_tasks_changed` também cobre isto,
-          // mas fechar aqui evita depender da ordem entre os dois eventos.
+          // Any state other than `running` = the task is gone (finished,
+          // failed, killed by the agent). `background_tasks_changed` covers this too,
+          // but closing here avoids depending on the order between the two events.
           const status = String(s.status ?? s.patch?.status ?? '');
           if (status && status !== 'running') this.clearBgTask(String(s.task_id));
-          // Tarefa concluída com a sessão ociosa: a CLI abre um turno por conta própria
-          // para reagir à notificação. Sem marcar busy, o `result` desse turno cairia no
-          // descarte "stray/replay" e não seria contabilizado. Tarefa morta (`stopped`/
-          // `killed`) não gera turno — marcar busy aí deixaria o spinner preso.
+          // Task finished with the session idle: the CLI opens a turn on its own
+          // to react to the notification. Without marking busy, that turn's `result` would fall into
+          // the "stray/replay" discard and wouldn't be counted. A killed task (`stopped`/
+          // `killed`) generates no turn — marking busy there would leave the spinner stuck.
           if (s.subtype === 'task_notification' && !this.busy && (status === 'completed' || status === 'failed')) {
             this.setBusy(true);
             this.stats.beginTurn();
@@ -416,18 +416,18 @@ export class Session {
         }
         if (s.subtype === 'init') {
           if (Array.isArray(s.slash_commands)) this.slashCommands = s.slash_commands;
-          // Guarda o inventário do init: o painel MCP precisa dele a qualquer momento,
-          // não só no instante em que o evento passa.
+          // Stores the init inventory: the MCP panel needs it at any moment,
+          // not only at the instant the event goes by.
           this.lastTools = Array.isArray(s.tools) ? s.tools : undefined;
           this.lastMcpServers = Array.isArray(s.mcp_servers) ? s.mcp_servers : undefined;
           this.sessionId = s.session_id;
           if (s.session_id) {
             this.cli?.setResumeId(s.session_id); // respawn silencioso continua ESTA sessão
-            // Fixa o id de retomada no NÍVEL DA SESSÃO: um stop() (troca de
-            // model/effort/permission) descarta o CliProcessManager, e o próximo
-            // send() respawna via ensureCli() lendo `this.resumeId`. Sem isto, esse
-            // respawn subiria SEM --resume e o CLI criaria um .jsonl NOVO — contexto
-            // DUPLICADO no Hub. Com isto, continua sempre a mesma sessão.
+            // Pins the resume id at SESSION LEVEL: a stop() (model/effort/permission
+            // change) discards the CliProcessManager, and the next
+            // send() respawns via ensureCli() reading `this.resumeId`. Without this, that
+            // respawn would start WITHOUT --resume and the CLI would create a NEW .jsonl — a
+            // DUPLICATED context in the Hub. With it, it always continues the same session.
             this.resumeId = s.session_id;
             this.persist(); // sessionId conhecido: cria/atualiza o arquivo de stats
             dlog('session', `init: sessionId=${s.session_id} model=${s.model ?? '?'} mode=${s.permissionMode ?? '?'}`);
@@ -484,8 +484,8 @@ export class Session {
         break;
       }
       case 'control_response': {
-        // Resposta do handshake `initialize`: já traz os slash commands ANTES do
-        // 1º envio. (O `system init` só chega depois da primeira mensagem.)
+        // Response to the `initialize` handshake: it already brings the slash commands BEFORE the
+        // first send. (The `system init` only arrives after the first message.)
         const r = ev as any;
         const resp = r.response;
         const cmds = extractSlashCommands(resp?.response) || extractSlashCommands(resp);
@@ -498,22 +498,22 @@ export class Session {
       }
       case 'result': {
         const r = ev as any;
-        // Só conta o que NÓS iniciamos: send()/keepAlivePing() setam busy=true. Um
-        // `result` com busy=false é stray/replay (ex.: o CLI re-emite turnos ao
-        // `--resume`) — processá-lo inflaria turnos/custo local e poluiria a UI.
+        // Only counts what WE started: send()/keepAlivePing() set busy=true. A
+        // `result` with busy=false is stray/replay (e.g. the CLI re-emits turns on
+        // `--resume`) — processing it would inflate local turns/cost and pollute the UI.
         if (!this.busy) {
-          dlog('session', `result ignorado (busy=false): stray/replay do CLI`);
+          dlog('session', `result ignored (busy=false): CLI stray/replay`);
           break;
         }
         const errText = String(r.result ?? r.error ?? '').trim();
         if (r.is_error && isAuthError(errText)) {
           this.hooks.onAuthRequired();
         } else if (r.is_error) {
-          // Erro reportado pelo CLI no fim do turno. Transitório (queda/stall, CLI
-          // 2.1.179+ preserva o parcial) ganha aviso brando; demais, aviso de erro
-          // com o texto da própria CLI. Sem isto o turno "morre" sem explicação.
+          // Error reported by the CLI at the end of the turn. A transient one (drop/stall, CLI
+          // 2.1.179+ preserves the partial) gets a soft warning; the rest get an error warning
+          // with the CLI's own text. Without this the turn "dies" with no explanation.
           const transient = isTransientError(errText, r.subtype);
-          log(`[session] result ${transient ? 'transitório' : 'erro'} (${this.sessionId ?? '?'}): ${errText.slice(0, 160)}`);
+          log(`[session] result ${transient ? 'transient' : 'error'} (${this.sessionId ?? '?'}): ${errText.slice(0, 160)}`);
           this.hooks.onTurnError?.({ kind: transient ? 'transient' : 'error', text: errText || undefined });
         }
         this.stats.endTurn(); // fecha o cronômetro do prompt (tempo de execução real)
@@ -541,8 +541,8 @@ export class Session {
   }
 
   /**
-   * Limite de conta vindo do engine no stream. Canal automático (sem statusline):
-   * status + reset + janela sempre; % (`utilization`) só perto do limite.
+   * Account limit coming from the engine in the stream. Automatic channel (no statusline):
+   * status + reset + window always; % (`utilization`) only close to the limit.
    */
   private onRateLimit(info: any): void {
     if (!info || typeof info !== 'object') return;
@@ -561,7 +561,7 @@ export class Session {
       try {
         resetsAt = new Date(ms).toISOString();
       } catch {
-        /* epoch inválido */
+        /* invalid epoch */
       }
     }
     const status =
@@ -647,8 +647,8 @@ export class Session {
           this.emittedTools.add(t.id);
           this.emit({ kind: 'toolUse', id: t.id, name: t.name, input: t.input });
           this.hooks.onToolUse?.(t.name, t.input);
-          // Lançamento em background (Workflow, ou tool com run_in_background): guarda o
-          // nome para nomear a tarefa quando o `task_started` correspondente chegar.
+          // Background launch (Workflow, or a tool with run_in_background): stores the
+          // name so the task can be named when the matching `task_started` arrives.
           if (t.name === 'Workflow' || (t.input as any)?.run_in_background === true) {
             this.toolNames.set(t.id, t.name);
           }
@@ -677,8 +677,8 @@ export class Session {
   }
 }
 
-// Rótulo da tool a partir do `task_type` do engine. Usado só quando a tarefa aparece
-// sem que tenhamos visto o `tool_use` que a lançou (sessão retomada, subagente).
+// Tool label from the engine's `task_type`. Used only when the task shows up
+// without us having seen the `tool_use` that launched it (resumed session, subagent).
 function taskTool(taskType: unknown): string {
   switch (taskType) {
     case 'local_bash':
@@ -699,8 +699,8 @@ function safeJson(s: string): unknown {
   }
 }
 
-// Extrai nomes de slash commands do payload do handshake `initialize` (shape
-// tolerante: chaves variam entre versões do CLI). Strip de "/" à frente.
+// Extracts slash command names from the `initialize` handshake payload (tolerant
+// shape: the keys vary between CLI versions). Leading "/" is stripped.
 function extractSlashCommands(o: any): string[] {
   if (!o || typeof o !== 'object') return [];
   const arr = o.commands ?? o.slash_commands ?? o.slashCommands ?? o.available_commands;
@@ -714,9 +714,9 @@ function extractSlashCommands(o: any): string[] {
   return out;
 }
 
-// Erro transitório (queda de conexão / stall / retry / timeout de stream) — NÃO
-// fatal: o CLI moderno preserva a resposta parcial e re-tenta. Distinguir de erro
-// real evita surfaçar ruído assustador e disparar fluxo de auth indevido.
+// Transient error (connection drop / stall / retry / stream timeout) — NOT
+// fatal: the modern CLI preserves the partial response and retries. Telling it apart from a
+// real error avoids surfacing scary noise and triggering an undue auth flow.
 function isTransientError(text: unknown, subtype?: unknown): boolean {
   const s = typeof text === 'string' ? text : '';
   const st = typeof subtype === 'string' ? subtype : '';
@@ -727,7 +727,7 @@ function isTransientError(text: unknown, subtype?: unknown): boolean {
   );
 }
 
-// Heurística conservadora p/ erro de autenticação do CLI (headless não loga).
+// Conservative heuristic for a CLI authentication error (headless doesn't sign in).
 function isAuthError(text: unknown): boolean {
   const s = typeof text === 'string' ? text : '';
   return /please run \/login|\/login|not authenticated|authentication (failed|required|error)|invalid api key|unauthorized|\b401\b|oauth|please (log ?in|sign ?in)/i.test(

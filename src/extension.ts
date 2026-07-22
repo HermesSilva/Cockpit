@@ -1,4 +1,4 @@
-// Ponto de entrada da extensão.
+// Extension entry point.
 import * as vscode from 'vscode';
 import { ChatViewProvider } from './panel/ChatViewProvider';
 import { enableUsageTracking, disableUsageTracking, isEnabled } from './cli/StatuslineInstaller';
@@ -14,8 +14,8 @@ export function activate(context: vscode.ExtensionContext): void {
   setDebugLogging(vscode.workspace.getConfiguration('tootega').get<boolean>('debugLog', false));
   log('Tootega Cockpit activating…');
 
-  // Reinício/reload: o VSCode tenta restaurar as abas-webview dos contextos, mas
-  // sem estado elas ficam "mortas". Fecha todas ao ativar — começa limpo.
+  // Restart/reload: VSCode tries to restore the contexts' webview tabs, but
+  // without state they end up "dead". Close them all on activate — start clean.
   closeStaleCockpitTabs();
 
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -30,21 +30,21 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push({ dispose: () => provider.dispose() }); // para o CacheKeeper
 
-  // O Cockpit vive como aba no editor (WebviewPanel). Sem view de sidebar.
-  // O item da status bar (criado pelo provider) e o comando/atalho abrem o editor.
+  // The Cockpit lives as an editor tab (WebviewPanel). No sidebar view.
+  // The status bar item (created by the provider) and the command/shortcut open the editor.
 
-  // Migração única: tira a antiga setting `tootega.apiKey` (texto plano) e move
+  // One-off migration: drops the old `tootega.apiKey` setting (plain text) and moves it
   // p/ o SecretStorage (keychain do SO). Best-effort, silencioso.
   void provider.migrateApiKeyFromSettings();
 
-  // Na ativação (onStartupFinished): se o CLI faltar, oferece instalar.
+  // On activation (onStartupFinished): if the CLI is missing, offer to install it.
   void provider.promptInstallIfMissing();
-  // Oferece (uma vez) ativar o uso real da conta via statusline — enriquece o %
-  // sempre-visível. O canal automático (rate_limit_event no stream) já funciona
-  // sem isto; a statusline complementa em uso baixo.
+  // Offer (once) to enable real account usage via the statusline — it enriches the
+  // always-visible %. The automatic channel (rate_limit_event in the stream) already works
+  // without it; the statusline complements it at low usage.
   void maybeOfferUsageTracking(context, provider);
-  // Oferece (uma vez) o hook que conserta a acentuação da tool PowerShell no
-  // Windows — ver Utf8HookInstaller para o porquê.
+  // Offer (once) the hook that fixes the accents of the PowerShell tool on
+  // Windows — see Utf8HookInstaller for the why.
   void maybeOfferUtf8Fix(context);
 
   context.subscriptions.push(
@@ -94,7 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider('tootega.hub', provider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    // Restaura o painel-editor (e sua largura/posição) ao recarregar a janela.
+    // Restores the editor panel (and its width/position) when the window reloads.
     vscode.window.registerWebviewPanelSerializer('tootega.cockpit.editor', {
       deserializeWebviewPanel: async (panel) => {
         provider.attachPanel(panel);
@@ -107,8 +107,8 @@ export function activate(context: vscode.ExtensionContext): void {
           vscode.l10n.t('Real usage tracking enabled. Run an interactive `claude` session once to populate it.'),
         );
       } else if (r === 'unsupported') {
-        // Fora do Windows o wrapper de statusline não se aplica — mas o uso real já
-        // vem da API OAuth /usage (fonte primária, cross-platform). Nada a instalar.
+        // Outside Windows the statusline wrapper doesn't apply — but real usage already
+        // comes from the OAuth /usage API (primary, cross-platform source). Nothing to install.
         void vscode.window.showInformationMessage(
           vscode.l10n.t(
             'Real account usage already comes from the Claude API on this platform — nothing to install. (The statusline wrapper is a Windows-only extra source.)',
@@ -170,7 +170,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('tootega.debugLog')) {
         setDebugLogging(vscode.workspace.getConfiguration('tootega').get<boolean>('debugLog', false));
       }
-      // Mudança de model/effort/permission: reinicia overrides + reflete nos combos.
+      // Model/effort/permission change: resets overrides + reflects them in the dropdowns.
       if (
         e.affectsConfiguration('tootega.model') ||
         e.affectsConfiguration('tootega.effort') ||
@@ -179,7 +179,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ) {
         provider.applyDefaultsFromSettings();
       }
-      // Prefs só de UI: re-empurra config sem reiniciar a sessão.
+      // UI-only prefs: re-push the config without restarting the session.
       if (
         e.affectsConfiguration('tootega.showThinking') ||
         e.affectsConfiguration('tootega.expandToolCards') ||
@@ -210,8 +210,8 @@ export function deactivate(): void {
   log('Tootega Cockpit deactivated.');
 }
 
-/** Fecha as abas-webview do Cockpit (viewType tootega.cockpit.editor) que o VSCode
- *  tentou restaurar sem estado após reload/reinício. */
+/** Closes the Cockpit webview tabs (viewType tootega.cockpit.editor) that VSCode
+ *  tried to restore without state after a reload/restart. */
 function closeStaleCockpitTabs(): void {
   try {
     for (const group of vscode.window.tabGroups.all) {
@@ -231,8 +231,8 @@ function closeStaleCockpitTabs(): void {
 }
 
 /**
- * Oferece (uma única vez) ativar o uso real da conta via statusline. Windows-only
- * por enquanto. Não insiste: grava um flag em globalState após a primeira oferta.
+ * Offers (only once) to enable real account usage via the statusline. Windows-only
+ * for now. It doesn't insist: it writes a flag in globalState after the first offer.
  */
 async function maybeOfferUsageTracking(
   context: vscode.ExtensionContext,
@@ -268,8 +268,8 @@ async function maybeOfferUsageTracking(
 }
 
 /**
- * Oferece (uma única vez) instalar o hook de UTF-8 da tool PowerShell. Windows-only:
- * é lá que o shell sem console cai no OEMCP e corrompe acentos na saída.
+ * Offers (only once) to install the PowerShell tool's UTF-8 hook. Windows-only:
+ * that's where a console-less shell falls back to the OEMCP and corrupts accents in the output.
  */
 async function maybeOfferUtf8Fix(context: vscode.ExtensionContext): Promise<void> {
   if (process.platform !== 'win32') return;

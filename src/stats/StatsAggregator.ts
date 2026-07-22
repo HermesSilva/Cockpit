@@ -1,5 +1,5 @@
-// Agrega usage dos eventos em um StatsSnapshot para a UI.
-// Cobre contexto, cache, custo e (quando disponível) limites da conta.
+// Aggregates event usage into a StatsSnapshot for the UI.
+// Covers context, cache, cost and (when available) account limits.
 import type { ClaudeEvent, Usage } from '../../shared/events';
 import type {
   StatsSnapshot,
@@ -13,25 +13,25 @@ import type {
 import { STATS_VERSION, capTimeline, type PersistedStats } from './StatsStore';
 import { dlog } from '../util/logger';
 
-// Vida do prompt cache (TTL estendido de 1h do Claude Code): após este tempo
-// ocioso o prefixo cacheado expira e o turno seguinte re-escreve tudo (reset
-// frio). Cada requisição que acerta o prefixo REINICIA esta janela — é a base do
-// keep-alive (reenvio antes de completar 1h). Exportado p/ o CacheKeeper.
+// Prompt cache life (Claude Code's extended 1h TTL): after this much idle
+// time the cached prefix expires and the next turn rewrites everything (cold
+// reset). Every request that hits the prefix RESTARTS this window — that's the basis of the
+// keep-alive (re-sending before the hour is up). Exported for the CacheKeeper.
 export const CACHE_LIFE_MS = 60 * 60_000;
-// Turno é reset por TTL se: não é o 1º, ficou ocioso > vida do cache, leu quase
-// nada do cache e re-escreveu prefixo. Conservador p/ não contar falso-positivo.
+// A turn is a TTL reset if: it isn't the first, it idled > the cache life, it read almost
+// nothing from the cache and it rewrote the prefix. Conservative, to avoid counting false positives.
 const COLD_READ_FRAC = 0.1;
-// Compactação: o contexto TOTAL encolheu abaixo desta fração do turno anterior.
-// (Reset frio NÃO encolhe o total — só desloca read→create — então não colide.)
+// Compaction: the TOTAL context shrank below this fraction of the previous turn.
+// (A cold reset does NOT shrink the total — it only shifts read→create — so they don't collide.)
 const COMPACT_FRAC = 0.6;
-// Negações guardadas no log (E5): as últimas N, o suficiente p/ auditar a sessão.
+// Denials kept in the log (E5): the last N, enough to audit the session.
 const DENIAL_CAP = 50;
-// Teto do mapa tool_use_id → texto do erro (quase todo erro NÃO é negação).
+// Cap of the tool_use_id → error text map (almost every error is NOT a denial).
 const DENIAL_REASON_CAP = 200;
-// Motivo é rótulo de UI, não log: corta antes de virar parágrafo.
+// The reason is a UI label, not a log: truncated before it becomes a paragraph.
 const REASON_MAX = 300;
 
-// Preços por 1M tokens (USD). Estimativa — rotulada como tal na Ui.
+// Prices per 1M tokens (USD). An estimate — labelled as such in the UI.
 interface Price {
   input: number;
   output: number;
@@ -51,7 +51,7 @@ function priceFor(model?: string): Price {
   return PRICES.find((p) => p.match.test(model))?.price ?? DEFAULT_PRICE;
 }
 
-/** Custo estimado (USD) de um bloco de usage, pela tabela de preço do modelo. */
+/** Estimated cost (USD) of a usage block, from the model's price table. */
 export function estimateCost(u: Usage, model?: string): number {
   const p = priceFor(model);
   const inp = u.input_tokens ?? 0;
@@ -61,28 +61,28 @@ export function estimateCost(u: Usage, model?: string): number {
   return (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
 }
 
-// Contextos reais por modelo (id normalizado sem [1m], minúsculo), populado pela
-// descoberta via /v1/models. É a fonte de verdade p/ modelos 1M nativos que NÃO
-// carregam o sufixo [1m] (ex.: Claude Fable 5, Sonnet 5).
+// Real contexts per model (normalized id without [1m], lowercase), populated by
+// discovery via /v1/models. It is the source of truth for natively-1M models that do NOT
+// carry the [1m] suffix (e.g. Claude Fable 5, Sonnet 5).
 const knownContextLimits = new Map<string, number>();
 
-/** Chave de lookup do contexto: id sem sufixo [1m], em minúsculas. */
+/** Context lookup key: id without the [1m] suffix, lowercased. */
 function ctxKey(model: string): string {
   return model.replace(/\[1m\]/i, '').toLowerCase();
 }
 
-/** Registra o contexto real de um modelo (descoberta). Ignora valores inválidos. */
+/** Records a model's real context (discovery). Ignores invalid values. */
 export function registerModelContext(model: string, tokens?: number): void {
   if (!model || !tokens || tokens <= 0) return;
   knownContextLimits.set(ctxKey(model), tokens);
 }
 
 /**
- * Limite efetivo do Claude Code:
- *  - sufixo [1m] → 1M;
- *  - contexto real conhecido (descoberta /v1/models) → usa esse;
- *  - família Claude 5 (…-5) é 1M nativo mesmo sem [1m] (fallback antes da descoberta);
- *  - caso contrário 200K.
+ * Claude Code's effective limit:
+ *  - [1m] suffix → 1M;
+ *  - known real context (/v1/models discovery) → uses that;
+ *  - the Claude 5 family (…-5) is natively 1M even without [1m] (fallback before discovery);
+ *  - otherwise 200K.
  */
 export function deriveContextLimit(model?: string): number {
   if (!model) return 200_000;
@@ -94,23 +94,23 @@ export function deriveContextLimit(model?: string): number {
 }
 
 /**
- * Normaliza o id do modelo: colapsa sufixos [1m] repetidos. O CLID já normaliza
- * (2.1.172/173: `[1M][1m]` virava duplicado), mas eventos antigos retomados podem
- * trazer o id duplicado — defensivo p/ não inflar o display nem confundir o preço.
+ * Normalizes the model id: collapses repeated [1m] suffixes. The CLI already normalizes
+ * (2.1.172/173: `[1M][1m]` became a duplicate), but resumed old events can
+ * carry the duplicated id — defensive, so the display isn't inflated nor the price confused.
  */
 export function normalizeModel(model?: string): string | undefined {
   if (!model) return model;
   return model.replace(/(\[1m\])(\[1m\])+/gi, '$1');
 }
 
-/** Coerção defensiva p/ token count vindo do stream: número finito ≥ 0. */
+/** Defensive coercion for a token count coming from the stream: finite number ≥ 0. */
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
 }
 
 /**
- * Texto de um `tool_result` de erro. O `content` pode ser string ou os blocos
- * ricos da API (`[{type:'text', text}]`) — aceita ambos e ignora o resto.
+ * Text of an error `tool_result`. The `content` may be a string or the API's
+ * rich blocks (`[{type:'text', text}]`) — both are accepted, the rest is ignored.
  */
 function toolErrorText(content: unknown): string {
   let raw = '';
@@ -138,9 +138,9 @@ export class StatsAggregator {
   private outputTokens = 0;
   private cacheCreateTokens = 0;
   private cacheReadTokens = 0;
-  // Turno em voo (parcial via message_start): refletido no display até o evento
-  // assistant consolidar nos totais. Evita o painel mostrar 0 durante o 1º turno
-  // (frio/lento), quando o contexto já encheu mas os totais ainda não acumularam.
+  // Turn in flight (partial via message_start): reflected in the display until the
+  // assistant event consolidates it into the totals. Prevents the panel from showing 0 during the first turn
+  // (cold/slow), when the context is already full but the totals haven't accumulated yet.
   private curInput = 0;
   private curOutput = 0;
   private curCreate = 0;
@@ -153,14 +153,14 @@ export class StatsAggregator {
 
   private sessionStartTs?: number;
   private toolDecisions = new Map<string, { allow: number; allowAlways: number; deny: number }>();
-  // Log das negações (E5): últimas DENIAL_CAP, mais recentes no fim.
+  // Denial log (E5): the last DENIAL_CAP, most recent at the end.
   private denials: DenialEvent[] = [];
-  // Motivo de erro por tool_use_id, aguardando o `result` dizer se foi negação.
+  // Error reason per tool_use_id, waiting for the `result` to say whether it was a denial.
   private denialReasons = new Map<string, string>();
-  // tool_use_id já contabilizado como negação do engine (o `result` pode repetir).
+  // tool_use_id already counted as an engine denial (the `result` may repeat it).
   private seenDenials = new Set<string>();
 
-  // --- Contadores que sobrevivem ao reopen do contexto ---
+  // --- Counters that survive a context reopen ---
   private turnCount = 0;
   private reopenCount = 0;
   private cacheResetCount = 0;
@@ -168,30 +168,30 @@ export class StatsAggregator {
   private compactionCount = 0;
   private peakContextUsed = 0;
   private peakContextTs?: number;
-  // Tempo de execução REAL: soma do tempo de cada prompt (send → result/stop).
-  // NÃO inclui ociosidade (agente parado). turnStartTs marca o turno em voo.
+  // REAL execution time: sum of the time of each prompt (send → result/stop).
+  // It does NOT include idleness (agent stopped). turnStartTs marks the turn in flight.
   private activeMs = 0;
   private turnStartTs?: number;
-  // Keep-alive: se marcado, o CacheKeeper reenvia este contexto antes do cache
-  // de 1h expirar (mesmo com a aba/contexto fechado). Estado persistido.
+  // Keep-alive: when ticked, the CacheKeeper re-sends this context before the 1h
+  // cache expires (even with the tab/context closed). Persisted state.
   private keepCacheAlive = false;
-  // Estado p/ detecção entre turnos.
+  // State for between-turn detection.
   private prevContextUsed = 0;
   private prevCacheRead = 0;
   private lastTurnTs = 0;
-  // Detalhamento por modelo e séries históricas.
+  // Breakdown per model and historical series.
   private perModel = new Map<string, ModelUsage>();
   private timeline: TimelineSample[] = [];
   private compactions: CompactionEvent[] = [];
 
   private limits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow } = {};
   private limitsSource: 'real' | 'estimate' = 'estimate';
-  // Canal separado: limites vindos do stream (rate_limit_event). Não é tocado por
-  // setLimits (statusline/estimativa periódica), e tem prioridade no merge.
+  // Separate channel: limits coming from the stream (rate_limit_event). Not touched by
+  // setLimits (statusline/periodic estimate), and it wins the merge.
   private streamLimits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow } = {};
   private streamSeen = false;
 
-  // configuredLimit > 0 = override manual; 0 = auto (derivado do modelo ativo).
+  // configuredLimit > 0 = manual override; 0 = auto (derived from the active model).
   constructor(configuredLimit: number) {
     if (configuredLimit > 0) {
       this.contextLimit = configuredLimit;
@@ -202,9 +202,9 @@ export class StatsAggregator {
     }
   }
 
-  // authoritative=true (init / override): define exibição e limite (carrega o [1m]).
-  // authoritative=false (eventos por-mensagem): o id da API vem SEM o sufixo [1m];
-  // não pode sobrescrever o modelo de sessão nem rebaixar o limite para 200K.
+  // authoritative=true (init / override): defines the display and the limit (carries the [1m]).
+  // authoritative=false (per-message events): the API id comes WITHOUT the [1m] suffix;
+  // it must not overwrite the session model nor downgrade the limit to 200K.
   setModel(model?: string, authoritative = false) {
     const m = normalizeModel(model);
     if (!m) return;
@@ -225,9 +225,9 @@ export class StatsAggregator {
     }
   }
 
-  // Recalcula o limite do modelo ativo (auto). Chamado quando a descoberta de
-  // modelos chega DEPOIS do init da sessão — senão o limite ficaria preso em 200K
-  // p/ modelos 1M nativos sem sufixo [1m] (ex.: Fable 5). Devolve true se mudou.
+  // Recomputes the active model's limit (auto). Called when model discovery
+  // arrives AFTER the session init — otherwise the limit would be stuck at 200K
+  // for natively-1M models without the [1m] suffix (e.g. Fable 5). Returns true when it changed.
   refreshContextLimit(): boolean {
     if (!this.autoLimit || !this.model) return false;
     const next = deriveContextLimit(this.model);
@@ -236,7 +236,7 @@ export class StatsAggregator {
     return true;
   }
 
-  /** Limites de conta (real via statusline, ou estimativa local). */
+  /** Account limits (real via statusline, or a local estimate). */
   setLimits(
     limits: { fiveHour?: LimitWindow; sevenDay?: LimitWindow },
     source: 'real' | 'estimate' = 'estimate',
@@ -246,16 +246,16 @@ export class StatsAggregator {
   }
 
   /**
-   * Limite de uma janela vindo do stream (rate_limit_event). Mescla por bucket
-   * (eventos chegam um bucket por vez), preservando a outra janela.
+   * Limit of a window coming from the stream (rate_limit_event). Merged per bucket
+   * (events arrive one bucket at a time), preserving the other window.
    */
   setStreamLimit(which: 'fiveHour' | 'sevenDay', win: LimitWindow) {
     this.streamLimits[which] = { ...this.streamLimits[which], ...win };
     this.streamSeen = true;
   }
 
-  /** Registra decisão de permissão do usuário (allow/deny) por ferramenta. Em
-   *  negações, guarda também a entrada no log (com a razão, quando houver). */
+  /** Records the user's permission decision (allow/deny) per tool. On
+   *  denials it also stores the entry in the log (with the reason, when there is one). */
   recordDecision(tool: string, decision: 'allow' | 'deny' | 'allow_always', reason?: string): void {
     const entry = this.toolDecisions.get(tool) ?? { allow: 0, allowAlways: 0, deny: 0 };
     if (decision === 'allow') entry.allow++;
@@ -267,7 +267,7 @@ export class StatsAggregator {
     this.toolDecisions.set(tool, entry);
   }
 
-  /** Acrescenta ao log de negações, respeitando o teto. */
+  /** Appends to the denial log, respecting the cap. */
   private pushDenial(tool: string, source: 'user' | 'engine', reason?: string): void {
     const clean = typeof reason === 'string' ? reason.trim() : '';
     this.denials.push({ tool, ts: Date.now(), source, reason: clean || undefined });
@@ -275,11 +275,11 @@ export class StatsAggregator {
   }
 
   /**
-   * Negações decididas pelo ENGINE (auto mode, tool fora do allowlist, escrita fora
-   * do workspace). Chegam no evento `result` como `permission_denials[]`, que traz a
-   * tool mas NÃO o motivo — este vem no texto do `tool_result` de erro do mesmo
-   * `tool_use_id` (desde a 2.1.193 o auto mode explica por que negou). Dedup por
-   * `tool_use_id`: o `result` de um turno pode repetir denials já contabilizadas.
+   * Denials decided by the ENGINE (auto mode, tool outside the allowlist, a write outside
+   * the workspace). They arrive in the `result` event as `permission_denials[]`, which brings the
+   * tool but NOT the reason — that comes in the error `tool_result` text of the same
+   * `tool_use_id` (since 2.1.193 auto mode explains why it denied). Deduplicated by
+   * `tool_use_id`: a turn's `result` may repeat denials already counted.
    */
   private recordEngineDenials(denials: unknown): void {
     if (!Array.isArray(denials)) return;
@@ -297,9 +297,9 @@ export class StatsAggregator {
   }
 
   /**
-   * Guarda o texto de um `tool_result` de erro por `tool_use_id`. A maioria é erro
-   * comum de execução e nunca será usada — só é consumida se o `result` do turno
-   * listar aquele `tool_use_id` em `permission_denials`. Teto p/ não vazar memória.
+   * Stores the text of an error `tool_result` per `tool_use_id`. Most are ordinary
+   * execution errors and will never be used — it is only consumed if the turn's `result`
+   * lists that `tool_use_id` in `permission_denials`. Capped so it doesn't leak memory.
    */
   private noteToolError(id: unknown, content: unknown): void {
     if (typeof id !== 'string' || !id) return;
@@ -309,7 +309,7 @@ export class StatsAggregator {
     this.denialReasons.set(id, text);
   }
 
-  /** Processa um evento e devolve o snapshot atualizado. */
+  /** Processes an event and returns the updated snapshot. */
   ingest(ev: ClaudeEvent): StatsSnapshot {
     switch (ev.type) {
       case 'system':
@@ -325,7 +325,7 @@ export class StatsAggregator {
           this.setModel(raw.message?.model, false); // id da API, sem [1m]
           if (raw.message?.usage) this.applyPromptUsage(raw.message.usage);
         } else if (raw?.type === 'message_delta' && raw.usage) {
-          // Saída cumulativa do turno em voo (tempo real, token a token).
+          // Cumulative output of the turn in flight (real time, token by token).
           this.applyDeltaUsage(raw.usage);
         }
         break;
@@ -337,8 +337,8 @@ export class StatsAggregator {
         break;
       }
       case 'user': {
-        // tool_result de erro: guarda o texto — vira o MOTIVO se o `result` do turno
-        // disser que este tool_use_id foi negado (auto mode).
+        // Error tool_result: stores the text — it becomes the REASON if the turn's `result`
+        // says this tool_use_id was denied (auto mode).
         const content = (ev as any).message?.content;
         if (Array.isArray(content)) {
           for (const b of content) {
@@ -350,7 +350,7 @@ export class StatsAggregator {
       case 'result': {
         const r = ev as any;
         if (typeof r.total_cost_usd === 'number') {
-          // Custo real do turno reportado pelo CLI.
+          // Real turn cost reported by the CLI.
           this.lastTurnCostUsd = Math.max(0, r.total_cost_usd - this.sessionCostUsd);
           this.sessionCostUsd = r.total_cost_usd;
           this.costIsEstimate = false;
@@ -363,20 +363,20 @@ export class StatsAggregator {
   }
 
   /**
-   * message_delta: usage com `output_tokens` cumulativo do turno em voo. Atualiza
-   * SÓ a saída em tempo real — input/cache são fixados no message_start e NÃO devem
-   * ser tocados aqui: o delta traz `input_tokens` incremental (= 0 no meio do
-   * stream), o que zeraria o input/contexto exibido e faria o número "piscar".
-   * O evento `assistant` final consolida nos totais.
+   * message_delta: usage with the turn-in-flight cumulative `output_tokens`. It updates
+   * ONLY the output in real time — input/cache are fixed at message_start and must NOT
+   * be touched here: the delta carries an incremental `input_tokens` (= 0 mid-stream),
+   * which would zero the displayed input/context and make the number "blink".
+   * The final `assistant` event consolidates it into the totals.
    */
   private applyDeltaUsage(u: Usage) {
-    // Guarda defensiva: deltas malformados (NaN/negativo) não devem zerar/poluir
-    // o display. output_tokens é cumulativo no turno — só sobe.
+    // Defensive guard: malformed deltas (NaN/negative) must not zero out or pollute
+    // the display. output_tokens is cumulative within the turn — it only goes up.
     const out = num(u.output_tokens);
     if (out > this.curOutput) this.curOutput = out;
   }
 
-  /** input_tokens + cache_* da requisição = tamanho do prompt (≈ contexto usado). */
+  /** input_tokens + cache_* of the request = prompt size (≈ context used). */
   private applyPromptUsage(u: Usage, isFinal = false) {
     const inp = num(u.input_tokens);
     const cw = num(u.cache_creation_input_tokens);
@@ -386,7 +386,7 @@ export class StatsAggregator {
     this.contextUsed = inp + cw + cr;
 
     if (isFinal) {
-      // Consolida o turno nos totais da sessão e zera o turno em voo.
+      // Consolidates the turn into the session totals and clears the turn in flight.
       this.inputTokens += inp;
       this.cacheCreateTokens += cw;
       this.cacheReadTokens += cr;
@@ -403,7 +403,7 @@ export class StatsAggregator {
 
       this.consolidateTurn(inp, out, cw, cr, turnCost, p);
     } else {
-      // message_start (parcial): reflete o turno atual no display de imediato.
+      // message_start (partial): reflects the current turn in the display right away.
       this.curInput = inp;
       this.curCreate = cw;
       this.curRead = cr;
@@ -412,8 +412,8 @@ export class StatsAggregator {
   }
 
   /**
-   * Pós-consolidação de um turno: detecta cache reset (TTL frio) e compactação,
-   * atualiza contadores, pico, breakdown por modelo e a amostra de timeline.
+   * Post-consolidation of a turn: detects a cache reset (cold TTL) and compaction,
+   * updates counters, peak, per-model breakdown and the timeline sample.
    */
   private consolidateTurn(inp: number, out: number, cw: number, cr: number, turnCost: number, p: Price): void {
     const now = Date.now();
@@ -421,8 +421,8 @@ export class StatsAggregator {
     const readFrac = total > 0 ? cr / total : 0;
     const gap = this.lastTurnTs > 0 ? now - this.lastTurnTs : 0;
 
-    // Cache reset (TTL frio): turno não-inicial, ocioso > TTL, leu ~0 do cache e
-    // re-escreveu o prefixo. Re-paga o cacheWrite — perda contabilizada.
+    // Cache reset (cold TTL): non-initial turn, idle > TTL, read ~0 from the cache and
+    // rewrote the prefix. It re-pays the cacheWrite — the loss is accounted for.
     const isReset = this.turnCount > 0 && gap > CACHE_LIFE_MS && readFrac < COLD_READ_FRAC && cw > 0;
     if (isReset) {
       this.cacheResetCount++;
@@ -434,7 +434,7 @@ export class StatsAggregator {
       );
     }
 
-    // Compactação: o contexto TOTAL encolheu vs. o turno anterior (e não foi reset).
+    // Compaction: the TOTAL context shrank vs. the previous turn (and it wasn't a reset).
     let isCompaction = false;
     if (
       this.turnCount > 0 &&
@@ -462,7 +462,7 @@ export class StatsAggregator {
       this.peakContextTs = now;
     }
 
-    // Acúmulo por modelo (custo por modelo é sempre estimativa de tabela).
+    // Per-model accumulation (per-model cost is always a table estimate).
     const key = this.model ?? 'unknown';
     const m =
       this.perModel.get(key) ??
@@ -499,22 +499,22 @@ export class StatsAggregator {
     this.lastTurnTs = now;
   }
 
-  /** Registra uma reabertura/retomada deste contexto (incrementa reopenCount). */
+  /** Records a reopen/resume of this context (increments reopenCount). */
   markReopen(): void {
     this.reopenCount++;
   }
 
-  /** Liga/desliga o keep-alive de cache deste contexto (persistido). */
+  /** Turns this context's cache keep-alive on/off (persisted). */
   setKeepCacheAlive(v: boolean): void {
     this.keepCacheAlive = v;
   }
 
-  /** Início de um prompt (send): arma o cronômetro do tempo de execução ativo. */
+  /** Start of a prompt (send): arms the active execution-time stopwatch. */
   beginTurn(): void {
     if (this.turnStartTs == null) this.turnStartTs = Date.now();
   }
 
-  /** Fim do prompt (result/interrupt/stop): soma o tempo trabalhado, ignora ocioso. */
+  /** End of the prompt (result/interrupt/stop): adds the worked time, ignores idle time. */
   endTurn(): void {
     if (this.turnStartTs != null) {
       this.activeMs += Math.max(0, Date.now() - this.turnStartTs);
@@ -522,14 +522,14 @@ export class StatsAggregator {
     }
   }
 
-  /** Tempo do turno em voo (p/ o display somar ao activeMs sem fechar o turno). */
+  /** Time of the turn in flight (so the display can add it to activeMs without closing the turn). */
   private liveTurnMs(): number {
     return this.turnStartTs != null ? Math.max(0, Date.now() - this.turnStartTs) : 0;
   }
 
   /**
-   * Vida do cache: idade desde a última requisição (lastTurnTs) e quanto falta
-   * p/ expirar a janela de 1h. Indefinido enquanto não houve nenhum turno.
+   * Cache life: age since the last request (lastTurnTs) and how much is left
+   * before the 1h window expires. Undefined while there has been no turn.
    */
   private cacheLife(): {
     cacheLifeMs: number;
@@ -549,12 +549,12 @@ export class StatsAggregator {
     };
   }
 
-  /** Timeline + compactações p/ a mensagem `statsTimeline` (enviada por turno). */
+  /** Timeline + compactions for the `statsTimeline` message (sent per turn). */
   timelineSnapshot(): { timeline: TimelineSample[]; compactions: CompactionEvent[] } {
     return { timeline: this.timeline, compactions: this.compactions };
   }
 
-  /** Restaura os acumuladores de um estado persistido (continuação coerente). */
+  /** Restores the accumulators from a persisted state (coherent continuation). */
   hydrate(p: PersistedStats): void {
     this.model = p.model ?? this.model;
     this.mode = p.mode ?? this.mode;
@@ -581,7 +581,7 @@ export class StatsAggregator {
     this.prevContextUsed = p.lastContextUsed;
     this.contextUsed = p.lastContextUsed; // restaura a barra de contexto de imediato
     this.prevCacheRead = p.lastCacheRead;
-    // Hit do último turno reconstruído do par persistido (cr/total).
+    // Last turn's hit rate rebuilt from the persisted pair (cr/total).
     this.lastTurnHitRate = p.lastContextUsed > 0 ? p.lastCacheRead / p.lastContextUsed : 0;
     this.lastTurnTs = p.lastTurnTs;
     this.perModel = new Map(Object.entries(p.perModel ?? {}));
@@ -591,8 +591,8 @@ export class StatsAggregator {
     this.compactions = Array.isArray(p.compactions) ? p.compactions : [];
   }
 
-  /** Serializa o estado para persistir por sessão. `cwd` permite ao CacheKeeper
-   *  retomar o contexto (claude --resume na pasta certa) com a aba fechada. */
+  /** Serializes the state for per-session persistence. `cwd` lets the CacheKeeper
+   *  resume the context (claude --resume in the right folder) with the tab closed. */
   serialize(sessionId: string, cwd?: string): PersistedStats {
     return {
       version: STATS_VERSION,
@@ -631,9 +631,9 @@ export class StatsAggregator {
   }
 
   snapshot(): StatsSnapshot {
-    // Display = totais consolidados + turno em voo (parcial), p/ não mostrar 0
-    // durante o 1º turno. Hit rate cumulativo = read / (read + write + input):
-    // estável e informativo (eficiência do cache); turno frio inicial fica baixo.
+    // Display = consolidated totals + turn in flight (partial), so it doesn't show 0
+    // during the first turn. Cumulative hit rate = read / (read + write + input):
+    // stable and informative (cache efficiency); the initial cold turn stays low.
     const input = this.inputTokens + this.curInput;
     const output = this.outputTokens + this.curOutput;
     const create = this.cacheCreateTokens + this.curCreate;
@@ -641,17 +641,17 @@ export class StatsAggregator {
     const promptTotal = read + create + input;
     const hit = promptTotal > 0 ? read / promptTotal : 0;
 
-    // Economia do cache: o que custaria se os tokens lidos tivessem sido input normal.
+    // Cache savings: what it would cost if the read tokens had been normal input.
     const p = priceFor(this.model);
     const cacheSavingsUsd = read > 0 ? (read * (p.input - p.cacheRead)) / 1_000_000 : undefined;
 
-    // Aceitação de ferramentas (só inclui se houve decisões).
+    // Tool acceptance (only included when there were decisions).
     const toolAcceptance: ToolDecision[] | undefined =
       this.toolDecisions.size > 0
         ? [...this.toolDecisions.entries()].map(([tool, d]) => ({ tool, ...d }))
         : undefined;
 
-    // Negações mais recentes primeiro (log de auditoria E5).
+    // Most recent denials first (E5 audit log).
     const recentDenials: DenialEvent[] | undefined =
       this.denials.length > 0 ? [...this.denials].reverse() : undefined;
 
@@ -682,14 +682,14 @@ export class StatsAggregator {
       peakContextUsed: this.peakContextUsed || undefined,
       activeMs: this.activeMs + this.liveTurnMs(),
       perModel: this.perModel.size > 0 ? [...this.perModel.values()] : undefined,
-      // Vida do cache (TTL de 1h): idade desde a última atividade e quanto falta.
+      // Cache life (1h TTL): age since the last activity and how much is left.
       ...this.cacheLife(),
       keepCacheAlive: this.keepCacheAlive,
       limits: {
         fiveHour: mergeWindow(this.limits.fiveHour, this.streamLimits.fiveHour),
         sevenDay: mergeWindow(this.limits.sevenDay, this.streamLimits.sevenDay),
       },
-      // statusline (% real completo) tem prioridade; senão stream; senão estimativa.
+      // statusline (real complete %) wins; otherwise stream; otherwise the estimate.
       limitsSource:
         this.limitsSource === 'real' ? 'statusline' : this.streamSeen ? 'stream' : 'estimate',
     };
@@ -697,9 +697,9 @@ export class StatsAggregator {
 }
 
 /**
- * Mescla uma janela: stream tem prioridade em status/reset e no %, mas o %
- * cai para a base (statusline/estimativa) quando o stream não traz `utilization`
- * (uso baixo). usd/tokens locais vêm sempre da base.
+ * Merges a window: the stream wins on status/reset and on the %, but the %
+ * falls back to the base (statusline/estimate) when the stream doesn't carry `utilization`
+ * (low usage). Local usd/tokens always come from the base.
  */
 function mergeWindow(base?: LimitWindow, stream?: LimitWindow): LimitWindow | undefined {
   if (!base && !stream) return undefined;

@@ -1,11 +1,11 @@
 // Converte o stdout NDJSON do CLI em eventos tipados.
-// Tolerante: linhas inválidas são descartadas com aviso, nunca quebram a UI.
+// Tolerant: invalid lines are discarded with a warning, they never break the UI.
 import type { ClaudeEvent } from '../../shared/events';
 
-// Teto do buffer sem quebra de linha: um evento NDJSON legítimo do CLI cabe bem
-// abaixo disto. Acima = linha corrompida/sem '\n' (ruído binário, processo travado):
-// descarta o acúmulo p/ não vazar memória nem travar a UI. Eventos seguintes (após
-// o próximo '\n') voltam a ser processados normalmente.
+// Cap for a buffer with no line break: a legitimate NDJSON event from the CLI fits well
+// below this. Above it = corrupted line / no '\n' (binary noise, stuck process):
+// discards the accumulation so it doesn't leak memory or freeze the UI. Later events (after
+// the next '\n') go back to being processed normally.
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 export class StreamParser {
@@ -27,7 +27,7 @@ export class StreamParser {
     return events;
   }
 
-  /** Esvazia o que sobrou no buffer (fim do processo). */
+  /** Flushes whatever is left in the buffer (end of process). */
   flush(): ClaudeEvent[] {
     const rest = this.buffer.trim();
     this.buffer = '';
@@ -44,7 +44,7 @@ export class StreamParser {
       }
       return null;
     } catch {
-      // Pode ser ruído (logs do CLI). Ignora silenciosamente.
+      // May be noise (CLI logs). Ignored silently.
       return null;
     }
   }

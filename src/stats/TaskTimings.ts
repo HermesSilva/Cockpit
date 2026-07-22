@@ -1,19 +1,19 @@
-// Médias de duração por tarefa, SEGMENTADAS por (modelo, effort, tipo) — pois a
-// mesma tarefa (tool:Read, assistant, …) leva tempos bem diferentes conforme o
-// modelo (opus lento, haiku rápido) e o effort. Arquivo GLOBAL em
-// ~/.claude/tootega/ (serve qualquer projeto/aba/sessão). Calibra a velocidade do
-// gauge de atividade ao tempo real de cada combinação.
+// Average duration per task, SEGMENTED by (model, effort, type) — because the
+// same task (tool:Read, assistant, …) takes very different times depending on the
+// model (opus slow, haiku fast) and the effort. GLOBAL file in
+// ~/.claude/tootega/ (serves any project/tab/session). Calibrates the speed of the
+// activity gauge to the real time of each combination.
 //
-// Robustez (v3):
-//  - cada chave guarda { ms: média, n: nº de amostras } — média sem contagem é
-//    furada; só é EXPOSTA após N mínimo de amostras (até lá, gauge usa o padrão).
-//  - média incremental: média verdadeira nas 1ªs amostras (alpha = 1/n) e EMA
-//    depois (alpha = EMA_ALPHA), p/ adaptar sem descartar o histórico.
-//  - NÃO grava a cada amostra: amostras vão p/ um buffer e o flush é debounced
-//    (FLUSH_MS) — evita reescrever o arquivo "a todo momento".
-//  - várias janelas/sessões compartilham o MESMO arquivo: o flush pega um LOCK
-//    (lockfile exclusivo), relê o disco, MESCLA o buffer no estado atual e grava
-//    de forma atômica (tmp + rename). Assim ninguém sobrescreve o outro.
+// Robustness (v3):
+//  - each key holds { ms: average, n: number of samples } — an average without a count is
+//    misleading; it is only EXPOSED after a minimum N of samples (until then the gauge uses the default).
+//  - incremental average: a true average for the first samples (alpha = 1/n) and EMA
+//    afterwards (alpha = EMA_ALPHA), to adapt without discarding the history.
+//  - it does NOT write on every sample: samples go to a buffer and the flush is debounced
+//    (FLUSH_MS) — avoids rewriting the file "all the time".
+//  - several windows/sessions share the SAME file: the flush takes a LOCK
+//    (exclusive lockfile), re-reads the disk, MERGES the buffer into the current state and writes
+//    atomically (tmp + rename). That way nobody overwrites anyone else.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -41,19 +41,19 @@ interface Store {
   stats: Record<string, Stat>; // `<model> :: <effort> :: <type>` -> Stat
 }
 
-// Espelho em memória p/ leitura rápida (escopos enviados à webview). É atualizado
-// a cada flush com o estado mesclado do disco.
+// In-memory mirror for fast reads (scopes sent to the webview). It is updated
+// on every flush with the merged state from disk.
 let cache: Store | undefined;
-// Amostras ainda não persistidas (cru: chave+ms). Aplicadas no disco no flush.
+// Samples not persisted yet (raw: key+ms). Applied to disk on flush.
 const pending: { key: string; ms: number }[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Chave composta legível p/ o store. */
+/** Readable composite key for the store. */
 function keyOf(model: string, effort: string, verbosity: string, type: string): string {
   return `${model}${SEP}${effort}${SEP}${verbosity}${SEP}${type}`;
 }
 
-/** Lê o store do disco (ou vazio). Não usa cache — é a base p/ mesclar no flush. */
+/** Reads the store from disk (or empty). No cache — it is the base for merging on flush. */
 function readStore(): Store {
   try {
     const o = JSON.parse(fs.readFileSync(FILE, 'utf8'));
@@ -61,18 +61,18 @@ function readStore(): Store {
       return { version: VERSION, stats: o.stats };
     }
   } catch {
-    /* ausente/corrompido/versão antiga: começa vazio (recalibra) */
+    /* missing/corrupted/old version: starts empty (recalibrates) */
   }
   return { version: VERSION, stats: {} };
 }
 
-/** Garante o cache em memória (1ª leitura do disco). */
+/** Ensures the in-memory cache (first read from disk). */
 function load(): Store {
   if (!cache) cache = readStore();
   return cache;
 }
 
-/** Aplica uma amostra a um store (média incremental: 1/n no começo, EMA depois). */
+/** Applies a sample to a store (incremental average: 1/n at first, EMA afterwards). */
 function applySample(store: Store, key: string, ms: number): void {
   const st = store.stats[key];
   if (!st) {
@@ -85,7 +85,7 @@ function applySample(store: Store, key: string, ms: number): void {
   st.n = n;
 }
 
-/** Tenta criar o lockfile exclusivo; remove se órfão. Retorna o fd ou undefined. */
+/** Tries to create the exclusive lockfile; removes it when orphaned. Returns the fd or undefined. */
 function acquireLock(): number | undefined {
   try {
     return fs.openSync(LOCK, 'wx'); // cria com exclusividade (falha se já existe)
@@ -97,7 +97,7 @@ function acquireLock(): number | undefined {
         return fs.openSync(LOCK, 'wx');
       }
     } catch {
-      /* sumiu entre o stat e o rm: deixa o caller re-tentar */
+      /* vanished between the stat and the rm: let the caller retry */
     }
     return undefined;
   }
@@ -124,7 +124,7 @@ function scheduleSave(delay = FLUSH_MS): void {
   }, delay);
 }
 
-/** Persiste o buffer: lock → relê disco → mescla → grava atômico → atualiza cache. */
+/** Persists the buffer: lock → re-read disk → merge → atomic write → refresh cache. */
 function flush(): void {
   if (pending.length === 0) return;
   const fd = acquireLock();
@@ -132,7 +132,7 @@ function flush(): void {
     scheduleSave(LOCK_RETRY_MS); // lock ocupado: re-tenta logo, sem perder o buffer
     return;
   }
-  // Tira o lote agora; novas amostras durante o flush ficam p/ o próximo.
+  // Takes the batch now; new samples during the flush go to the next one.
   const batch = pending.splice(0, pending.length);
   try {
     const base = readStore(); // estado fresco (inclui o que outras janelas gravaram)
@@ -152,9 +152,9 @@ function flush(): void {
 }
 
 /**
- * Médias só do escopo (modelo, effort, verbosity) pedido, com a chave reduzida ao
- * `type` puro — a webview consulta por tipo (tool:Read/assistant) sem conhecer o
- * escopo. Só entram chaves com >= MIN_SAMPLES amostras (confiáveis).
+ * Averages for the requested scope (model, effort, verbosity) only, with the key reduced to
+ * the plain `type` — the webview queries by type (tool:Read/assistant) without knowing the
+ * scope. Only keys with >= MIN_SAMPLES samples (reliable ones) get in.
  */
 export function taskTimingsScoped(
   model: string,
@@ -169,7 +169,7 @@ export function taskTimingsScoped(
   return out;
 }
 
-/** Enfileira uma amostra (ms) p/ (modelo, effort, verbosity, tipo); persiste debounced. */
+/** Queues a sample (ms) for (model, effort, verbosity, type); persists debounced. */
 export function recordTaskTiming(
   model: string,
   effort: string,

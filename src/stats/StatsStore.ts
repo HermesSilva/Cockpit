@@ -1,12 +1,12 @@
-// Persistência das estatísticas POR SESSÃO (contexto). Cada sessionId tem seu
-// arquivo em ~/.claude/tootega/stats/<sessionId>.json. Ao reabrir/retomar um
-// contexto, o StatsAggregator é hidratado deste arquivo e CONTINUA a contar —
-// o CLI não re-emite o usage dos turnos antigos no --resume, então re-derivar é
-// impossível: persistir é a única forma de manter os números coerentes.
+// Persistence of the PER-SESSION (context) statistics. Each sessionId has its
+// file in ~/.claude/tootega/stats/<sessionId>.json. When reopening/resuming a
+// context, the StatsAggregator is hydrated from this file and KEEPS counting —
+// the CLI doesn't re-emit the usage of old turns on --resume, so re-deriving is
+// impossible: persisting is the only way to keep the numbers coherent.
 //
-// Escrita: debounced (não grava a cada token) + atômica (tmp + rename). Um
-// contexto é "de propriedade" da janela que o tem aberto; em caso raro de duas
-// janelas com a mesma sessão, vale o último a gravar (sem merge cross-processo).
+// Writing: debounced (not on every token) + atomic (tmp + rename). A
+// context is "owned" by the window that has it open; in the rare case of two
+// windows with the same session, the last writer wins (no cross-process merge).
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -18,7 +18,7 @@ export const STATS_VERSION = 1;
 const FLUSH_MS = 4_000; // debounce do flush
 const TIMELINE_CAP = 400; // amostras de timeline mantidas por sessão (decima as antigas)
 
-/** Estado serializável de uma sessão — espelha os acumuladores do StatsAggregator. */
+/** Serializable state of a session — mirrors the StatsAggregator accumulators. */
 export interface PersistedStats {
   version: number;
   sessionId: string;
@@ -29,14 +29,14 @@ export interface PersistedStats {
   contextLimit: number;
   autoLimit: boolean;
   sessionStartTs?: number;
-  // Totais acumulados
+  // Accumulated totals
   inputTokens: number;
   outputTokens: number;
   cacheCreateTokens: number;
   cacheReadTokens: number;
   sessionCostUsd: number;
   costIsEstimate: boolean;
-  // Contadores
+  // Counters
   turnCount: number;
   cacheResetCount: number; // resets de cache por TTL frio
   cacheRecacheCostUsd: number; // $ re-pago em cacheWrite por causa dos resets
@@ -45,11 +45,11 @@ export interface PersistedStats {
   peakContextUsed: number;
   peakContextTs?: number;
   activeMs: number; // tempo de execução real (soma dos prompts, sem ociosidade)
-  // Estado p/ detecção entre turnos (não exibido, mas precisa sobreviver ao reopen)
+  // State for between-turn detection (not displayed, but must survive a reopen)
   lastContextUsed: number;
   lastCacheRead: number;
   lastTurnTs: number;
-  // Detalhamento
+  // Breakdown
   perModel: Record<string, ModelUsage>;
   toolDecisions: Record<string, { allow: number; allowAlways: number; deny: number }>;
   denials?: DenialEvent[]; // log das negações de permissão (E5)
@@ -59,29 +59,29 @@ export interface PersistedStats {
 }
 
 function fileFor(sessionId: string): string {
-  // sessionId já é um uuid/slug seguro (nome do .jsonl); normaliza por garantia.
+  // sessionId is already a safe uuid/slug (the .jsonl name); normalized just in case.
   const safe = sessionId.replace(/[^A-Za-z0-9._-]/g, '_');
   return path.join(DIR, `${safe}.json`);
 }
 
-/** Lê o estado persistido de uma sessão (ou undefined se ausente/incompatível). */
+/** Reads a session's persisted state (or undefined when missing/incompatible). */
 export function loadStats(sessionId: string): PersistedStats | undefined {
   if (!sessionId) return undefined;
   try {
     const o = JSON.parse(fs.readFileSync(fileFor(sessionId), 'utf8'));
     if (o && o.version === STATS_VERSION && o.sessionId) return o as PersistedStats;
   } catch {
-    /* ausente/corrompido/versão antiga: começa do zero p/ esta sessão */
+    /* missing/corrupted/old version: starts from scratch for this session */
   }
   return undefined;
 }
 
-// --- Lock de keep-alive por sessão (coordena VÁRIAS instâncias do VSCode) ---
-// Cada instância tem seu CacheKeeper varrendo o MESMO diretório. Sem coordenação,
-// duas instâncias pingam a mesma sessão no mesmo tick. O lock é um arquivo
-// exclusivo curtíssimo: segura só a seção crítica (re-ler fresco → decidir →
-// bump). Quem perde o lock pula. Lock órfão (instância morta) é roubado após
-// LOCK_STALE_MS. O sinal real entre instâncias é o lastTurnTs no disco (o bump).
+// --- Per-session keep-alive lock (coordinates SEVERAL VSCode instances) ---
+// Every instance has its CacheKeeper sweeping the SAME directory. Without coordination,
+// two instances ping the same session on the same tick. The lock is a very short-lived
+// exclusive file: it holds only the critical section (re-read fresh → decide →
+// bump). Whoever loses the lock skips. An orphan lock (dead instance) is stolen after
+// LOCK_STALE_MS. The real signal between instances is the lastTurnTs on disk (the bump).
 const LOCK_STALE_MS = 30_000;
 const heldLocks = new Map<string, number>(); // sessionId -> fd aberto
 
@@ -89,7 +89,7 @@ function lockPath(sessionId: string): string {
   return `${fileFor(sessionId)}.lock`;
 }
 
-/** Tenta a posse exclusiva do keep-alive desta sessão. true = adquiriu. */
+/** Tries to take exclusive ownership of this session's keep-alive. true = acquired. */
 export function acquireKeepAliveLock(sessionId: string): boolean {
   if (!sessionId) return false;
   const lock = lockPath(sessionId);
@@ -102,7 +102,7 @@ export function acquireKeepAliveLock(sessionId: string): boolean {
     heldLocks.set(sessionId, fs.openSync(lock, 'wx')); // cria exclusivo (falha se existe)
     return true;
   } catch {
-    // Ocupado: rouba se for órfão (instância morta deixou o lock).
+    // Busy: steals it when orphaned (a dead instance left the lock behind).
     try {
       const st = fs.statSync(lock);
       if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
@@ -111,13 +111,13 @@ export function acquireKeepAliveLock(sessionId: string): boolean {
         return true;
       }
     } catch {
-      /* sumiu entre o stat e o open: deixa p/ o próximo tick */
+      /* vanished between the stat and the open: leave it for the next tick */
     }
     return false;
   }
 }
 
-/** Libera o lock de keep-alive desta sessão (no-op se não o detém). */
+/** Releases this session's keep-alive lock (no-op when not held). */
 export function releaseKeepAliveLock(sessionId: string): void {
   const fd = heldLocks.get(sessionId);
   if (fd != null) {
@@ -135,7 +135,7 @@ export function releaseKeepAliveLock(sessionId: string): void {
   }
 }
 
-/** Lê o estado persistido de TODAS as sessões (p/ o CacheKeeper varrer). */
+/** Reads the persisted state of ALL sessions (for the CacheKeeper sweep). */
 export function loadAllStats(): PersistedStats[] {
   let names: string[];
   try {
@@ -154,9 +154,9 @@ export function loadAllStats(): PersistedStats[] {
 }
 
 /**
- * Reinicia a "vida" do cache de uma sessão (lastTurnTs = agora) após um
- * keep-alive bem-sucedido. Gravação síncrona e atômica — o keeper precisa do
- * estado fresco já no disco antes do próximo tick. Não mexe em mais nada.
+ * Restarts a session's cache "life" (lastTurnTs = now) after a successful
+ * keep-alive. Synchronous and atomic write — the keeper needs the fresh
+ * state on disk before the next tick. It touches nothing else.
  */
 export function bumpCacheActivity(sessionId: string, ts: number): void {
   const s = loadStats(sessionId);
@@ -168,18 +168,18 @@ export function bumpCacheActivity(sessionId: string, ts: number): void {
   dlog('stats', `cache activity bump ${sessionId} → lastTurnTs=${s.updatedAt}`);
 }
 
-// Buffer de gravação: 1 estado pendente por sessão (o mais recente vence).
+// Write buffer: one pending state per session (the most recent wins).
 const pending = new Map<string, PersistedStats>();
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Enfileira o estado de uma sessão p/ persistir; grava debounced e atômico. */
+/** Queues a session's state for persistence; writes debounced and atomic. */
 export function saveStats(data: PersistedStats): void {
   if (!data.sessionId) return;
   pending.set(data.sessionId, data);
   if (!saveTimer) saveTimer = setTimeout(flushStats, FLUSH_MS);
 }
 
-/** Grava imediatamente tudo que está pendente (chamar no deactivate da extensão). */
+/** Writes everything pending right away (call it in the extension's deactivate). */
 export function flushStats(): void {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -203,7 +203,7 @@ export function flushStats(): void {
     }
   }
   pending.clear();
-  dlog('stats', `flush ${ids.length} sessão(ões): ${ids.join(', ')}`);
+  dlog('stats', `flush ${ids.length} session(s): ${ids.join(', ')}`);
 }
 
 /** Decima a timeline mantendo as amostras recentes densas e ralando as antigas. */

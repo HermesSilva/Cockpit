@@ -1,11 +1,11 @@
-// Diretivas do repositório lidas do CLAUDE.md do projeto. Diferente do conteúdo
-// que o CLI injeta no contexto (instruções p/ o LLM, sem enforcement), aqui o
-// Cockpit lê o arquivo p/ APLICAR regras na UI — hoje: o effort mínimo.
+// Repository directives read from the project's CLAUDE.md. Unlike the content
+// the CLI injects into the context (instructions for the LLM, with no enforcement), here the
+// Cockpit reads the file to ENFORCE rules in the UI — today: the minimum effort.
 //
-// Tag (padrão MD, dentro de um comentário p/ não poluir o texto):
+// Tag (plain MD, inside a comment so it doesn't pollute the text):
 //   <!-- **enffort=max** -->
-// Tolerante: aceita `enffort`/`effort`/`enfor`, com/sem `**`, espaços, e em
-// qualquer lugar do arquivo.
+// Tolerant: accepts `enffort`/`effort`/`enfor`, with/without `**`, spaces, and
+// anywhere in the file.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -17,16 +17,16 @@ export const EFFORT_RANK: Record<string, number> = {
   max: 5,
 };
 
-// `enffort = <nível>`, opcionalmente em negrito; nível tem que ser conhecido.
+// `enffort = <level>`, optionally in bold; the level must be a known one.
 const ENFOR_RE = /(?:enffort|effort|enfor)\s*=\s*\*{0,2}\s*(low|medium|high|xhigh|max)\b/i;
 
-/** Extrai o effort mínimo de um texto (CLAUDE.md), ou undefined. */
+/** Extracts the minimum effort from a text (CLAUDE.md), or undefined. */
 export function parseMinEffort(text: string): string | undefined {
   const m = ENFOR_RE.exec(text);
   return m ? m[1].toLowerCase() : undefined;
 }
 
-/** Lê o effort mínimo de um CLAUDE.md por caminho absoluto. */
+/** Reads the minimum effort from a CLAUDE.md by absolute path. */
 export function readMinEffortFromFile(absPath: string): string | undefined {
   try {
     return parseMinEffort(fs.readFileSync(absPath, 'utf8'));
@@ -35,23 +35,23 @@ export function readMinEffortFromFile(absPath: string): string | undefined {
   }
 }
 
-/** Effort mínimo declarado no CLAUDE.md da RAIZ do projeto, ou undefined. */
+/** Minimum effort declared in the CLAUDE.md at the project ROOT, or undefined. */
 export function readMinEffort(cwd: string): string | undefined {
   if (!cwd) return undefined;
   return readMinEffortFromFile(path.join(cwd, 'CLAUDE.md'));
 }
 
 /**
- * Resolve o effort mínimo aplicável a uma pasta: sobe de `dir` até `root`
- * (inclusive) e devolve o tag do CLAUDE.md MAIS específico (mais profundo) que
- * tiver um — pastas diferentes podem ter valores diferentes. Também olha
- * `<dir>/.claude/CLAUDE.md`. undefined se nenhum declara.
+ * Resolves the minimum effort applicable to a folder: walks up from `dir` to `root`
+ * (inclusive) and returns the tag from the MOST specific (deepest) CLAUDE.md that
+ * has one — different folders may have different values. It also looks at
+ * `<dir>/.claude/CLAUDE.md`. undefined when none declares it.
  */
 export function resolveMinEffort(dir: string, root: string): string | undefined {
   if (!dir) return undefined;
   let cur = path.resolve(dir);
   const stop = root ? path.resolve(root) : cur;
-  // Limite de segurança contra loops em caminhos estranhos.
+  // Safety bound against loops on odd paths.
   for (let i = 0; i < 64; i++) {
     const lvl =
       readMinEffortFromFile(path.join(cur, 'CLAUDE.md')) ??

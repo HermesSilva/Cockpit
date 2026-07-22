@@ -1,9 +1,9 @@
-// Descoberta opcional de modelos via API /v1/models.
-// Funciona com credencial de API (key/bearer via env) OU com o token OAuth da
-// assinatura (~/.claude/.credentials.json) — assim contas de assinatura também
-// veem modelos novos assim que a conta os libera, sem depender da lista estática.
-// GET /v1/models NÃO gasta token: cabe na exceção "utilitária limpa" do CLAUDE.md
-// (mesmo padrão do endpoint de usage). Só LEITURA do token; nunca grava/loga.
+// Optional model discovery via the /v1/models API.
+// Works with an API credential (key/bearer via env) OR with the subscription's
+// OAuth token (~/.claude/.credentials.json) — so subscription accounts also
+// see new models as soon as the account gets them, without depending on the static list.
+// GET /v1/models spends NO tokens: it fits the "clean utility" exception in CLAUDE.md
+// (same pattern as the usage endpoint). Token is READ-only; never written/logged.
 import * as https from 'node:https';
 import { readOauthToken } from './AiClient';
 
@@ -17,21 +17,21 @@ export function resolveCreds(settingApiKey?: string): DiscoveryCreds | undefined
   const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
   if (apiKey) return { apiKey };
   if (authToken) return { authToken };
-  // Assinatura sem API key: usa o token OAuth do CLI (mesma auth, chamada limpa).
+  // Subscription without an API key: uses the CLI's OAuth token (same auth, clean call).
   const oauth = readOauthToken();
   if (oauth) return { authToken: oauth };
   return undefined;
 }
 
-// Modelo descoberto via /v1/models. `contextTokens` = max_input_tokens (janela
-// de contexto real da conta; presente desde mar/2026 — undefined em contas/versões
-// que ainda não o expõem).
+// Model discovered via /v1/models. `contextTokens` = max_input_tokens (the account's
+// real context window; present since 2026-03 — undefined on accounts/versions
+// that don't expose it yet).
 export interface DiscoveredModel {
   id: string;
   contextTokens?: number;
 }
 
-/** Retorna os modelos que a credencial acessa (id + contexto), ou [] em falha. */
+/** Returns the models the credential can access (id + context), or [] on failure. */
 export function discoverModels(creds: DiscoveryCreds): Promise<DiscoveredModel[]> {
   return new Promise((resolve) => {
     const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' };

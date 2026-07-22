@@ -1,11 +1,11 @@
-// Lê as sessões persistidas pelo Claude Code em ~/.claude/projects/<cwd>/<id>.jsonl.
-// Lista "contextos existentes" e reconstrói o histórico para renderização.
+// Reads the sessions Claude Code persists in ~/.claude/projects/<cwd>/<id>.jsonl.
+// Lists "existing contexts" and rebuilds the history for rendering.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SessionInfo, HistoryItem } from '../../shared/protocol';
 
-/** Codifica o cwd no formato de pasta do Claude Code (':' '\\' '/' -> '-'). */
+/** Encodes the cwd in Claude Code's folder format (':' '\\' '/' -> '-'). */
 export function encodeCwd(cwd: string): string {
   return cwd.replace(/[:\\/]/g, '-');
 }
@@ -14,7 +14,7 @@ function projectsDir(cwd: string): string {
   return path.join(os.homedir(), '.claude', 'projects', encodeCwd(cwd));
 }
 
-/** Remove BOM/zero-width e normaliza espaços (títulos limpos). */
+/** Removes BOM/zero-width and normalizes spaces (clean titles). */
 function clean(s: string): string {
   return s.replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -33,9 +33,9 @@ function textOfContent(content: unknown): string {
 function isMetaUserText(text: string): boolean {
   const t = clean(text);
   if (!t) return true;
-  // pula wrappers de comando / system-reminders / notificações de tarefa em
-  // background (injetadas pela própria CLI) persistidos no transcript — não são
-  // mensagens do usuário, não devem virar bolha "Hermes" com XML cru.
+  // skips command wrappers / system-reminders / background task
+  // notifications (injected by the CLI itself) persisted in the transcript — they aren't
+  // user messages and shouldn't become a "Hermes" bubble with raw XML.
   return (
     t.startsWith('<command-') ||
     t.startsWith('<local-command') ||
@@ -44,7 +44,7 @@ function isMetaUserText(text: string): boolean {
   );
 }
 
-/** Lista as sessões do cwd, mais recentes primeiro (limit padrão 50). */
+/** Lists the cwd's sessions, most recent first (default limit 50). */
 export function listSessions(cwd: string, limit = 50): SessionInfo[] {
   const dir = projectsDir(cwd);
   let files: string[];
@@ -84,7 +84,7 @@ export function listSessions(cwd: string, limit = 50): SessionInfo[] {
   return out.slice(0, limit);
 }
 
-/** Id da sessão mais recente (por mtime) do cwd, sem ler o conteúdo. */
+/** Id of the most recent session (by mtime) in the cwd, without reading the content. */
 export function latestSessionId(cwd: string): string | undefined {
   const dir = projectsDir(cwd);
   let files: string[];
@@ -99,13 +99,13 @@ export function latestSessionId(cwd: string): string | undefined {
       const st = fs.statSync(path.join(dir, f));
       if (!best || st.mtimeMs > best.m) best = { id: f.replace(/\.jsonl$/, ''), m: st.mtimeMs };
     } catch {
-      /* ignora */
+      /* ignored */
     }
   }
   return best?.id;
 }
 
-/** Apaga o transcript de uma sessão. Retorna true se removeu. Irreversível. */
+/** Deletes a session's transcript. Returns true when removed. Irreversible. */
 export function deleteSession(cwd: string, sessionId: string): boolean {
   const file = path.join(projectsDir(cwd), `${sessionId}.jsonl`);
   try {
@@ -117,9 +117,9 @@ export function deleteSession(cwd: string, sessionId: string): boolean {
 }
 
 /**
- * Rebobina o transcript: mantém só as linhas ANTES daquela cujo `uuid` casa com
- * `uuid`, descartando o prompt-alvo e tudo que veio depois. Grava de forma atômica
- * (tmp + rename). Retorna true se cortou. Irreversível.
+ * Rewinds the transcript: keeps only the lines BEFORE the one whose `uuid` matches
+ * `uuid`, dropping the target prompt and everything after it. Writes atomically
+ * (tmp + rename). Returns true when it cut. Irreversible.
  */
 export function truncateTranscriptAt(cwd: string, sessionId: string, uuid: string): boolean {
   const file = path.join(projectsDir(cwd), `${sessionId}.jsonl`);
@@ -140,7 +140,7 @@ export function truncateTranscriptAt(cwd: string, sessionId: string, uuid: strin
         break;
       }
     } catch {
-      /* linha inválida: ignora */
+      /* invalid line: ignored */
     }
   }
   if (cut < 0) return false;
@@ -155,7 +155,7 @@ export function truncateTranscriptAt(cwd: string, sessionId: string, uuid: strin
   }
 }
 
-/** Apaga todos os transcripts (.jsonl) do cwd. Retorna o nº removido. Irreversível. */
+/** Deletes every transcript (.jsonl) in the cwd. Returns how many were removed. Irreversible. */
 export function deleteAllSessions(cwd: string): number {
   const dir = projectsDir(cwd);
   let files: string[];
@@ -170,16 +170,16 @@ export function deleteAllSessions(cwd: string): number {
       fs.unlinkSync(path.join(dir, f));
       removed++;
     } catch {
-      /* ignora arquivos travados/já removidos */
+      /* ignores locked/already removed files */
     }
   }
   return removed;
 }
 
 /**
- * Título e nº de mensagens. Prioriza o título gerado pela IA (`ai-title`, o mais
- * recente vence) — o mesmo que o picker do /resume mostra; cai para a 1ª mensagem
- * do usuário quando a sessão é curta demais para ter título.
+ * Title and message count. Prefers the AI-generated title (`ai-title`, the most
+ * recent wins) — the same one the /resume picker shows; falls back to the first user
+ * message when the session is too short to have a title.
  */
 interface Summary {
   title: string;
@@ -234,14 +234,14 @@ function summarize(file: string): Summary {
       model = o.model;
     }
   }
-  // Título estilo web: prioriza o `ai-title` gerado pela CLI (mesmo do picker do
-  // /resume); sem ele, usa o 1º prompt do usuário TRUNCADO — um prompt cru pode
-  // ser um parágrafo inteiro e não serve como rótulo de sessão.
+  // Web-style title: prefers the `ai-title` generated by the CLI (same as the /resume
+  // picker); without it, uses the first user prompt TRUNCATED — a raw prompt can
+  // be a whole paragraph and doesn't work as a session label.
   const title = aiTitle || truncateTitle(firstUser);
   return { title, count, userCount, assistantCount, toolCount, model };
 }
 
-/** Corta o fallback na 1ª quebra de sentença/linha e limita ~60 chars. */
+/** Cuts the fallback at the first sentence/line break and caps it at ~60 chars. */
 function truncateTitle(s: string, max = 60): string {
   const t = clean(s);
   if (!t) return '';
@@ -250,7 +250,7 @@ function truncateTitle(s: string, max = 60): string {
   return base.length <= max ? base : base.slice(0, max).replace(/\s+\S*$/, '') + '…';
 }
 
-/** Reconstrói os itens do transcript para renderizar o histórico ao retomar. */
+/** Rebuilds the transcript items to render the history when resuming. */
 export function loadTranscript(cwd: string, sessionId: string): HistoryItem[] {
   const file = path.join(projectsDir(cwd), `${sessionId}.jsonl`);
   let content: string;
@@ -295,7 +295,7 @@ export function loadTranscript(cwd: string, sessionId: string): HistoryItem[] {
           }
         }
       }
-      // Corpo do usuário preserva quebras de linha (clean() é só p/ títulos).
+      // The user body preserves line breaks (clean() is only for titles).
       const text = textOfContent(c)
         .replace(/[​-‍﻿]/g, '')
         .trim();
@@ -349,7 +349,7 @@ function rid(): string {
   return `h_${seq++}`;
 }
 
-/** Epoch ms do campo `timestamp` (ISO) da linha do transcript, se houver. */
+/** Epoch ms from the transcript line's `timestamp` field (ISO), when present. */
 function tsOf(o: any): number | undefined {
   const t = o?.timestamp;
   if (typeof t !== 'string') return undefined;

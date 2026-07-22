@@ -1,19 +1,19 @@
-// Dicionário de ditado POR LOGIN (conta Claude). Guarda termos a reconhecer/
-// preservar e substituições "ouvido → escrito". Usado em dois pontos:
-//   1. STT ao vivo: vira o header x-config-keyterms (Deepgram Nova-3 prioriza
-//      esses termos no reconhecimento).
-//   2. Pós-ditado: aplica as substituições ao texto e orienta o corretor Haiku
-//      a PRESERVAR os termos (não "corrigir" nomes próprios/jargão).
-// Arquivo: ~/.claude/tootega/voice-dictionary/<conta>.json (conta = e-mail slug).
+// Dictation dictionary PER LOGIN (Claude account). Holds terms to recognize/
+// preserve and "heard → written" replacements. Used in two places:
+//   1. Live STT: becomes the x-config-keyterms header (Deepgram Nova-3 prioritizes
+//      these terms during recognition).
+//   2. Post-dictation: applies the replacements to the text and steers the Haiku corrector
+//      to PRESERVE the terms (not to "fix" proper nouns/jargon).
+// File: ~/.claude/tootega/voice-dictionary/<account>.json (account = e-mail slug).
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fetchAuthStatus } from './AuthStatus';
 import { log } from '../util/logger';
 
-// Dicionários POR MÁQUINA (login do SO), não por conta Claude: um único arquivo
-// que vale para tudo deste usuário da máquina. Inclui termos/substituições do
-// ditado e as palavras do corretor.
+// PER-MACHINE dictionaries (OS login), not per Claude account: a single file
+// that applies to everything for this machine user. Includes dictation
+// terms/replacements and the spell-checker words.
 const DIR = path.join(os.homedir(), '.claude', 'tootega');
 const LEGACY_DIR = path.join(DIR, 'voice-dictionary'); // antigo: por conta
 const FILE = path.join(DIR, 'dictionaries.json');
@@ -33,13 +33,13 @@ export interface VoiceDict {
 
 const EMPTY: VoiceDict = { terms: [], replacements: [], spellWords: [] };
 
-/** Slug seguro p/ nome de arquivo a partir do e-mail da conta (ou 'default'). */
+/** Filename-safe slug from the account e-mail (or 'default'). */
 export function accountSlug(email?: string): string {
   const s = (email || '').trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '_');
   return s || 'default';
 }
 
-// Resolve a conta logada UMA vez (spawn do CLI é lento); cache até login/logout.
+// Resolves the logged-in account ONCE (the CLI spawn is slow); cached until login/logout.
 let keyPromise: Promise<string> | undefined;
 export function resolveAccountKey(claudePath: string): Promise<string> {
   if (!keyPromise) {
@@ -49,7 +49,7 @@ export function resolveAccountKey(claudePath: string): Promise<string> {
   }
   return keyPromise;
 }
-/** Invalida o cache da conta (chamar em login/logout). */
+/** Invalidates the account cache (call on login/logout). */
 export function resetAccountKey(): void {
   keyPromise = undefined;
 }
@@ -69,7 +69,7 @@ function parse(raw: string): VoiceDict {
   };
 }
 
-// Migração: junta os dicionários por-conta legados num só (uma vez).
+// Migration: merges the legacy per-account dictionaries into one (once).
 function migrateLegacy(): VoiceDict {
   const merged: VoiceDict = { terms: [], replacements: [], spellWords: [] };
   try {
@@ -81,16 +81,16 @@ function migrateLegacy(): VoiceDict {
         merged.replacements.push(...d.replacements);
         merged.spellWords!.push(...(d.spellWords ?? []));
       } catch {
-        /* ignora arquivo corrompido */
+        /* ignores a corrupted file */
       }
     }
   } catch {
-    /* sem dir legado */
+    /* no legacy dir */
   }
   return merged;
 }
 
-/** Lê o dicionário da máquina (vazio se ausente/corrompido). Tolerante. */
+/** Reads the machine dictionary (empty when missing/corrupted). Tolerant. */
 export function loadDictionary(): VoiceDict {
   try {
     return parse(fs.readFileSync(FILE, 'utf8'));
@@ -99,7 +99,7 @@ export function loadDictionary(): VoiceDict {
   }
 }
 
-/** Grava o dicionário da máquina (atômico). Normaliza/dedupe. */
+/** Writes the machine dictionary (atomic). Normalizes/dedupes. */
 export function saveDictionary(dict: VoiceDict): void {
   const terms = dedupe((dict.terms ?? []).map((t) => t.trim()).filter(Boolean)).slice(0, MAX_TERMS);
   const replacements = (dict.replacements ?? [])
@@ -117,11 +117,11 @@ export function saveDictionary(dict: VoiceDict): void {
 }
 
 /**
- * String de keyterms p/ o header do STT. Ordem = PRIORIDADE: termos do dicionário
- * do usuário primeiro (curados à mão, mais valiosos), depois os extras colhidos
- * do workspace (nome do projeto, deps, glossário). O orçamento de chars corta o
- * excedente — então o que o usuário definiu nunca é descartado em favor do auto.
- * `extras` aceita string única (compat) ou lista.
+ * Keyterms string for the STT header. Order = PRIORITY: the user's dictionary
+ * terms first (hand-curated, more valuable), then the extras harvested
+ * from the workspace (project name, deps, glossary). The char budget cuts the
+ * overflow — so what the user defined is never dropped in favor of the automatic ones.
+ * `extras` accepts a single string (compat) or a list.
  */
 export function buildKeyterms(dict: VoiceDict, extras?: string | string[]): string {
   const extraList = extras == null ? [] : Array.isArray(extras) ? extras : [extras];
@@ -135,7 +135,7 @@ export function buildKeyterms(dict: VoiceDict, extras?: string | string[]): stri
   return out;
 }
 
-/** Aplica as substituições "ouvido → escrito" ao texto (case-insensitive, por palavra). */
+/** Applies the "heard → written" replacements to the text (case-insensitive, per word). */
 export function applyReplacements(text: string, dict: VoiceDict): string {
   if (!text || !dict.replacements.length) return text;
   let out = text;

@@ -1,5 +1,5 @@
-// Consulta a última versão do Claude Code no registry do npm e compara com a
-// instalada. Best-effort: falha de rede → undefined (UI trata como "atualizado").
+// Queries the latest Claude Code version on the npm registry and compares it with
+// the installed one. Best-effort: network failure → undefined (the UI treats it as up to date).
 import * as https from 'node:https';
 
 const PKG = '@anthropic-ai/claude-code';
@@ -38,14 +38,14 @@ export function getLatestCliVersion(): Promise<string | undefined> {
   });
 }
 
-/** Extrai "x.y.z" de uma string (ex.: "1.0.108 (Claude Code)"). */
+/** Extracts "x.y.z" from a string (e.g. "1.0.108 (Claude Code)"). */
 export function parseSemver(s?: string): string | undefined {
   if (!s) return undefined;
   const m = s.match(/(\d+)\.(\d+)\.(\d+)/);
   return m ? m[0] : undefined;
 }
 
-/** true se `installed` < `latest` (semver). Sem dados confiáveis → false. */
+/** true if `installed` < `latest` (semver). No reliable data → false. */
 export function isOutdated(installed?: string, latest?: string): boolean {
   const a = parseSemver(installed);
   const b = parseSemver(latest);

@@ -1,5 +1,5 @@
-// Correção ortográfica/gramatical do texto ditado, via Haiku. Usa o helper
-// reusável AiClient (Messages API direta, limpa: só instrução + texto, ~1.7s).
+// Spelling/grammar correction of dictated text, via Haiku. Uses the reusable
+// AiClient helper (direct Messages API, clean: only instruction + text, ~1.7s).
 import { ask } from './AiClient';
 
 const SYSTEM =
@@ -8,9 +8,9 @@ const SYSTEM =
   'Responda SOMENTE com o texto corrigido — sem comentários, sem aspas, sem prefixos.';
 
 /**
- * Corrige o texto. `hints` (do dicionário de ditado) orienta o modelo a preservar
- * termos/jargão e aplicar substituições. Retorna o corrigido, ou undefined em
- * falha (mantém original).
+ * Corrects the text. `hints` (from the dictation dictionary) steers the model to keep
+ * terms/jargon and to apply replacements. Returns the corrected text, or undefined on
+ * failure (keeps the original).
  */
 export function correctText(text: string, hints?: string): Promise<string | undefined> {
   return ask({

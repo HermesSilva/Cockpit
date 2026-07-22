@@ -1,6 +1,6 @@
-// Gerência de plugins via CLI oficial (`claude plugin …`). Lista (instalados +
-// disponíveis nos marketplaces), instala, remove, habilita/desabilita, atualiza;
-// e gerencia marketplaces (add/remove). Tudo é o canal CLI — só surface na UI.
+// Plugin management via the official CLI (`claude plugin …`). Lists (installed +
+// available in the marketplaces), installs, removes, enables/disables, updates;
+// and manages marketplaces (add/remove). It is all the CLI channel — we only surface it in the UI.
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -20,13 +20,13 @@ export type PluginAction =
   | 'marketAdd'
   | 'marketRemove';
 
-/** No Windows com shell, envolve o caminho em aspas se tiver espaços. */
+/** On Windows with a shell, wraps the path in quotes when it has spaces. */
 function shellSafe(p: string, useShell: boolean): string {
   if (useShell && /\s/.test(p) && !p.startsWith('"')) return `"${p}"`;
   return p;
 }
 
-/** Roda `claude <args>` e devolve { code, out, err }. Tolerante a timeout. */
+/** Runs `claude <args>` and returns { code, out, err }. Tolerant to timeouts. */
 function run(
   claudePath: string,
   args: string[],
@@ -70,7 +70,7 @@ function run(
   });
 }
 
-/** Extrai o 1º JSON (objeto ou array) da saída, tolerante a ruído antes/depois. */
+/** Extracts the first JSON (object or array) from the output, tolerant to noise around it. */
 function parseJson<T>(s: string): T | undefined {
   const a = s.indexOf('{');
   const b = s.indexOf('[');
@@ -105,7 +105,7 @@ interface RawList {
   }>;
 }
 
-/** URL do repositório de um marketplace (p/ plugins sem source.url próprio). */
+/** Repository URL of a marketplace (for plugins without their own source.url). */
 function marketUrl(m?: { source?: string; repo?: string }): string | undefined {
   if (!m || !m.repo) return undefined;
   if (/^https?:\/\//.test(m.repo)) return m.repo.replace(/\.git$/, '');
@@ -113,7 +113,7 @@ function marketUrl(m?: { source?: string; repo?: string }): string | undefined {
   return undefined;
 }
 
-/** Resolve a URL de um plugin disponível (source próprio ou repo do marketplace). */
+/** Resolves the URL of an available plugin (its own source or the marketplace repo). */
 function availableUrl(source: unknown, marketRepoUrl?: string): string | undefined {
   if (source && typeof source === 'object') {
     const s = source as { url?: string; path?: string; ref?: string };
@@ -124,11 +124,11 @@ function availableUrl(source: unknown, marketRepoUrl?: string): string | undefin
     }
     if (url) return url;
   }
-  // source string = caminho relativo no monorepo do marketplace → cai pro repo dele.
+  // source string = relative path inside the marketplace monorepo → falls back to its repo.
   return marketRepoUrl;
 }
 
-/** Lê descrição + URL do manifest plugin.json de um plugin instalado. */
+/** Reads description + URL from the plugin.json manifest of an installed plugin. */
 function readManifest(installPath?: string): { description?: string; url?: string } {
   if (!installPath) return {};
   try {
@@ -151,7 +151,7 @@ function readManifest(installPath?: string): { description?: string; url?: strin
   }
 }
 
-/** Quantos arquivos/dirs há numa subpasta (componentes do plugin). */
+/** How many files/dirs there are in a subfolder (plugin components). */
 function countDir(base: string, sub: string): number {
   try {
     return fs.readdirSync(path.join(base, sub)).filter((f) => !f.startsWith('.')).length;
@@ -160,14 +160,14 @@ function countDir(base: string, sub: string): number {
   }
 }
 
-/** Tipo do plugin pelos componentes no installPath. Vazio se desconhecido. */
+/** Plugin type from the components in installPath. Empty when unknown. */
 function componentKind(installPath?: string): string | undefined {
   if (!installPath) return undefined;
   const present: string[] = [];
   if (countDir(installPath, 'skills') > 0) present.push('skills');
   if (countDir(installPath, 'agents') > 0) present.push('agents');
   if (countDir(installPath, 'commands') > 0) present.push('commands');
-  // hooks/mcp podem vir do manifest OU de pastas.
+  // hooks/mcp may come from the manifest OR from folders.
   let mcp = countDir(installPath, 'mcp-servers') > 0 || countDir(installPath, '.mcp') > 0;
   let hooks = countDir(installPath, 'hooks') > 0;
   try {
@@ -175,12 +175,12 @@ function componentKind(installPath?: string): string | undefined {
     if (j.mcpServers && Object.keys(j.mcpServers).length) mcp = true;
     if (j.hooks && Object.keys(j.hooks).length) hooks = true;
   } catch {
-    /* sem manifest legível */
+    /* no readable manifest */
   }
   if (mcp) present.push('mcp');
   if (hooks) present.push('hooks');
   if (present.length === 0) return undefined;
-  // Um componente "de verdade" (mcp/commands/agents) domina hooks/skills.
+  // A "real" component (mcp/commands/agents) beats hooks/skills.
   const strong = present.filter((p) => p !== 'hooks');
   if (strong.length > 1) return 'mixed';
   if (strong.length === 1) return strong[0];
@@ -192,7 +192,7 @@ interface RawMarket {
   repo?: string;
 }
 
-// --- Cache de metadados (url + tipo) resolvidos pelo Haiku, em ~/.claude/tootega ---
+// --- Metadata cache (url + type) resolved by Haiku, in ~/.claude/tootega ---
 const KINDS = ['skills', 'agents', 'commands', 'mcp', 'hooks', 'mixed'];
 interface MetaEntry {
   url?: string;
@@ -206,14 +206,14 @@ function loadMetaCache(): MetaCache {
   try {
     const o = JSON.parse(fs.readFileSync(URL_CACHE, 'utf8'));
     if (o && o.meta && typeof o.meta === 'object') return { version: 2, meta: o.meta };
-    // Migra formato antigo { urls: {id:url} }.
+    // Migrates the old format { urls: {id:url} }.
     if (o && o.urls && typeof o.urls === 'object') {
       const meta: Record<string, MetaEntry> = {};
       for (const [k, v] of Object.entries(o.urls)) if (typeof v === 'string') meta[k] = { url: v };
       return { version: 2, meta };
     }
   } catch {
-    /* ausente/corrompido */
+    /* missing/corrupted */
   }
   return { version: 2, meta: {} };
 }
@@ -227,9 +227,9 @@ function saveMetaCache(c: MetaCache): void {
 }
 
 /**
- * Pede ao Haiku a URL canônica + o TIPO de cada plugin. Cacheado em
- * ~/.claude/tootega. `force` re-consulta tudo; senão só os que faltam.
- * O tipo dos INSTALADOS é calculado dos componentes (preciso) e sobrepõe.
+ * Asks Haiku for the canonical URL + the TYPE of each plugin. Cached in
+ * ~/.claude/tootega. `force` re-queries everything; otherwise only what is missing.
+ * The type of INSTALLED ones is computed from the components (accurate) and overrides it.
  */
 async function resolveMeta(data: PluginsData, force: boolean): Promise<void> {
   const cache = loadMetaCache();
@@ -271,7 +271,7 @@ async function resolveMeta(data: PluginsData, force: boolean): Promise<void> {
     saveMetaCache(cache);
     log(`[plugin] resolved ${need.length} plugins via haiku`);
   }
-  // Aplica: url do cache; kind dos instalados = componentes (preciso) > cache.
+  // Applies: url from the cache; kind of installed ones = components (accurate) > cache.
   for (const a of data.available) {
     const m = cache.meta[a.pluginId];
     if (m?.url) a.url = m.url;
@@ -304,7 +304,7 @@ function extractMetaMap(text: string): Record<string, MetaEntry> | undefined {
   }
 }
 
-/** Lista instalados + disponíveis + marketplaces. `forceUrls` re-valida URLs via Haiku. */
+/** Lists installed + available + marketplaces. `forceUrls` re-validates URLs via Haiku. */
 export async function listPlugins(claudePath: string, forceUrls = false): Promise<PluginsData> {
   const [listRes, mktRes] = await Promise.all([
     run(claudePath, ['plugin', 'list', '--json', '--available'], 60_000),
@@ -342,7 +342,7 @@ export async function listPlugins(claudePath: string, forceUrls = false): Promis
       .filter((m) => m.name)
       .map((m) => ({ name: m.name as string, source: m.source, repo: m.repo })),
   };
-  // Enriquece URL + tipo via Haiku (cacheado). Best-effort: falha mantém derivado.
+  // Enriches URL + type via Haiku (cached). Best-effort: a failure keeps the derived value.
   try {
     await resolveMeta(data, forceUrls);
   } catch (e) {
@@ -351,7 +351,7 @@ export async function listPlugins(claudePath: string, forceUrls = false): Promis
   return data;
 }
 
-/** Argumentos do CLI p/ cada ação. */
+/** CLI arguments for each action. */
 function actionArgs(action: PluginAction, arg: string, scope?: string): string[] {
   switch (action) {
     case 'install':
@@ -371,7 +371,7 @@ function actionArgs(action: PluginAction, arg: string, scope?: string): string[]
   }
 }
 
-/** Executa uma ação. Retorna { ok, message }. */
+/** Runs an action. Returns { ok, message }. */
 export async function pluginAction(
   claudePath: string,
   action: PluginAction,

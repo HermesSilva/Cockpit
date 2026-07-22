@@ -9,15 +9,15 @@ import { log } from '../util/logger';
 
 const SAMPLE_RATE = 16000;
 // 100 ms por frame = 16000 * 0.1 * 2 bytes (16-bit) = 3200 bytes. Mandar frames
-// pequenos e regulares (como faz o CLI/probe) ajuda o endpointing do servidor —
-// o stdout do ffmpeg vem em bursts grandes, então re-fatiamos.
+// small, regular chunks (as the CLI/probe does) helps the server's endpointing —
+// ffmpeg's stdout arrives in large bursts, so we re-slice it.
 const FRAME_BYTES = 3200;
 
 export interface AudioCaptureOpts {
   ffmpegPath?: string; // override; default 'ffmpeg' do PATH
 }
 
-/** Enumera devices dshow (Windows) e devolve o 1º microfone (nome amigável). */
+/** Enumerates dshow devices (Windows) and returns the first microphone (friendly name). */
 function listWindowsAudioDevice(ffmpeg: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     const p = spawn(ffmpeg, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
@@ -25,7 +25,7 @@ function listWindowsAudioDevice(ffmpeg: string): Promise<string | undefined> {
     p.stderr.on('data', (d) => (err += d.toString()));
     p.on('error', () => resolve(undefined));
     p.on('close', () => {
-      // Após o cabeçalho "DirectShow audio devices", a 1ª linha "<nome>" é o mic.
+      // After the "DirectShow audio devices" header, the first "<name>" line is the mic.
       const lines = err.split(/\r?\n/);
       let inAudio = false;
       for (const ln of lines) {
@@ -63,8 +63,8 @@ export class AudioCapture {
   constructor(private readonly opts: AudioCaptureOpts = {}) {}
 
   /**
-   * Inicia a captura. onData recebe chunks PCM16 (16 kHz mono). onError é
-   * chamado se o ffmpeg não iniciar/morrer. onExit ao encerrar.
+   * Starts the capture. onData receives PCM16 chunks (16 kHz mono). onError is
+   * called if ffmpeg fails to start/dies. onExit when it finishes.
    */
   async start(
     onData: (buf: Buffer) => void,
@@ -129,7 +129,7 @@ export class AudioCapture {
     if (this.stopped) return;
     this.stopped = true;
     if (this.proc && !this.proc.killed) {
-      // SIGINT p/ encerrar limpo; force kill como garantia.
+      // SIGINT for a clean shutdown; force kill as a safety net.
       try {
         this.proc.kill('SIGINT');
       } catch {

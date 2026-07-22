@@ -1,13 +1,13 @@
-// Preço dos modelos a partir das docs de pricing da Anthropic.
-// NÃO há endpoint de preço na API — o preço só vive nas docs. Buscamos o markdown
-// da página de pricing 1x/dia (cache em globalStorage) e parseamos a tabela
-// "Model pricing" (uma linha por modelo). É LEITURA de doc pública, sem auth e
-// sem gasto de token — não faz parte do loop do agente.
+// Model prices from Anthropic's pricing docs.
+// There is NO price endpoint in the API — the price only lives in the docs. We fetch the
+// pricing page markdown once a day (cached in globalStorage) and parse the
+// "Model pricing" table (one row per model). It is a READ of a public doc, without auth and
+// without token spend — it is not part of the agent loop.
 //
-// A tabela tem a forma:
+// The table looks like:
 //   | Model | Base Input Tokens | 5m Cache Writes | 1h Cache Writes | Cache Hits & Refreshes | Output Tokens |
 //   | Claude Opus 4.8 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
-// O nome ("Claude Opus 4.8") é normalizado p/ o id da API ("claude-opus-4-8").
+// The name ("Claude Opus 4.8") is normalized to the API id ("claude-opus-4-8").
 import * as https from 'node:https';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -30,9 +30,9 @@ interface PricingCache {
 }
 
 /**
- * Devolve o mapa de preços, usando cache em disco se fresco (<24h); senão busca
- * as docs, salva e devolve. Nunca lança: em falha de rede/parse devolve o cache
- * antigo (se houver) ou {}.
+ * Returns the price map, using the on-disk cache when fresh (<24h); otherwise fetches
+ * the docs, saves and returns. Never throws: on a network/parse failure it returns the old
+ * cache (if any) or {}.
  */
 export async function ensurePricing(cacheDir: string): Promise<PricingMap> {
   const cached = readCache(cacheDir);
@@ -44,13 +44,13 @@ export async function ensurePricing(cacheDir: string): Promise<PricingMap> {
     writeCache(cacheDir, { fetchedAt: Date.now(), models: fresh });
     return fresh;
   }
-  // Falha na busca: mantém o que tiver (mesmo velho) p/ não apagar preço da UI.
+  // Fetch failed: keeps whatever we have (even if stale) so prices don't vanish from the UI.
   return cached?.models ?? {};
 }
 
-/** "Claude Opus 4.8" -> "claude-opus-4-8". undefined se não casar o padrão. */
+/** "Claude Opus 4.8" -> "claude-opus-4-8". undefined when the pattern doesn't match. */
 export function nameToId(name: string): string | undefined {
-  // Ignora links markdown e texto após o nome ("... starting September 1, 2026").
+  // Ignores markdown links and text after the name ("... starting September 1, 2026").
   const stripped = name.replace(/\[[^\]]*\]\([^)]*\)/g, '').trim();
   const m = stripped.match(/^Claude\s+([A-Za-z]+)\s+(\d+(?:\.\d+)?)/i);
   if (!m) return undefined;
@@ -59,7 +59,7 @@ export function nameToId(name: string): string | undefined {
   return `claude-${family}-${version}`;
 }
 
-/** Extrai o primeiro valor em dólar de uma célula ("$6.25 / MTok" -> 6.25). */
+/** Extracts the first dollar value from a cell ("$6.25 / MTok" -> 6.25). */
 function parseUsd(cell: string): number | undefined {
   const m = cell.match(/\$\s*([\d.]+)/);
   if (!m) return undefined;
@@ -67,10 +67,10 @@ function parseUsd(cell: string): number | undefined {
   return Number.isFinite(v) ? v : undefined;
 }
 
-/** Parseia o markdown das docs e devolve id -> {inMTok, outMTok}. */
+/** Parses the docs markdown and returns id -> {inMTok, outMTok}. */
 export function parsePricingMarkdown(md: string): PricingMap {
   const out: PricingMap = {};
-  // Recorta a seção "## Model pricing" até o próximo cabeçalho de nível 2.
+  // Cuts the "## Model pricing" section up to the next level-2 heading.
   const start = md.search(/^##\s+Model pricing/im);
   const section = start >= 0 ? md.slice(start) : md;
   const end = section.search(/^##\s+(?!Model pricing)/im);
@@ -104,7 +104,7 @@ function fetchPricingDocs(): Promise<PricingMap> {
         timeout: 8000,
       },
       (res) => {
-        // Segue 1 redirect simples se vier (mesmo host).
+        // Follows one simple redirect when present (same host).
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
           resolve(fetchRedirect(res.headers.location));
@@ -179,7 +179,7 @@ function readCache(dir: string): PricingCache | undefined {
     const o = JSON.parse(raw);
     if (o && typeof o.fetchedAt === 'number' && o.models) return o as PricingCache;
   } catch {
-    /* sem cache */
+    /* no cache */
   }
   return undefined;
 }

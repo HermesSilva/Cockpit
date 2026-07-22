@@ -1,64 +1,64 @@
-// Extrai, do evento `system/init` do CLI, o inventário de tools por servidor MCP.
-// Lógica PURA (sem VSCode/CLI) para ser testável e reusável na UI: recebe as
-// listas cruas `tools[]` e `mcp_servers[]` do init e devolve os tools MCP
-// agrupados por servidor, mais os tools nativos separados.
+// Extracts, from the CLI's `system/init` event, the inventory of tools per MCP server.
+// PURE logic (no VSCode/CLI) so it is testable and reusable in the UI: it takes the
+// raw `tools[]` and `mcp_servers[]` lists from init and returns the MCP tools
+// grouped per server, plus the native tools separately.
 //
-// Formato dos nomes de tool MCP emitidos pelo CLI:
+// Shape of the MCP tool names emitted by the CLI:
 //   mcp__<server>__<tool>
-// O `<server>` é uma forma "sanitizada" do nome do servidor: caracteres que não
-// sejam [A-Za-z0-9_-] viram '_' (ex.: os ':' do id de plugin). Como o nome do
-// servidor nunca contém '__' (só '_' simples), o separador servidor↔tool é o
-// PRIMEIRO '__' após o prefixo `mcp__`. Ex.:
+// The `<server>` is a "sanitized" form of the server name: characters outside
+// [A-Za-z0-9_-] become '_' (e.g. the ':' in a plugin id). Since the server name
+// never contains '__' (only single '_'), the server↔tool separator is the
+// FIRST '__' after the `mcp__` prefix. E.g.:
 //   mcp__plugin_mssql-localdb-mcp_mssql-localdb__sql_execute_query
 //        └────────── server ───────────────────┘  └──── tool ────┘
 
 const MCP_PREFIX = 'mcp__';
 
 export interface McpServerGroup {
-  /** Nome de exibição do servidor (do `mcp_servers[]` quando casa; senão a chave sanitizada). */
+  /** Server display name (from `mcp_servers[]` when it matches; otherwise the sanitized key). */
   name: string;
-  /** Chave sanitizada usada no prefixo dos tools (`mcp__<key>__…`). */
+  /** Sanitized key used in the tool prefix (`mcp__<key>__…`). */
   key: string;
-  /** Status reportado pelo init (`connected`, `failed`, …). `undefined` se o servidor não veio no init. */
+  /** Status reported by init (`connected`, `failed`, …). `undefined` when the server wasn't in init. */
   status?: string;
-  /** Nomes curtos dos tools (sem o prefixo `mcp__<server>__`), em ordem estável. */
+  /** Short tool names (without the `mcp__<server>__` prefix), in stable order. */
   tools: string[];
 }
 
 export interface McpInventory {
-  /** Servidores MCP com seus tools; inclui servidores sem tools (0 tools) vindos do init. */
+  /** MCP servers with their tools; includes servers with no tools (0 tools) coming from init. */
   servers: McpServerGroup[];
-  /** Tools nativos do agente (Read, Edit, Bash, …), sem prefixo `mcp__`. */
+  /** Native agent tools (Read, Edit, Bash, …), without the `mcp__` prefix. */
   nativeTools: string[];
 }
 
 // --- `claude mcp list` -------------------------------------------------------
-// O init só conhece servidores que a sessão CONECTOU: um servidor de `.mcp.json`
-// ainda não aprovado (2.1.196) não aparece lá — o CLI não o sobe. O `mcp list` é
-// quem revela esses ("⏸ Pending approval") e o comando/URL de cada um. Não há
-// `--json`: a saída é texto (confirmado na CLI 2.1.209) nos formatos:
-//   <nome>: <comando>                       - <status>   (stdio)
-//   <nome>: <url> (HTTP|SSE)                 - <status>   (remoto configurado)
-//   <nome>:  (HTTP|SSE)                      - <status>   (remoto SEM url → 2.1.208)
-// onde <status> = "✔ Connected" | "✗ Failed to connect" | "⏸ Pending approval …".
-// O glyph do status varia entre versões (era `√`, virou `✔`) — por isso casamos a
-// PALAVRA, nunca o símbolo. Parsing tolerante: linha que não casar é ignorada.
+// init only knows servers the session CONNECTED: a `.mcp.json` server that is
+// not approved yet (2.1.196) doesn't show up there — the CLI won't start it. `mcp list` is
+// what reveals those ("⏸ Pending approval") and each one's command/URL. There is no
+// `--json`: the output is text (confirmed on CLI 2.1.209) in these shapes:
+//   <name>: <command>                        - <status>   (stdio)
+//   <name>: <url> (HTTP|SSE)                 - <status>   (configured remote)
+//   <name>:  (HTTP|SSE)                      - <status>   (remote WITHOUT a url → 2.1.208)
+// where <status> = "✔ Connected" | "✗ Failed to connect" | "⏸ Pending approval …".
+// The status glyph varies between versions (it was `√`, became `✔`) — that's why we match the
+// WORD, never the symbol. Tolerant parsing: a line that doesn't match is ignored.
 
 export type McpListStatus = 'connected' | 'failed' | 'pending' | 'unknown';
 
 export interface McpListEntry {
   name: string;
-  /** Comando (stdio) ou URL (http/sse), já SEM o sufixo `(HTTP)`/`(SSE)`. */
+  /** Command (stdio) or URL (http/sse), already WITHOUT the `(HTTP)`/`(SSE)` suffix. */
   target?: string;
-  /** Transporte remoto declarado ('HTTP' | 'SSE'). Ausente = stdio. */
+  /** Declared remote transport ('HTTP' | 'SSE'). Absent = stdio. */
   transport?: string;
-  /** Remoto declarado sem URL — a CLI 2.1.208 o rotula "not configured". */
+  /** Remote declared without a URL — CLI 2.1.208 labels it "not configured". */
   notConfigured?: boolean;
   status: McpListStatus;
 }
 
 const LIST_RE = /^(.+?):\s(.*?)\s+-\s+(.+)$/;
-// Sufixo de transporte que a CLI anexa a servidores remotos: "… (HTTP)" / "… (SSE)".
+// Transport suffix the CLI appends to remote servers: "… (HTTP)" / "… (SSE)".
 const TRANSPORT_RE = /^(.*?)\s*\(([A-Za-z]+)\)$/;
 
 function listStatus(tail: string): McpListStatus {
@@ -69,7 +69,7 @@ function listStatus(tail: string): McpListStatus {
   return 'unknown';
 }
 
-/** Converte o stdout do `claude mcp list` em entradas. Lógica pura (testável). */
+/** Turns the stdout of `claude mcp list` into entries. Pure logic (testable). */
 export function parseMcpList(stdout: string): McpListEntry[] {
   const out: McpListEntry[] = [];
   for (const raw of (stdout ?? '').split(/\r?\n/)) {
@@ -82,13 +82,13 @@ export function parseMcpList(stdout: string): McpListEntry[] {
 
     let target = m[2].trim();
     let transport: string | undefined;
-    // Servidor remoto: separa a URL do sufixo "(HTTP)"/"(SSE)". stdio não tem sufixo.
+    // Remote server: splits the URL from the "(HTTP)"/"(SSE)" suffix. stdio has no suffix.
     const tm = TRANSPORT_RE.exec(target);
     if (tm) {
       target = tm[1].trim();
       transport = tm[2].toUpperCase();
     }
-    // Remoto declarado mas sem URL: só sobrou o "(TYPE)", target vazio.
+    // Remote declared but without a URL: only the "(TYPE)" is left, empty target.
     const notConfigured = !!transport && !target;
 
     out.push({
@@ -102,24 +102,24 @@ export function parseMcpList(stdout: string): McpListEntry[] {
   return out;
 }
 
-/** Sanitiza um nome de servidor para a forma usada no prefixo do tool. */
+/** Sanitizes a server name into the form used in the tool prefix. */
 function sanitize(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
 /**
- * Constrói o inventário MCP a partir das listas cruas do evento `system/init`.
- * Tolerante: entradas ausentes/mal-formadas são ignoradas, nunca lança.
+ * Builds the MCP inventory from the raw lists of the `system/init` event.
+ * Tolerant: missing/malformed entries are ignored, it never throws.
  */
 export function parseMcpInventory(
   tools?: readonly string[],
   mcpServers?: ReadonlyArray<{ name?: string; status?: string }>,
 ): McpInventory {
-  // Mapa chave-sanitizada → grupo. Ordem de inserção preservada (Map).
+  // Map sanitized-key → group. Insertion order preserved (Map).
   const groups = new Map<string, McpServerGroup>();
 
-  // 1) Semeia com os servidores anunciados no init (assim servidores com 0 tools
-  //    aparecem, e já capturamos nome de exibição + status).
+  // 1) Seeds with the servers announced in init (so servers with 0 tools
+  //    show up, and we already capture display name + status).
   for (const s of mcpServers ?? []) {
     if (!s || typeof s.name !== 'string' || !s.name) continue;
     const key = sanitize(s.name);
@@ -127,7 +127,7 @@ export function parseMcpInventory(
     groups.set(key, { name: s.name, key, status: s.status, tools: [] });
   }
 
-  // 2) Distribui os tools MCP nos grupos; separa os nativos.
+  // 2) Distributes the MCP tools into the groups; separates the native ones.
   const nativeTools: string[] = [];
   for (const full of tools ?? []) {
     if (typeof full !== 'string' || !full) continue;
@@ -138,7 +138,7 @@ export function parseMcpInventory(
     const rest = full.slice(MCP_PREFIX.length);
     const sep = rest.indexOf('__');
     if (sep < 0) {
-      // `mcp__algo` sem separador de tool: trata o resto como servidor sem tool nomeado.
+      // `mcp__something` without a tool separator: treats the rest as a server with no named tool.
       const key = rest;
       if (!groups.has(key)) groups.set(key, { name: key, key, tools: [] });
       continue;
@@ -147,7 +147,7 @@ export function parseMcpInventory(
     const tool = rest.slice(sep + 2);
     let g = groups.get(key);
     if (!g) {
-      // Servidor não anunciado no init (ou nome divergente): cria pelo prefixo.
+      // Server not announced in init (or with a diverging name): creates it from the prefix.
       g = { name: key, key, tools: [] };
       groups.set(key, g);
     }

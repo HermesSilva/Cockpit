@@ -1,10 +1,10 @@
-// Speech-to-text via o MESMO serviço de voz do Claude Code (`/voice`): WebSocket
-// OAuth da Anthropic. Read-only / não gasta token — exceção registrada no
-// CLAUDE.md. Endpoint/protocolo descobertos do binário do CLI (ver memória
-// voice-stt-endpoint). Áudio: PCM linear16, 16 kHz, mono, chunks binários.
+// Speech-to-text via the SAME voice service as Claude Code (`/voice`): an Anthropic
+// OAuth WebSocket. Read-only / spends no tokens — exception recorded in
+// CLAUDE.md. Endpoint/protocol discovered from the CLI binary (see the
+// voice-stt-endpoint memory). Audio: linear16 PCM, 16 kHz, mono, binary chunks.
 //
-// IMPORTANTE: só leitura de credenciais (~/.claude/.credentials.json); nunca
-// grava nem loga o token.
+// IMPORTANT: credentials are read only (~/.claude/.credentials.json); the token is never
+// written or logged.
 import WebSocket from 'ws';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -34,8 +34,8 @@ export interface VoiceCallbacks {
 }
 
 /**
- * Uma sessão de ditado por voz. Abre o WS, recebe chunks PCM (pushAudio) e emite
- * transcrições (parciais/finais). stop() encerra (CloseStream) e fecha.
+ * One voice dictation session. Opens the WS, receives PCM chunks (pushAudio) and emits
+ * transcriptions (partial/final). stop() finishes (CloseStream) and closes.
  */
 export class VoiceSession {
   private ws?: WebSocket;
@@ -60,9 +60,9 @@ export class VoiceSession {
     }
     const base = process.env.VOICE_STREAM_BASE_URL || DEFAULT_BASE;
     const lang = this.language || 'en';
-    // Mesmos parâmetros do CLI oficial (descobertos do binário): provider Deepgram
-    // Nova-3 (qualidade), endpointing/VAD (segmenta por pausa) e forward_interims
-    // (resultados AO VIVO enquanto fala, não só no fim).
+    // Same parameters as the official CLI (discovered from the binary): Deepgram
+    // Nova-3 provider (quality), endpointing/VAD (segments on pauses) and forward_interims
+    // (LIVE results while you speak, not only at the end).
     const qs = new URLSearchParams({
       encoding: 'linear16',
       sample_rate: '16000',
@@ -119,7 +119,7 @@ export class VoiceSession {
     });
   }
 
-  /** Interpreta uma mensagem do servidor procurando transcrição parcial/final. */
+  /** Interprets a server message looking for a partial/final transcription. */
   private handleMessage(raw: string): void {
     let j: any;
     try {
@@ -134,10 +134,10 @@ export class VoiceSession {
       this.cb.onError(msg);
       return;
     }
-    // Shape real do servidor (Deepgram via proxy, forward_interims=typed):
-    //   {"type":"TranscriptInterim","data":"<texto>"} -> parcial cumulativo (ao vivo)
-    //   {"type":"TranscriptText","data":"<texto>"}    -> versão FINAL da utterance
-    //   {"type":"TranscriptEndpoint"}                 -> fim da utterance
+    // Real server shape (Deepgram via proxy, forward_interims=typed):
+    //   {"type":"TranscriptInterim","data":"<text>"} -> cumulative partial (live)
+    //   {"type":"TranscriptText","data":"<text>"}    -> FINAL version of the utterance
+    //   {"type":"TranscriptEndpoint"}                 -> end of the utterance
     if (j.type === 'TranscriptInterim' && typeof j.data === 'string') {
       this.lastInterim = j.data;
       this.cb.onTranscript(j.data, false); // ao vivo: substitui o interim atual
@@ -158,7 +158,7 @@ export class VoiceSession {
     log(`[voice] msg raw: ${raw.slice(0, 300)}`);
   }
 
-  /** Empurra um chunk de áudio PCM16 (16 kHz mono) pro servidor. */
+  /** Pushes a PCM16 audio chunk (16 kHz mono) to the server. */
   pushAudio(buf: Buffer): void {
     if (this.ws?.readyState !== WebSocket.OPEN) {
       log(`[voice] drop chunk (ws not open, state=${this.ws?.readyState})`);
@@ -170,15 +170,15 @@ export class VoiceSession {
     this.ws.send(buf);
   }
 
-  /** Encerra: flush de silêncio (força o endpoint/finalização) + CloseStream. */
+  /** Finishes: silence flush (forces endpointing/finalization) + CloseStream. */
   stop(): void {
     if (this.closed) return;
     this.closed = true;
     log(`[voice] stop() — sent ${this.chunks} chunks / ${this.bytes}B`);
     try {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        // ~600ms de silêncio: dá ao recognizer uma pausa trailing p/ finalizar o
-        // último segmento (senão, sem pausa, ele às vezes fecha sem TranscriptText).
+        // ~600ms of silence: gives the recognizer a trailing pause to finalize the
+        // last segment (otherwise, with no pause, it sometimes closes without TranscriptText).
         const silence = Buffer.alloc(3200); // 100ms PCM16 16k mono zerado
         for (let i = 0; i < 6; i++) this.ws.send(silence);
         this.ws.send(JSON.stringify({ type: 'CloseStream' }));
@@ -186,9 +186,9 @@ export class VoiceSession {
     } catch {
       /* noop */
     }
-    // NÃO fecha de imediato: o servidor processa o áudio restante e manda o
-    // TranscriptText final, depois fecha sozinho (1000). Só força o fecho como
-    // garantia se ele demorar demais.
+    // Does NOT close immediately: the server processes the remaining audio and sends the
+    // final TranscriptText, then closes by itself (1000). We only force the close as a
+    // safety net if it takes too long.
     setTimeout(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         log('[voice] force-close (no server close after CloseStream)');

@@ -1,7 +1,7 @@
-// Uso REAL da conta via endpoint OAuth do Claude (mesma fonte do /usage do CLI).
-// GET https://api.anthropic.com/api/oauth/usage — read-only, NÃO gasta token.
-// Usa o accessToken OAuth de ~/.claude/.credentials.json (só leitura; nunca grava
-// nem registra credenciais). Cache curto em memória p/ não repetir a cada refresh.
+// REAL account usage via the Claude OAuth endpoint (the same source as the CLI's /usage).
+// GET https://api.anthropic.com/api/oauth/usage — read-only, spends NO tokens.
+// Uses the OAuth accessToken from ~/.claude/.credentials.json (read-only; never writes
+// nor logs credentials). Short in-memory cache so it isn't repeated on every refresh.
 import * as https from 'node:https';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -19,7 +19,7 @@ const CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
 const TTL_MS = 30_000;
 let cache: { at: number; data?: ApiUsage } | undefined;
 
-/** accessToken OAuth (só leitura). O servidor é a autoridade sobre validade. */
+/** OAuth accessToken (read-only). The server is the authority on validity. */
 function readToken(): string | undefined {
   try {
     const o = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
@@ -30,7 +30,7 @@ function readToken(): string | undefined {
   }
 }
 
-/** Janela da API ({utilization|percent:0..100, resets_at}) -> LimitWindow (usedPct 0..1). */
+/** API window ({utilization|percent:0..100, resets_at}) -> LimitWindow (usedPct 0..1). */
 function win(w: any): LimitWindow | undefined {
   if (!w || typeof w !== 'object') return undefined;
   const pct = typeof w.utilization === 'number' ? w.utilization : w.percent;
@@ -40,10 +40,10 @@ function win(w: any): LimitWindow | undefined {
 }
 
 /**
- * Extrai as janelas do payload. Formato atual: array `limits[]` com
- * `kind` = session | weekly_all | weekly_scoped, e `scope.model.display_name`
- * nomeando o modelo da janela escopada (era `seven_day_opus`/`_sonnet` fixos).
- * Cai nos campos legados de topo quando `limits[]` não vem.
+ * Extracts the windows from the payload. Current format: a `limits[]` array with
+ * `kind` = session | weekly_all | weekly_scoped, and `scope.model.display_name`
+ * naming the model of the scoped window (it used to be fixed `seven_day_opus`/`_sonnet`).
+ * Falls back to the legacy top-level fields when `limits[]` is absent.
  */
 export function parseUsage(j: any): ApiUsage {
   const out: ApiUsage = {};
@@ -63,7 +63,7 @@ export function parseUsage(j: any): ApiUsage {
   out.fiveHour ??= win(j?.five_hour);
   out.sevenDay ??= win(j?.seven_day);
   if (!scoped.length) {
-    // Legado: janelas semanais por modelo em campos fixos de topo.
+    // Legacy: per-model weekly windows in fixed top-level fields.
     for (const [label, key] of [
       ['Opus', 'seven_day_opus'],
       ['Sonnet', 'seven_day_sonnet'],
@@ -77,15 +77,15 @@ export function parseUsage(j: any): ApiUsage {
 }
 
 /**
- * Busca o uso real da conta. Cache de 30s (use force=true no clique do botão
- * Usage p/ dado fresco). Retorna undefined sem token / falha / 401.
+ * Fetches the real account usage. 30s cache (use force=true on the Usage button
+ * click for fresh data). Returns undefined with no token / on failure / on 401.
  */
 export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> {
   if (!force && cache && Date.now() - cache.at < TTL_MS) return Promise.resolve(cache.data);
   return new Promise((resolve) => {
     const token = readToken();
     if (!token) {
-      dlog('usage-api', 'sem accessToken OAuth em ~/.claude/.credentials.json');
+      dlog('usage-api', 'no OAuth accessToken in ~/.claude/.credentials.json');
       cache = { at: Date.now(), data: undefined };
       resolve(undefined);
       return;
@@ -115,18 +115,18 @@ export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> 
             try {
               done(parseUsage(JSON.parse(body)));
             } catch (e) {
-              dlog('usage-api', `200 mas JSON inválido: ${String(e)}`);
+              dlog('usage-api', `200 but invalid JSON: ${String(e)}`);
               done(undefined);
             }
           } else {
-            dlog('usage-api', `HTTP ${res.statusCode}: ${body.slice(0, 200)}`); // 401/expirado/etc. -> fallback
+            dlog('usage-api', `HTTP ${res.statusCode}: ${body.slice(0, 200)}`); // 401/expired/etc. -> fallback
             done(undefined);
           }
         });
       },
     );
     req.on('error', (e) => {
-      dlog('usage-api', `erro de rede: ${String((e as Error)?.message || e)}`);
+      dlog('usage-api', `network error: ${String((e as Error)?.message || e)}`);
       done(undefined);
     });
     req.on('timeout', () => {

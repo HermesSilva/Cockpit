@@ -1,15 +1,15 @@
-// Estado dos servidores MCP para o painel (X4). Junta as DUAS fontes que o CLI
-// oferece, porque nenhuma sozinha basta:
+// State of the MCP servers for the panel (X4). Joins the TWO sources the CLI
+// offers, because neither is enough on its own:
 //
-//  1. evento `system/init` da sessão — traz os servidores que a sessão conectou e,
-//     via `tools[]`, QUAIS TOOLS cada um expõe (o `mcp list` não diz isso). De graça,
-//     já está no stream.
-//  2. `claude mcp list` — revela o que o init não vê: servidores de `.mcp.json` ainda
-//     NÃO aprovados (⏸ Pending approval, CLI 2.1.196), que o CLI nem sobe, mais o
-//     comando/URL de cada servidor. Custa um spawn (health-check), então só roda
-//     quando o usuário abre o painel.
+//  1. the session's `system/init` event — brings the servers the session connected and,
+//     via `tools[]`, WHICH TOOLS each one exposes (`mcp list` doesn't say that). Free,
+//     it is already in the stream.
+//  2. `claude mcp list` — reveals what init can't see: servers from `.mcp.json` that are
+//     NOT approved yet (⏸ Pending approval, CLI 2.1.196), which the CLI won't even start, plus
+//     each server's command/URL. Costs a spawn (health-check), so it only runs
+//     when the user opens the panel.
 //
-// Nunca lança: falha/timeout do spawn devolve só o que o init sabia.
+// Never throws: a spawn failure/timeout returns only what init knew.
 import { spawn } from 'node:child_process';
 import type { McpServerInfo } from '../../shared/protocol';
 import { parseMcpInventory, parseMcpList, type McpListEntry } from './McpInventory';
@@ -17,7 +17,7 @@ import { dlog } from '../util/logger';
 
 const LIST_TIMEOUT_MS = 15_000; // health-check de servidor lento; 8s não basta
 
-/** Roda `claude mcp list` e devolve as entradas. Falha/timeout → []. */
+/** Runs `claude mcp list` and returns the entries. Failure/timeout → []. */
 export function fetchMcpList(claudePath: string): Promise<McpListEntry[]> {
   return new Promise((resolve) => {
     let done = false;
@@ -63,10 +63,10 @@ export function fetchMcpList(claudePath: string): Promise<McpListEntry[]> {
 }
 
 /**
- * Funde init + `mcp list` num único inventário. Lógica pura (testável).
- * Casamento por nome exato — init e `mcp list` usam a mesma chave (ex.:
- * `plugin:dase-mcp:dase`). O status do `mcp list` PREVALECE quando existe: é ele
- * que distingue "pendente de aprovação" de "conectado", e é medido agora.
+ * Merges init + `mcp list` into a single inventory. Pure logic (testable).
+ * Matched by exact name — init and `mcp list` use the same key (e.g.
+ * `plugin:dase-mcp:dase`). The `mcp list` status WINS when present: it is what
+ * distinguishes "pending approval" from "connected", and it is measured right now.
  */
 export function mergeMcpStatus(
   tools: readonly string[] | undefined,
@@ -93,8 +93,8 @@ export function mergeMcpStatus(
       cur.notConfigured = e.notConfigured;
       cur.connected = e.status === 'connected';
     } else {
-      // Só no `mcp list`: tipicamente um servidor pendente de aprovação — a sessão
-      // não o subiu, então não há tools a mostrar.
+      // Only in `mcp list`: typically a server pending approval — the session
+      // didn't start it, so there are no tools to show.
       byName.set(e.name, {
         name: e.name,
         status: e.status,
@@ -106,14 +106,14 @@ export function mergeMcpStatus(
       });
     }
   }
-  // Pendentes e falhos primeiro (é o que pede ação do usuário), depois por nome.
+  // Pending and failed first (that's what needs user action), then by name.
   const rank = (s: string) => (s === 'pending' ? 0 : s === 'failed' ? 1 : 2);
   return [...byName.values()].sort(
     (a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name),
   );
 }
 
-/** Status do init (`connected` | `failed` | …) na mesma escala do `mcp list`. */
+/** init status (`connected` | `failed` | …) on the same scale as `mcp list`. */
 function normalizeStatus(s?: string): McpServerInfo['status'] {
   const v = (s ?? '').toLowerCase();
   if (v === 'connected') return 'connected';

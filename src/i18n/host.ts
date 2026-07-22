@@ -1,4 +1,4 @@
-// Resolução de locale do lado do host (notificações via vscode.l10n).
+// Locale resolution on the host side (notifications via vscode.l10n).
 import * as vscode from 'vscode';
 
 export type LocaleId = 'pt-BR' | 'en';

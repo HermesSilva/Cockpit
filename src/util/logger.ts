@@ -11,9 +11,9 @@ export function log(msg: string): void {
   getLogger().appendLine(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// Log de diagnóstico detalhado: só escreve com a flag ligada (tootega.debugLog).
-// A flag vive em memória (setada no activate e em onDidChangeConfiguration) p/ o
-// dlog não consultar a API do VSCode a cada chamada — e p/ não quebrar testes.
+// Detailed diagnostic log: only writes when the flag is on (tootega.debugLog).
+// The flag lives in memory (set in activate and in onDidChangeConfiguration) so
+// dlog doesn't hit the VSCode API on every call — and doesn't break tests.
 let debugEnabled = false;
 
 export function setDebugLogging(on: boolean): void {
@@ -24,7 +24,7 @@ export function isDebugLogging(): boolean {
   return debugEnabled;
 }
 
-/** Linha de debug estruturada `[scope] msg`, só quando o debugLog está ligado. */
+/** Structured debug line `[scope] msg`, only when debugLog is on. */
 export function dlog(scope: string, msg: string): void {
   if (debugEnabled) log(`[${scope}] ${msg}`);
 }

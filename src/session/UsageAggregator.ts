@@ -1,6 +1,6 @@
-// Estima o uso local (custo + tokens) em janelas de 5h e 7 dias, varrendo os
-// transcripts em ~/.claude/projects/**/*.jsonl. Aproximado, só desta máquina —
-// não inclui outros dispositivos nem claude.ai (igual ao /usage oficial).
+// Estimates local usage (cost + tokens) over 5h and 7-day windows, scanning the
+// transcripts in ~/.claude/projects/**/*.jsonl. Approximate, this machine only —
+// it excludes other devices and claude.ai (same as the official /usage).
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -8,7 +8,7 @@ import { estimateCost, normalizeModel } from '../stats/StatsAggregator';
 import { usageKey } from '../stats/usageKey';
 import type { Usage } from '../../shared/events';
 
-/** Acúmulo de USD + tokens de uma categoria (modelo ou origem). */
+/** Accumulated USD + tokens for a category (model or source). */
 export interface UsageSlice {
   key: string; // id do modelo, ou 'main'|'subagent'
   usd: number;
@@ -16,13 +16,13 @@ export interface UsageSlice {
   cacheRead: number; // contexto relido do cache (exibido à parte: domina o total)
 }
 
-/** Detalhamento do uso local da janela de 7 dias (categorias). */
+/** Breakdown of local usage for the 7-day window (categories). */
 export interface UsageBreakdown {
   byModel: UsageSlice[]; // por modelo (maior primeiro)
   bySource: UsageSlice[]; // main vs. subagent (sidechain)
 }
 
-/** Quanto uma ferramenta injetou de contexto (soma dos tool_result). */
+/** How much context a tool injected (sum of the tool_results). */
 export interface ToolContextSlice {
   key: string; // nome da tool; p/ MCP, "mcp:<servidor>"; p/ skill, "skill:<nome>"
   calls: number;
@@ -30,8 +30,8 @@ export interface ToolContextSlice {
 }
 
 /**
- * Atribuição do uso de 7 dias — responde "para onde foram meus tokens".
- * Percentuais são sobre os tokens NOVOS da janela (não sobre o cache-read).
+ * 7-day usage attribution — answers "where did my tokens go".
+ * Percentages are over the window's NEW tokens (not over cache-read).
  */
 export interface UsageAttribution {
   longContextPct: number; // 0..1 — parcela gerada com contexto > 150k
@@ -51,9 +51,9 @@ export interface LocalUsage {
   attribution: UsageAttribution; // atribuição da janela de 7 dias
 }
 
-/** Contexto acima do qual o turno conta como "long context" (mesmo corte do /usage). */
+/** Context above which a turn counts as "long context" (same cut as /usage). */
 const LONG_CONTEXT_TOKENS = 150_000;
-/** tool_result vem como texto: 4 chars ≈ 1 token (aproximação usual). */
+/** tool_result comes as text: 4 chars ≈ 1 token (the usual approximation). */
 const CHARS_PER_TOKEN = 4;
 
 const H = 3600_000;
@@ -80,7 +80,7 @@ export async function computeLocalUsage(nowMs: number): Promise<LocalUsage> {
     return out;
   }
 
-  // Acúmulo da janela de 7d por categoria (modelo / origem main|subagent).
+  // 7d window accumulation per category (model / source main|subagent).
   const byModel = new Map<string, UsageSlice>();
   const bySource = new Map<string, UsageSlice>();
   const attr: AttrAcc = {
@@ -108,13 +108,13 @@ export async function computeLocalUsage(nowMs: number): Promise<LocalUsage> {
         const content = await fs.promises.readFile(full, 'utf8');
         accumulate(content, nowMs, since7d, since5h, out, byModel, bySource, attr);
       } catch {
-        /* ignora arquivo problemático */
+        /* ignores a problematic file */
       }
     }
   }
 
-  // Maiores primeiro (USD). bySource segue ordem fixa main→subagent p/ leitura estável.
-  // `<synthetic>` é marcador do CLI (turnos sem chamada real), não um modelo: fora.
+  // Largest first (USD). bySource keeps a fixed main→subagent order for stable reading.
+  // `<synthetic>` is a CLI marker (turns without a real call), not a model: excluded.
   out.breakdown.byModel = [...byModel.values()]
     .filter((s) => s.key !== '<synthetic>' && (s.tokens > 0 || s.cacheRead > 0))
     .sort((a, b) => b.usd - a.usd);
@@ -133,7 +133,7 @@ export async function computeLocalUsage(nowMs: number): Promise<LocalUsage> {
   return out;
 }
 
-/** Acúmulo bruto da atribuição (vira percentuais no fim). */
+/** Raw accumulation for the attribution (turned into percentages at the end). */
 interface AttrAcc {
   longCtxTokens: number;
   subagentTokens: number;
@@ -143,9 +143,9 @@ interface AttrAcc {
 }
 
 /**
- * Agrupa a ferramenta para atribuição: tools de MCP viram "mcp:<servidor>"
- * (o que interessa é qual servidor infla o contexto, não cada tool dele) e
- * skills viram "skill:<nome>". As demais ficam com o próprio nome.
+ * Groups the tool for attribution: MCP tools become "mcp:<server>"
+ * (what matters is which server inflates the context, not each of its tools) and
+ * skills become "skill:<name>". The rest keep their own name.
  */
 function toolBucket(name: string, input: any): string {
   if (name.startsWith('mcp__')) return `mcp:${name.split('__')[1] ?? '?'}`;
@@ -153,7 +153,7 @@ function toolBucket(name: string, input: any): string {
   return name;
 }
 
-/** Tamanho (em chars) do conteúdo de um tool_result — texto ou blocos. */
+/** Size (in chars) of a tool_result's content — text or blocks. */
 function resultChars(content: unknown): number {
   if (typeof content === 'string') return content.length;
   if (!Array.isArray(content)) return 0;
@@ -167,7 +167,7 @@ function resultChars(content: unknown): number {
   return n;
 }
 
-/** Soma USD+tokens num slot do mapa de categoria (cria sob demanda). */
+/** Adds USD+tokens into a slot of the category map (created on demand). */
 function bump(
   map: Map<string, UsageSlice>,
   key: string,
@@ -193,8 +193,8 @@ function accumulate(
   attr: AttrAcc,
 ) {
   const counted = new Set<string>(); // ids já contados neste arquivo (ver usageKey)
-  // tool_use_id -> bucket da tool. O tool_result vem numa linha `user` posterior,
-  // sem o nome da tool; o vínculo só existe dentro do mesmo arquivo.
+  // tool_use_id -> the tool's bucket. The tool_result comes in a later `user` line,
+  // without the tool name; the link only exists within the same file.
   const toolOf = new Map<string, string>();
   for (const line of content.split('\n')) {
     const isAssistant = line.includes('"assistant"');
@@ -209,7 +209,7 @@ function accumulate(
     const ts = Date.parse(o.timestamp);
     if (Number.isNaN(ts) || ts < since7d) continue;
 
-    // Linhas `user` só interessam pelo tool_result: quanto a tool injetou no contexto.
+    // `user` lines only matter for the tool_result: how much the tool injected into the context.
     if (o.type === 'user') {
       for (const b of asBlocks(o.message?.content)) {
         if (b?.type !== 'tool_result') continue;
@@ -224,7 +224,7 @@ function accumulate(
     }
     if (o.type !== 'assistant' || !o.message?.usage) continue;
 
-    // Nome de cada tool_use, p/ casar com o tool_result adiante (mesmo em linha duplicada).
+    // Name of each tool_use, to match the tool_result later (even on a duplicated line).
     for (const b of asBlocks(o.message.content)) {
       if (b?.type === 'tool_use' && typeof b.id === 'string') {
         toolOf.set(b.id, toolBucket(String(b.name ?? '?'), b.input));
@@ -238,21 +238,21 @@ function accumulate(
     }
     const u = o.message.usage as Usage;
     const cost = estimateCost(u, o.message.model);
-    // Tokens "novos" (o que de fato entrou/saiu neste turno). O cache-read é o
-    // contexto relido a cada turno: some ~97% do total e é somado à parte.
+    // "New" tokens (what actually came in/out this turn). cache-read is the
+    // context re-read every turn: it is ~97% of the total and is summed separately.
     const tokens =
       (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
     const cacheRead = u.cache_read_input_tokens ?? 0;
     out.sevenDayUsd += cost;
     out.sevenDayTokens += tokens;
     out.sevenDayCacheRead += cacheRead;
-    // Atribuição 7d: contexto do turno = tudo que o modelo leu para responder.
+    // 7d attribution: the turn's context = everything the model read to answer.
     const ctx = (u.input_tokens ?? 0) + cacheRead + (u.cache_creation_input_tokens ?? 0);
     if (ctx > LONG_CONTEXT_TOKENS) attr.longCtxTokens += tokens;
     if (o.isSidechain) attr.subagentTokens += tokens;
     attr.cacheRead += cacheRead;
     attr.cacheCreate += u.cache_creation_input_tokens ?? 0;
-    // Detalhamento 7d: por modelo (normalizado) e por origem (sidechain = subagent).
+    // 7d breakdown: per model (normalized) and per source (sidechain = subagent).
     bump(byModel, normalizeModel(o.message.model) ?? 'unknown', cost, tokens, cacheRead);
     bump(bySource, o.isSidechain ? 'subagent' : 'main', cost, tokens, cacheRead);
     if (ts >= since5h) {
@@ -263,7 +263,7 @@ function accumulate(
   }
 }
 
-/** Content de uma mensagem: array de blocos, ou vazio quando é texto puro. */
+/** A message's content: array of blocks, or empty when it is plain text. */
 function asBlocks(content: unknown): any[] {
   return Array.isArray(content) ? content : [];
 }

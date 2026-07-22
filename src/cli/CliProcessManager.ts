@@ -1,5 +1,5 @@
 // Gerencia o processo do Claude Code CLI em modo headless/streaming.
-// Spawna `claude` com stream-json bidirecional, emite eventos parseados.
+// Spawns `claude` with bidirectional stream-json and emits parsed events.
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as os from 'node:os';
@@ -15,15 +15,15 @@ export interface CliOptions {
   effort?: string;
   permissionMode?: string;
   // Ferramentas a desabilitar no CLI (--disallowedTools). Ex.: ['Task','Workflow']
-  // p/ bloquear subagentes/workflows (que gastam muitos tokens). Vazio = nada.
+  // to block subagents/workflows (which spend a lot of tokens). Empty = nothing.
   disallowedTools?: string[];
   resumeSessionId?: string;
-  // Código curto do idioma (pt, en…) p/ as perguntas do AskUserQuestion. Quando
-  // setado, injeta um append-system-prompt que força o idioma SÓ das perguntas.
+  // Short language code (pt, en…) for the AskUserQuestion questions. When
+  // set, it injects an append-system-prompt that forces the language of the QUESTIONS only.
   askLanguage?: string;
 }
 
-// Código BCP47 curto -> nome do idioma p/ a instrução do prompt.
+// Short BCP47 code -> language name for the prompt instruction.
 const LANG_NAME: Record<string, string> = {
   pt: 'Brazilian Portuguese (pt-BR)',
   en: 'international English',
@@ -57,11 +57,11 @@ export class CliProcessManager extends EventEmitter {
     super();
   }
 
-  /** Verifica se o CLI existe e retorna a versão (ou null). */
+  /** Checks whether the CLI exists and returns its version (or null). */
   static detect(claudePath: string): { ok: boolean; version?: string; error?: string } {
     try {
-      // No Windows o `claude` é um .cmd; o Node 22+ recusa executá-lo sem shell
-      // (EINVAL/ENOENT, proteção CVE-2024-27980). shell:true resolve via PATHEXT.
+      // On Windows `claude` is a .cmd; Node 22+ refuses to run it without a shell
+      // (EINVAL/ENOENT, CVE-2024-27980 protection). shell:true resolves it via PATHEXT.
       const useShell = process.platform === 'win32';
       const res = spawnSync(shellSafe(claudePath, useShell), ['--version'], {
         encoding: 'utf8',
@@ -80,8 +80,8 @@ export class CliProcessManager extends EventEmitter {
 
   /**
    * Resolve um `claude` funcional: tenta o caminho configurado (PATH) e, se falhar,
-   * sonda os locais do installer NATIVO (~/.local/bin), que não entra no PATH
-   * automaticamente no Windows. Retorna o 1º que responde a `--version`.
+   * probes the NATIVE installer locations (~/.local/bin), which don't enter the PATH
+   * automatically on Windows. Returns the first that answers `--version`.
    */
   static resolve(configured: string): { path: string; ok: boolean; version?: string; error?: string } {
     const candidates = [configured, ...nativeCandidates()];
@@ -90,7 +90,7 @@ export class CliProcessManager extends EventEmitter {
       ok: false,
     };
     for (const c of candidates) {
-      // Caminho absoluto inexistente: pula sem gastar spawn.
+      // Non-existent absolute path: skipped without spending a spawn.
       if (c !== configured && !safeExists(c)) continue;
       const d = CliProcessManager.detect(c);
       if (d.ok) return { path: c, ...d };
@@ -104,16 +104,16 @@ export class CliProcessManager extends EventEmitter {
   }
 
   /**
-   * Atualiza o id de sessão a retomar caso o processo precise respawnar. O CLI só
-   * revela o `session_id` no evento `init`; sem isto, uma reinicialização silenciosa
-   * (writeLine após o processo morrer) subiria SEM `--resume` e criaria um contexto
-   * novo no disco. Mantém a continuidade da MESMA sessão.
+   * Updates the session id to resume in case the process needs to respawn. The CLI only
+   * reveals the `session_id` in the `init` event; without this, a silent restart
+   * (writeLine after the process died) would start WITHOUT `--resume` and create a new
+   * context on disk. Keeps the continuity of the SAME session.
    */
   setResumeId(id: string): void {
     if (id) this.opts.resumeSessionId = id;
   }
 
-  /** Inicia o processo. Idempotente: não faz nada se já estiver rodando. */
+  /** Starts the process. Idempotent: does nothing when already running. */
   start(): void {
     if (this.proc) return;
     const args = [
@@ -121,9 +121,9 @@ export class CliProcessManager extends EventEmitter {
       '--output-format', 'stream-json',
       '--input-format', 'stream-json',
       '--include-partial-messages',
-      // Roteia as decisões de permissão pelo protocolo de controle (stdin/stdout):
-      // com este sentinel o CLI emite control_request `can_use_tool` em vez de negar
-      // silenciosamente em modo headless. Também é por aqui que o AskUserQuestion chega.
+      // Routes permission decisions through the control protocol (stdin/stdout):
+      // with this sentinel the CLI emits a `can_use_tool` control_request instead of denying
+      // silently in headless mode. AskUserQuestion also arrives through here.
       '--permission-prompt-tool', 'stdio',
       '--verbose',
     ];
@@ -141,10 +141,10 @@ export class CliProcessManager extends EventEmitter {
     }
 
     const useShell = process.platform === 'win32';
-    // Auto mode (classifier do CLI decide allow/deny) é opt-in em Bedrock/Vertex/
-    // Foundry via env (2.1.158/159). Defensivo: liga a flag quando o modo é 'auto'
-    // p/ funcionar uniforme entre provedores. NÃO burla permissão — só habilita o
-    // modo nativo do CLI, que ainda roteia o que precisa pelo control_request.
+    // Auto mode (the CLI classifier decides allow/deny) is opt-in on Bedrock/Vertex/
+    // Foundry via env (2.1.158/159). Defensive: we turn the flag on when the mode is 'auto'
+    // so it behaves uniformly across providers. It does NOT bypass permissions — it only enables the
+    // CLI's native mode, which still routes what it must through control_request.
     const env =
       this.opts.permissionMode === 'auto'
         ? { ...process.env, CLAUDE_CODE_ENABLE_AUTO_MODE: '1' }
@@ -153,10 +153,10 @@ export class CliProcessManager extends EventEmitter {
       cwd: this.opts.cwd,
       env,
       shell: useShell, // resolve 'claude.cmd' no Windows e evita EINVAL no Node 22+
-      // Fora do Windows, dá ao `claude` um GRUPO de processos próprio (detached) p/
-      // encerrar a ÁRVORE inteira (claude + subagents) via kill(-pid) no stop().
-      // Sem isto, um SIGTERM só no líder deixava netos órfãos. No Windows o
-      // shell:true torna `proc` o cmd.exe → lá usamos taskkill /T.
+      // Outside Windows, gives `claude` its own process GROUP (detached) so the
+      // WHOLE TREE (claude + subagents) can be ended via kill(-pid) in stop().
+      // Without this, a SIGTERM to the leader alone left orphan grandchildren. On Windows
+      // shell:true makes `proc` the cmd.exe → there we use taskkill /T.
       detached: !useShell,
     }) as ChildProcessWithoutNullStreams;
 
@@ -180,7 +180,7 @@ export class CliProcessManager extends EventEmitter {
     this.writeLine({ type: 'control_request', request_id: 'init', request: { subtype: 'initialize' } });
   }
 
-  /** Envia uma mensagem do usuário pelo stdin (texto + imagens opcionais). */
+  /** Sends a user message through stdin (text + optional images). */
   sendUserMessage(text: string, images?: { mediaType: string; data: string }[]): void {
     const content: unknown[] = [];
     if (text) content.push({ type: 'text', text });
@@ -195,10 +195,10 @@ export class CliProcessManager extends EventEmitter {
   }
 
   /**
-   * Responde a um control_request `can_use_tool`. `response` é o payload de
-   * decisão: `{ behavior:'allow', updatedInput, updatedPermissions? }` ou
+   * Answers a `can_use_tool` control_request. `response` is the decision
+   * payload: `{ behavior:'allow', updatedInput, updatedPermissions? }` or
    * `{ behavior:'deny', message }`. O `allow` exige `updatedInput` (o CLI valida
-   * com Zod — devolver só `{behavior:'allow'}` resulta em erro de união).
+   * with Zod — returning only `{behavior:'allow'}` results in a union error).
    */
   sendControlResponse(requestId: string, response: Record<string, unknown>): void {
     this.writeLine({
@@ -213,10 +213,10 @@ export class CliProcessManager extends EventEmitter {
   }
 
   /**
-   * Interrompe o turno atual pelo protocolo de controle (`subtype: 'interrupt'`),
-   * mantendo o processo e a SESSÃO vivos. Assim o próximo envio (ex.: o prompt
-   * corrigido após cancelar) continua a MESMA sessão, em vez de respawnar uma nova
-   * — o que criaria um contexto duplicado no disco. Sem processo, nada a fazer.
+   * Interrupts the current turn through the control protocol (`subtype: 'interrupt'`),
+   * keeping the process and the SESSION alive. That way the next send (e.g. the prompt
+   * fixed after cancelling) continues the SAME session, instead of respawning a new one
+   * — which would create a duplicated context on disk. With no process, there is nothing to do.
    */
   interrupt(): void {
     if (!this.proc) return;
@@ -237,12 +237,12 @@ export class CliProcessManager extends EventEmitter {
       /* noop */
     }
     try {
-      // Windows + shell:true -> `proc` é o cmd.exe; matar só ele deixa o `claude`
-      // (node) filho órfão e ainda executando. taskkill /T encerra a árvore toda.
+      // Windows + shell:true -> `proc` is the cmd.exe; killing only it leaves the child
+      // `claude` (node) orphaned and still running. taskkill /T ends the whole tree.
       if (process.platform === 'win32' && proc.pid != null) {
         spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F']);
       } else if (proc.pid != null) {
-        // Não-Windows: `claude` é líder do próprio grupo (detached). Encerra o grupo
+        // Non-Windows: `claude` leads its own group (detached). Ends the group
         // inteiro (negativo = grupo) — pega subagents/filhos junto.
         killGroup(proc.pid);
       } else {
@@ -255,9 +255,9 @@ export class CliProcessManager extends EventEmitter {
 }
 
 /**
- * Encerra a árvore de um processo detached fora do Windows. `process.kill(-pid)`
- * sinaliza o GRUPO inteiro (líder + filhos). SIGTERM primeiro (saída limpa) e,
- * se algo persistir, SIGKILL após uma folga. Tolerante a ESRCH (já morto).
+ * Ends the tree of a detached process outside Windows. `process.kill(-pid)`
+ * signals the WHOLE GROUP (leader + children). SIGTERM first (clean exit) and,
+ * if something persists, SIGKILL after a grace period. Tolerant to ESRCH (already dead).
  */
 function killGroup(pid: number): void {
   try {
@@ -266,20 +266,20 @@ function killGroup(pid: number): void {
     try {
       process.kill(pid, 'SIGTERM'); // sem grupo (raro): mata ao menos o líder
     } catch {
-      /* já encerrado */
+      /* already ended */
     }
   }
   const t = setTimeout(() => {
     try {
       process.kill(-pid, 'SIGKILL');
     } catch {
-      /* já encerrado */
+      /* already ended */
     }
   }, 2000);
   t.unref?.(); // não segura o event loop
 }
 
-/** No Windows com shell, envolve o caminho em aspas se tiver espaços. */
+/** On Windows with a shell, wraps the path in quotes when it has spaces. */
 function shellSafe(p: string, useShell: boolean): string {
   if (useShell && /\s/.test(p) && !p.startsWith('"')) return `"${p}"`;
   return p;

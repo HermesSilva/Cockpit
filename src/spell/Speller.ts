@@ -1,19 +1,19 @@
-// Corretor ortográfico bilíngue (PT-BR + EN) no HOST, via hunspell-asm (WASM).
-// Roda no host (Node) p/ evitar WASM/CSP/worker no webview e não travar a UI.
-// Dicionários ficam em arquivos de dados (dict/*.aff|*.dic), carregados em
-// segundo plano; o hunspell indexa e aplica os affixes sob demanda (o pt-br
-// completo tem ~21M formas — impossível pré-expandir).
+// Bilingual spell-checker (PT-BR + EN) on the HOST, via hunspell-asm (WASM).
+// Runs on the host (Node) to keep WASM/CSP/workers out of the webview and avoid freezing the UI.
+// Dictionaries live in data files (dict/*.aff|*.dic), loaded in the
+// background; hunspell indexes and applies the affixes on demand (the full pt-br
+// has ~21M forms — impossible to pre-expand).
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { log, dlog } from '../util/logger';
 
-// Nenhuma palavra real passa disto; tokens maiores são lixo (cola de URL, base64,
-// hash) e arriscam estourar o heap do WASM do hunspell (access violation → o
-// extension host inteiro morre, derrubando todas as webviews). try/catch NÃO pega
-// crash nativo: a única defesa é não entregar entrada patológica ao WASM.
+// No real word is longer than this; bigger tokens are junk (URL glue, base64,
+// hash) and risk blowing the hunspell WASM heap (access violation → the whole
+// extension host dies, taking every webview with it). try/catch does NOT catch a
+// native crash: the only defense is not handing pathological input to the WASM.
 const MAX_SPELL_LEN = 64;
-// Tokens com caractere de controle (NUL..US, DEL) são entrada inválida p/ o WASM.
-/** Token seguro p/ entregar ao WASM? Cap de tamanho + sem chars de controle. */
+// Tokens with a control character (NUL..US, DEL) are invalid input for the WASM.
+/** Token safe to hand to the WASM? Size cap + no control chars. */
 function spellSafe(word: string): boolean {
   if (!word || word.length > MAX_SPELL_LEN) return false;
   for (let i = 0; i < word.length; i++) {
@@ -43,9 +43,9 @@ export class Speller {
   private loading?: Promise<void>;
   private ready = false;
   private userWords = new Set<string>();
-  // Termos técnicos do projeto (deps, glossário, termos do dicionário de ditado).
-  // Tratados como CONHECIDOS — não são erro — mas NÃO persistidos no dict do
-  // usuário: são derivados do workspace e recalculados a cada sessão.
+  // Project technical terms (deps, glossary, dictation dictionary terms).
+  // Treated as KNOWN — they are not errors — but NOT persisted in the user's
+  // dict: they are derived from the workspace and recomputed every session.
   private projectWords = new Set<string>();
 
   constructor(
@@ -55,7 +55,7 @@ export class Speller {
     for (const w of initialUserWords) this.userWords.add(w);
   }
 
-  /** Carrega o WASM + dicionários em segundo plano (idempotente). */
+  /** Loads the WASM + dictionaries in the background (idempotent). */
   ensure(): Promise<void> {
     if (this.loading) return this.loading;
     this.loading = this.load();
@@ -65,7 +65,7 @@ export class Speller {
   private async load(): Promise<void> {
     try {
       const t0 = Date.now();
-      // import dinâmico: não paga o custo até a 1ª checagem.
+      // dynamic import: doesn't pay the cost until the first check.
       const { loadModule } = (await import('hunspell-asm')) as {
         loadModule: () => Promise<HunspellFactory>;
       };
@@ -78,9 +78,9 @@ export class Speller {
       this.en = mount('en', 'en');
       this.pt = mount('pt', 'pt-br');
       this.ready = true;
-      log(`[spell] dicionários carregados em ${Date.now() - t0}ms`);
+      log(`[spell] dictionaries loaded in ${Date.now() - t0}ms`);
     } catch (e) {
-      log(`[spell] falha ao carregar: ${String(e)}`);
+      log(`[spell] failed to load: ${String(e)}`);
     }
   }
 
@@ -98,7 +98,7 @@ export class Speller {
     );
   }
 
-  /** Define os termos técnicos do projeto (não persistidos). Case-insensitive. */
+  /** Sets the project's technical terms (not persisted). Case-insensitive. */
   setProjectTerms(words: string[]): void {
     this.projectWords = new Set<string>();
     for (const w of words) {
@@ -110,15 +110,15 @@ export class Speller {
     }
   }
 
-  /** Subconjunto de `words` com erro (reprovado em PT e EN). */
+  /** Subset of `words` that is wrong (rejected in both PT and EN). */
   check(words: string[]): string[] {
     if (!this.ready || !this.en || !this.pt) return [];
     const bad: string[] = [];
     for (const w of words) {
       if (this.known(w)) continue;
-      // Token patológico: trata como correto (não marca) em vez de arriscar o WASM.
+      // Pathological token: treated as correct (not flagged) instead of risking the WASM.
       if (!spellSafe(w)) {
-        dlog('spell', `token ignorado (inseguro p/ WASM): len=${w.length}`);
+        dlog('spell', `token skipped (unsafe for WASM): len=${w.length}`);
         continue;
       }
       if (!this.en.spell(w) && !this.pt.spell(w)) bad.push(w);
@@ -126,11 +126,11 @@ export class Speller {
     return bad;
   }
 
-  /** Sugestões agrupadas por idioma (até `max` cada). */
+  /** Suggestions grouped by language (up to `max` each). */
   suggest(word: string, max = 7): SpellSuggestions {
     if (!this.ready || !this.en || !this.pt) return { pt: [], en: [] };
     if (!spellSafe(word)) {
-      dlog('spell', `suggest ignorado (inseguro p/ WASM): len=${word.length}`);
+      dlog('spell', `suggest skipped (unsafe for WASM): len=${word.length}`);
       return { pt: [], en: [] };
     }
     return {
@@ -144,7 +144,7 @@ export class Speller {
     if (w) this.userWords.add(w);
   }
 
-  /** Substitui o dicionário do usuário (edição no modal). */
+  /** Replaces the user dictionary (edited in the modal). */
   setUserDict(words: string[]): void {
     this.userWords = new Set(words.map((w) => w.trim()).filter(Boolean));
   }

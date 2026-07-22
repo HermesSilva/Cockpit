@@ -83,6 +83,8 @@ export function SkillsModal({
   // quando conseguimos medir a mensagem injetada), por isso os dois totais são separados.
   const activeTokens = list.reduce((a, s) => a + (s.active ? (s.activeTokens ?? 0) : 0), 0);
   const activeCount = list.filter((s) => s.active).length;
+  // Escala da barrinha de peso: relativa à skill mais cara do listing.
+  const maxMeta = list.reduce((a, s) => Math.max(a, s.metaTokens ?? 0), 0);
   const shown = filter === 'all' ? groups : groups.filter((g) => g.group === filter);
 
   return (
@@ -112,13 +114,15 @@ export function SkillsModal({
           ) : (
             <div className="usage-body">
               <div className="skills-tiles">
-                <Tile label={t('skills.tile.count')} value={String(total ?? list.length)} />
+                <Tile tone="count" label={t('skills.tile.count')} value={String(total ?? list.length)} />
                 <Tile
+                  tone="metadata"
                   label={t('skills.tile.metadata')}
                   value={fmtTk(listingTokens)}
                   note={listed != null && total != null && listed < total ? t('skills.tile.listedOf', String(listed), String(total)) : undefined}
                 />
                 <Tile
+                  tone="active"
                   label={t('skills.tile.active')}
                   value={activeCount === 0 ? '—' : fmtTk(activeTokens)}
                   note={activeCount > 0 ? t('skills.tile.estimated') : undefined}
@@ -132,10 +136,11 @@ export function SkillsModal({
                     <button
                       key={g.group}
                       type="button"
-                      className={`skills-chip ${filter === g.group ? 'on' : ''}`}
+                      className={`skills-chip ${g.group} ${filter === g.group ? 'on' : ''}`}
                       onClick={() => setFilter(g.group)}
                     >
                       {t(`skills.group.${g.group}` as never)}
+                      <span className="skills-chip-n">{g.items.length}</span>
                     </button>
                   ))}
                   <button
@@ -144,17 +149,19 @@ export function SkillsModal({
                     onClick={() => setFilter('all')}
                   >
                     {t('skills.group.all')}
+                    <span className="skills-chip-n">{list.length}</span>
                   </button>
                 </div>
               )}
 
               {shown.map(({ group, items }) => (
-                <div key={group}>
-                  <div className="usage-section-label">
-                    {t(`skills.group.${group}` as never)} · {items.length}
+                <div key={group} className={`skills-group ${group}`}>
+                  <div className="skills-group-label">
+                    {t(`skills.group.${group}` as never)}
+                    <span className="skills-group-n">{items.length}</span>
                   </div>
                   {items.map((s) => (
-                    <SkillRow key={s.name} t={t} s={s} onOverride={onOverride} />
+                    <SkillRow key={s.name} t={t} s={s} maxMeta={maxMeta} onOverride={onOverride} />
                   ))}
                 </div>
               ))}
@@ -180,21 +187,23 @@ export function SkillsModal({
 }
 
 function Tile({
+  tone,
   label,
   value,
   note,
   strong,
 }: {
+  tone: 'count' | 'metadata' | 'active';
   label: string;
   value: string;
   note?: string;
   strong?: boolean;
 }) {
   return (
-    <div className={`skills-tile ${strong ? 'strong' : ''}`}>
+    <div className={`skills-tile ${tone} ${strong ? 'strong' : ''}`}>
       <div className="skills-tile-label">{label}</div>
       <div className="skills-tile-value">{value}</div>
-      {note && <div className="skills-tile-note">{note}</div>}
+      <div className="skills-tile-note">{note ?? ' '}</div>
     </div>
   );
 }
@@ -202,27 +211,35 @@ function Tile({
 function SkillRow({
   t,
   s,
+  maxMeta,
   onOverride,
 }: {
   t: Translator;
   s: SkillState;
+  maxMeta: number;
   onOverride: (name: string, value: SkillOverride) => void;
 }) {
   const obs = observed(s);
   const group = groupOf(s.source);
+  const off = s.override === 'off';
+  // Barra de peso: proporção do custo desta skill em relação à mais cara do listing.
+  const weight = maxMeta > 0 ? Math.max(2, Math.round(((s.metaTokens ?? 0) / maxMeta) * 100)) : 0;
   return (
-    <div className={`mcp-card skills-row ${obs}`}>
-      <div className="mcp-card-head">
-        <span className="mcp-name">{s.name}</span>
-        <span className="mcp-transport">{t(`skills.group.${group}` as never)}</span>
+    <div className={`skills-row ${group} ${obs} ${off ? 'is-off' : ''}`}>
+      <div className="skills-row-head">
+        <span className="skills-name">{s.name}</span>
+        <span className={`skills-src ${group}`}>{t(`skills.group.${group}` as never)}</span>
         <span className={`skills-obs ${obs}`} title={t(`skills.legend.${obs}` as never)}>
           {obs === 'active' && '⚡ '}
           {obs === 'resident' && '⚠ '}
           {t(`skills.obs.${obs}` as never)}
         </span>
       </div>
+      <div className="skills-weight" aria-hidden="true">
+        <span className="skills-weight-fill" style={{ width: `${weight}%` }} />
+      </div>
       <div className="skills-row-body">
-        <div className="mcp-target">
+        <div className="skills-cost">
           {t('skills.metaTokens', s.metaTokens != null ? String(s.metaTokens) : '?')}
           {obs === 'active' &&
             (s.activeTokens != null ? (

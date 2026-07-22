@@ -672,6 +672,13 @@ and the label next to it *observes* what is actually in the context — `light`,
 `⚠ off · resident`. Header totals show `skills` · `metadata` · `loaded`, and rows are grouped
 by origin (project · user · built-in) with filter chips.
 
+Colour carries meaning rather than decorating: one hue per **origin**, shared by the chip, the
+group header, the row's side rule and its badge, so a column reads at a glance. Each row has a
+2px **weight bar** — its cost relative to the most expensive skill in the listing. A row you
+switch off is dimmed (and brightens on hover, so its former cost stays readable); `⚠ off ·
+resident` is never dimmed, because an alert that fades away is not an alert. Every colour comes
+from VS Code theme tokens, so light, dark and high-contrast all work.
+
 - **Where the numbers come from:** the control-protocol request `get_context_usage`
   ([`ContextUsage.ts`](src/cli/ContextUsage.ts)). It is a **local** computation in the engine —
   it does **not** create a turn, spend tokens, or add a line to the transcript. It answers even

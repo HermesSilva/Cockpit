@@ -4,6 +4,18 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.222] - 2026-07-22
+
+### Changed
+- **Skills panel visuals.** Colour now carries meaning instead of decorating: one hue per
+  **origin** (project · user · built-in · plugin) shared by the filter chip, the group header,
+  the row's side rule and its origin badge, so a column reads at a glance. Each row gets a
+  2px **weight bar** — how much that skill costs relative to the most expensive one in the
+  listing. Header tiles get a thin accent stripe and tabular figures; the `loaded` tile stays
+  dimmed until something is actually loaded. A row switched off is dimmed (and brightens on
+  hover, so its old cost stays readable), while `⚠ off · resident` is never dimmed — an alert
+  state must not fade away. All colours come from VS Code theme tokens (`--vscode-charts-*`).
+
 ## [1.0.221] - 2026-07-22
 
 ### Changed

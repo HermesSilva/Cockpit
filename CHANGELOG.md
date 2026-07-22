@@ -4,6 +4,30 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.223] - 2026-07-22
+
+### Added
+- **Custom system-prompt text (settings).** `Tootega › System Prompt: Text` is a multi-line
+  box whose content is appended to the CLI's system prompt, and
+  `Tootega › System Prompt: Enabled` turns it on (off by default). It is applied on **every**
+  CLI start, including the respawn that continues the same conversation — otherwise the
+  directive would silently vanish mid-conversation after a model/effort change.
+- The text is a **template validated against this machine**: `${defaultShell}`, `${psVersion}`,
+  `${winPathStyle}`, `${projectPathWin}`, `${projectPathGitBash}`, `${projectPathWsl}`,
+  `${wslRow}`, `${os}`, `${tempDir}`. A line whose placeholder refers to something that is not
+  installed here (no WSL, no Git Bash) is **dropped whole** — telling the agent about a shell
+  the machine does not have is worse than saying nothing. An unknown `${name}` is left as-is
+  instead of being invented or blanked. Ships with a shell-discipline directive as the default.
+
+### Fixed
+- The text is handed to the CLI through `--append-system-prompt-file`, not as a command-line
+  argument. Measured: passed inline, a multi-line text containing `|`, `$` or backticks is
+  mangled by `cmd.exe` under `shell:true` on Windows and reaches the model **empty** (an
+  injected sentinel came back `MISSING`); through a file it arrives intact. Also measured:
+  repeating `--append-system-prompt` does **not** accumulate — the last one wins — so the
+  AskUserQuestion language rule and your text are now merged into a single payload instead of
+  one silently replacing the other.
+
 ## [1.0.222] - 2026-07-22
 
 ### Changed

@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.222",
+  "version": "1.0.223",
   "publisher": "HermesSilva",
   "license": "MIT",
   "author": {
@@ -397,6 +397,17 @@
           ],
           "default": "",
           "description": "%cfg.voiceLanguage%"
+        },
+        "tootega.systemPrompt.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%cfg.systemPromptEnabled%"
+        },
+        "tootega.systemPrompt.text": {
+          "type": "string",
+          "editPresentation": "multilineText",
+          "default": "- **SHELL: TRÊS INTERPRETADORES, ESCOLHA BINÁRIA E EXPLÍCITA (diretiva-raiz, binária, soberana\n  sobre execução de comando).** Esta máquina tem os shells abaixo; o mesmo comando pode ser\n  válido em um e lixo em outro. Antes de emitir QUALQUER comando, saiba em QUAL shell ele roda e\n  escreva a sintaxe E o caminho daquele shell.\n\n  | Shell | Quando | Projeto | Temp | Heredoc |\n  |-------|--------|---------|------|---------|\n  | ${defaultShell} (DEFAULT) | tudo, salvo exceção | ${projectPathWin} | $env:TEMP | não |\n  | Git Bash (bash tool) | POSIX pontual | ${projectPathGitBash} | /tmp (pasta do Git) | ok |\n  ${wslRow}\n\n  Default = ${defaultShell}. Sai do default só quando a tarefa EXIGE POSIX (Git Bash) ou Linux\n  real (WSL), e a escolha é declarada, nunca implícita.\n\n  NUNCA CRUZAR sintaxe de um shell com caminho de outro: heredoc e paths POSIX (/tmp, /mnt/...)\n  só em Git Bash/WSL; paths ${winPathStyle} e $env:TEMP só no PowerShell. Foi o defeito a evitar\n  (`<<'EOF'` + /tmp no PowerShell -> C:\\tmp -> quebrou).\n\n  PowerShell ${psVersion}: sem heredoc, sem /tmp; temp = $env:TEMP; script multi-linha grava\n  arquivo (.ps1/.js/.py) e executa o arquivo (funciona igual nos três); UTF-8 explícito (5.1 tem\n  default ANSI e corrompe acento). Na dúvida, assuma o default e declare o shell se precisar de POSIX.",
+          "description": "%cfg.systemPromptText%"
         }
       }
     }

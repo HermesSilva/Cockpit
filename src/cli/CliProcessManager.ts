@@ -21,6 +21,9 @@ export interface CliOptions {
   // Short language code (pt, en…) for the AskUserQuestion questions. When
   // set, it injects an append-system-prompt that forces the language of the QUESTIONS only.
   askLanguage?: string;
+  // Texto do usuário (settings) para o system prompt, já expandido. Vai no MESMO
+  // --append-system-prompt do askLanguage: a flag não soma, o último vence (medido).
+  extraSystemPrompt?: string;
   // Overrides de listing de skills (--settings JSON). Vale só para ESTE processo:
   // o ~/.claude/settings.json do usuário fica intocado.
   skillOverrides?: Record<string, string>;
@@ -57,8 +60,8 @@ export class CliProcessManager extends EventEmitter {
   private reqSeq = 0;
   // control_requests NOSSOS aguardando resposta (request_id → resolve).
   private pendingControl = new Map<string, (payload: unknown) => void>();
-  // Arquivo temporário de settings do processo atual (removido no stop()).
-  private settingsFile?: string;
+  // Arquivos temporários do processo atual (settings, system prompt) — apagados no stop().
+  private tempFiles: string[] = [];
 
   constructor(private opts: CliOptions) {
     super();
@@ -143,8 +146,21 @@ export class CliProcessManager extends EventEmitter {
       args.push('--disallowedTools', this.opts.disallowedTools.join(','));
     }
     if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
-    if (this.opts.askLanguage) {
-      args.push('--append-system-prompt', askLanguagePrompt(this.opts.askLanguage));
+    // Repetir --append-system-prompt NÃO soma: o último vence (medido no CLI 2.1.217 —
+    // dois valores, só o segundo chegou ao modelo). Por isso vai tudo junto.
+    const appended = [
+      this.opts.askLanguage ? askLanguagePrompt(this.opts.askLanguage) : '',
+      this.opts.extraSystemPrompt ?? '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    if (appended) {
+      // Texto do usuário passa por ARQUIVO: com shell:true no Windows, um argumento
+      // multi-linha com `|`, `$` ou crase é mastigado pelo cmd.exe e chega vazio ao
+      // modelo (medido: o sentinel injetado inline sumiu; por arquivo, chegou).
+      const file = this.opts.extraSystemPrompt ? this.writeTempFile('prompt', appended) : undefined;
+      if (file) args.push('--append-system-prompt-file', file);
+      else args.push('--append-system-prompt', appended);
     }
     // `--settings` é MERGE (não substitui as settings do usuário) e aceita caminho OU
     // string JSON — mas JSON inline não sobrevive ao shell do Windows (aspas/chaves são
@@ -223,21 +239,26 @@ export class CliProcessManager extends EventEmitter {
   }
 
   /**
-   * Grava as settings extras deste processo (só os overrides de skills) num arquivo
-   * temporário e devolve o caminho. Sem overrides, ou se a escrita falhar, devolve
-   * undefined — o CLI sobe normalmente, sem o `--settings`.
+   * Grava um arquivo temporário deste processo (UTF-8) e devolve o caminho, ou
+   * `undefined` se a escrita falhar — nesse caso o CLI sobe sem a flag correspondente.
    */
-  private writeSettingsFile(): string | undefined {
-    const overrides = this.opts.skillOverrides;
-    if (!overrides || Object.keys(overrides).length === 0) return undefined;
-    const file = path.join(os.tmpdir(), `cockpit-settings-${process.pid}-${++this.reqSeq}.json`);
+  private writeTempFile(kind: string, content: string): string | undefined {
+    const ext = kind === 'settings' ? 'json' : 'txt';
+    const file = path.join(os.tmpdir(), `cockpit-${kind}-${process.pid}-${++this.reqSeq}.${ext}`);
     try {
-      fs.writeFileSync(file, JSON.stringify({ skillOverrides: overrides }), 'utf8');
-      this.settingsFile = file;
+      fs.writeFileSync(file, content, 'utf8');
+      this.tempFiles.push(file);
       return file;
     } catch {
       return undefined;
     }
+  }
+
+  /** Settings extras deste processo (só os overrides de skills). */
+  private writeSettingsFile(): string | undefined {
+    const overrides = this.opts.skillOverrides;
+    if (!overrides || Object.keys(overrides).length === 0) return undefined;
+    return this.writeTempFile('settings', JSON.stringify({ skillOverrides: overrides }));
   }
 
   /**
@@ -301,14 +322,14 @@ export class CliProcessManager extends EventEmitter {
     // Ninguém mais vai responder: libera quem espera em vez de deixar pendurado até o timeout.
     for (const done of this.pendingControl.values()) done(undefined);
     this.pendingControl.clear();
-    if (this.settingsFile) {
+    for (const f of this.tempFiles) {
       try {
-        fs.unlinkSync(this.settingsFile);
+        fs.unlinkSync(f);
       } catch {
         /* arquivo temporário: some no boot seguinte */
       }
-      this.settingsFile = undefined;
     }
+    this.tempFiles = [];
     try {
       proc.stdin.end();
     } catch {

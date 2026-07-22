@@ -242,6 +242,7 @@ terminal mode.
 - [Models, effort, and sessions](#models-effort-and-sessions)
 - [Plugins](#plugins)
 - [Skills](#skills)
+- [Custom system prompt](#custom-system-prompt)
 - [Timeline verbosity](#timeline-verbosity)
 - [Voice dictation](#voice-dictation)
 - [Composer attachments](#composer-attachments)
@@ -712,6 +713,34 @@ Field notes with the raw captures: [`Docs/pesquisa/skills-transparencia.md`](Doc
 
 ---
 
+## Custom system prompt
+
+**Settings → Tootega Cockpit → System Prompt**: a multi-line box (`systemPrompt.text`) plus an
+on/off switch (`systemPrompt.enabled`, off by default). When on, the text is appended to the
+CLI's system prompt.
+
+- **Applied on every CLI start**, including the respawn that continues the same conversation
+  (model/effort change, skill override). Injecting it only on a brand-new context would make
+  the directive vanish mid-conversation without anyone noticing.
+- **The text is a template, validated against your machine**
+  ([`SystemPromptTemplate.ts`](src/cli/SystemPromptTemplate.ts)):
+  `${defaultShell}` · `${psVersion}` · `${winPathStyle}` · `${projectPathWin}` ·
+  `${projectPathGitBash}` · `${projectPathWsl}` · `${wslRow}` · `${os}` · `${tempDir}`.
+  A line whose placeholder points at something not installed here — no WSL, no Git Bash — is
+  **dropped whole**: describing a shell the machine does not have is worse than saying nothing.
+  An unknown `${name}` is kept verbatim rather than invented or blanked.
+- The default content is a shell-discipline directive (which interpreter, which path style,
+  where `/tmp` does and does not exist), which is exactly the class of mistake that costs a
+  broken command.
+- **Delivered by file, not by argument.** Measured on Windows: passed inline, a multi-line text
+  containing `|`, `$` or backticks is mangled by `cmd.exe` under `shell:true` and reaches the
+  model empty — an injected sentinel came back `MISSING`. Through
+  `--append-system-prompt-file` it arrives intact. Also measured: repeating
+  `--append-system-prompt` does not accumulate (the last one wins), so your text and the
+  AskUserQuestion language rule are merged into one payload instead of one erasing the other.
+
+---
+
 ## Timeline verbosity
 
 `tootega.verbosity` controls **how much of the timeline is shown — display only; it does not
@@ -789,6 +818,8 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `voiceCorrect` | boolean | `false` | After stopping dictation, run a spelling/grammar pass with the internal model (clean one-shot). Opt-in |
 | `voiceLanguage` | string | `""` | Dictation language (speech-to-text); empty follows the UI language |
 | `ffmpegPath` | string | `""` | Path to ffmpeg used for voice capture; empty = `ffmpeg` from PATH |
+| `systemPrompt.enabled` | boolean | `false` | Append your text to the CLI's system prompt on every start — see [Custom system prompt](#custom-system-prompt) |
+| `systemPrompt.text` | string | shell directive | Multi-line text appended to the system prompt; supports placeholders resolved against this machine |
 
 > The limit meters now read **real** account usage via the OAuth `/usage` API
 > (same source as the CLI's `/usage`), so no manual budgets are needed. The context

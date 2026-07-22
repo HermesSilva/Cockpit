@@ -38,6 +38,10 @@ export interface SessionHooks {
   settings: () => { model: string; effort: string; permission: string; allowAgents: boolean };
   // Language (short code: pt, en…) for the agent's questions (AskUserQuestion).
   askLanguage: () => string;
+  // Texto do usuário para o system prompt, já expandido (vazio = não injeta).
+  // Vale em TODO spawn (inclusive respawn com --resume): se saísse no respawn, a
+  // diretiva sumiria no meio da conversa sem ninguém perceber.
+  extraSystemPrompt: () => string | undefined;
 }
 
 export class Session {
@@ -142,6 +146,7 @@ export class Session {
       // (which would duplicate the context). clearConversation() clears both for a new conversation.
       resumeSessionId: this.resumeId ?? this.sessionId,
       askLanguage: this.hooks.askLanguage(),
+      extraSystemPrompt: this.hooks.extraSystemPrompt(),
       // 'on' é o default do CLI: mandar não muda nada e só suja o --settings.
       skillOverrides: Object.fromEntries(
         Object.entries(this.skillOverrides).filter(([, v]) => v !== 'on'),

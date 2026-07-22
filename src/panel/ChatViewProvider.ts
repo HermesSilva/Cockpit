@@ -47,6 +47,7 @@ import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/S
 import { fetchAccountUsage } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
+import { buildSystemPrompt } from '../cli/SystemPromptTemplate';
 import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta, SkillOverride } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
@@ -331,7 +332,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         allowAgents: this.cfg().get<boolean>('allowAgents', false),
       }),
       askLanguage: () => this.askLanguageCode(),
+      extraSystemPrompt: () => this.extraSystemPrompt(),
     };
+  }
+
+  /**
+   * Texto do usuário para o system prompt (settings), já expandido contra a máquina real.
+   * Desligado ou vazio = nada é injetado. A expansão remove as linhas que falam de um
+   * shell/pasta que não existe aqui — uma tabela citando WSL numa máquina sem WSL
+   * induziria o agente ao erro.
+   */
+  private extraSystemPrompt(): string | undefined {
+    if (!this.cfg().get<boolean>('systemPrompt.enabled', false)) return undefined;
+    const text = this.cfg().get<string>('systemPrompt.text', '');
+    return buildSystemPrompt(text, this.workspaceCwd());
   }
 
   /** Creates a new tab and its Session; returns the id. It becomes the active tab. */

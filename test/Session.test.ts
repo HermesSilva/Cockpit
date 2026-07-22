@@ -67,9 +67,13 @@ function makeSession(): Session {
     cwd: () => '/tmp/proj',
     settings: () => ({ model: 'default', effort: 'default', permission: 'default', allowAgents: true }),
     askLanguage: () => 'en',
+    extraSystemPrompt: () => extraPrompt,
   };
   return new Session(hooks);
 }
+
+// Texto de system prompt devolvido pelo hook (as settings, no host real).
+let extraPrompt: string | undefined;
 
 describe('Session — continuidade de contexto (anti-duplicação)', () => {
   beforeEach(() => {
@@ -100,6 +104,33 @@ describe('Session — continuidade de contexto (anti-duplicação)', () => {
     s.send('nova conversa');
 
     expect(spawns[1].opts.resumeSessionId).toBeUndefined(); // doesn't resume the old one
+  });
+});
+
+describe('Session — texto extra no system prompt', () => {
+  beforeEach(() => {
+    spawns.length = 0;
+    extraPrompt = undefined;
+  });
+
+  it('não passa nada quando está desligado', () => {
+    const s = makeSession();
+    s.send('p');
+    expect(spawns[0].opts.extraSystemPrompt).toBeUndefined();
+  });
+
+  // Vale em TODO spawn: se saísse no respawn, a diretiva sumiria no meio da conversa.
+  it('acompanha o respawn da MESMA sessão', () => {
+    extraPrompt = 'DIRETIVA DE SHELL';
+    const s = makeSession();
+    s.send('p');
+    spawns[0].fireInit('sess-A');
+    expect(spawns[0].opts.extraSystemPrompt).toBe('DIRETIVA DE SHELL');
+
+    s.setModel('claude-opus-4-8'); // respawn
+    s.send('p2');
+    expect(spawns[1].opts.extraSystemPrompt).toBe('DIRETIVA DE SHELL');
+    expect(spawns[1].opts.resumeSessionId).toBe('sess-A');
   });
 });
 

@@ -4569,6 +4569,42 @@ body {
   color: var(--vscode-charts-blue, #3794ff);
   background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 16%, transparent);
 }
+.tool-skill-name {
+  font-weight: 700;
+}
+
+/* Contexto injetado por hook: faixa fina, fora das bolhas — não é fala de ninguém. */
+.hook-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 5px 10px;
+  border: 1px dashed color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 45%, transparent);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.hook-banner-mark {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.hook-banner-label {
+  font-weight: 600;
+  color: var(--vscode-foreground, #ddd);
+}
+.hook-banner-hook {
+  font-family: var(--vscode-editor-font-family, monospace);
+  opacity: 0.85;
+}
+.hook-banner-tk {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.hook-banner-time {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Painel Skills (X2). Dois eixos: o select CONFIGURA o listing, o rótulo à direita
    OBSERVA o que já está no contexto. Cor só por token do tema (charts-*), usada para
@@ -4849,6 +4885,38 @@ body {
 }
 .skills-resident-tk {
   color: var(--vscode-inputValidation-warningBorder, #cca700);
+}
+/* Contexto injetado por hook: mesmo peso visual das skills, cor neutra — não é listing. */
+.skills-group.hooks {
+  --src-accent: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.skills-hooks-note {
+  margin: 2px 0 6px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.skills-hook-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.22));
+  border-radius: 6px;
+  margin-bottom: 5px;
+}
+.skills-hook-skill {
+  font-size: 11px;
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.skills-hook-tk {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.skills-via-hook {
+  color: var(--vscode-descriptionForeground, #8a8a8a);
 }
 .skills-legend {
   margin-top: 14px;

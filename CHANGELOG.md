@@ -4,6 +4,32 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.228] - 2026-07-22
+
+### Added
+- **Skills loaded by a hook are now visible.** A hook (`SessionStart`, `UserPromptSubmit`, …)
+  can inject a whole `SKILL.md` into the context without a `Skill` tool call and without
+  `/name` — the panel showed the skill as `light` while its body was already weighing on every
+  turn. The stream does carry `system/hook_response` with the injected text, but not the
+  skill's name, so the link is made by **content**: the new
+  [`SkillBodyIndex`](src/cli/SkillBodyIndex.ts) matches the injected text against the body of
+  the `SKILL.md` files on disk (200-character normalised signature, frontmatter excluded) and
+  marks the skill `⚡ loaded`, labelled *loaded by a hook* since it is an inference. Skills
+  are also looked up on disk, not only in the `system/init` list: a `SessionStart` hook fires
+  **before** the init, and the first injection is exactly the one that carries the full body.
+- **Hook context in the Skills panel.** Matched to a skill or not, every `hook_response` is
+  accounted for and grouped by hook, with the estimated injected size and the number of times
+  it fired. Nothing is invented: a built-in skill has no file on disk and is therefore counted
+  without a name.
+- **Hook injections in the timeline.** A hook has no tool card to seal, so it gets its own thin
+  band showing the hook, the recognised skill and the estimated size. It sits outside the
+  bubbles — a `SessionStart` hook happens before the first prompt and belongs to no turn — and
+  a hook that fires on every prompt is banded once, with the repetitions counted in the panel.
+
+### Changed
+- The `Skill` card's seal in the timeline now shows **which** skill was loaded
+  (`⚡ keybindings-help · +3.0k tk loaded (est.)`), instead of the size alone.
+
 ## [1.0.226] - 2026-07-22
 
 ### Fixed

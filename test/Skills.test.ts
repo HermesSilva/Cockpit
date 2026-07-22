@@ -133,6 +133,55 @@ describe('acionamento de skill no stream', () => {
     expect(st.takeSkillLoads()).toEqual([]); // drenada
   });
 
+  // Um hook (SessionStart/UserPromptSubmit) injeta contexto sem tool_use e sem /nome: o
+  // único vínculo com a skill é o CONTEÚDO do corpo injetado.
+  it('reconhece skill carregada por hook e contabiliza a injeção', () => {
+    const st = new StatsAggregator(0);
+    st.applyContextUsage(parseContextUsage(REAL_PAYLOAD)!);
+    st.setSkillBodyResolver((text) => (text.includes('smart caveman') ? 'caveman' : undefined));
+    const output = 'CAVEMAN MODE ACTIVE\n\nRespond terse like smart caveman.' + ' x'.repeat(200);
+    const snap = st.ingest({
+      type: 'system',
+      subtype: 'hook_response',
+      hook_name: 'SessionStart:startup',
+      hook_event: 'SessionStart',
+      output,
+    } as any);
+    const caveman = snap.skills!.find((s) => s.name === 'caveman')!;
+    expect(caveman.active).toBe(true);
+    expect(caveman.invokedBy).toBe('hook');
+    expect(caveman.activeTokens).toBe(Math.round(output.length / 4));
+    expect(snap.hookInjections).toEqual([
+      {
+        hook: 'SessionStart:startup',
+        event: 'SessionStart',
+        count: 1,
+        tokens: Math.round(output.length / 4),
+        skill: 'caveman',
+      },
+    ]);
+    // Timeline: uma faixa por hook, mesmo que ele injete de novo a cada prompt.
+    expect(st.takeHookLoads().map((h) => h.skill)).toEqual(['caveman']);
+    st.ingest({ type: 'system', subtype: 'hook_response', hook_name: 'SessionStart:startup', output } as any);
+    expect(st.takeHookLoads()).toEqual([]);
+    expect(st.snapshot().hookInjections![0].count).toBe(2);
+  });
+
+  it('contabiliza hook que não é skill, sem inventar nome', () => {
+    const st = new StatsAggregator(0);
+    st.setSkillBodyResolver(() => undefined);
+    const snap = st.ingest({
+      type: 'system',
+      subtype: 'hook_response',
+      hook_name: 'UserPromptSubmit',
+      output: 'a'.repeat(400),
+    } as any);
+    expect(snap.skills).toBeUndefined();
+    expect(snap.hookInjections).toEqual([
+      { hook: 'UserPromptSubmit', event: undefined, count: 1, tokens: 100, skill: undefined },
+    ]);
+  });
+
   it('junta metadados do get_context_usage com o estado de ativação', () => {
     const st = new StatsAggregator(0);
     st.applyContextUsage(parseContextUsage(REAL_PAYLOAD)!);

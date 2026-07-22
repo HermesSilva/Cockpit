@@ -2,7 +2,15 @@ import { useState, useEffect, useRef, type ReactNode } from 'react';
 import type { Translator } from '../i18n';
 import type { StatsSnapshot } from '../../../shared/protocol';
 import { send } from '../vscodeApi';
-import type { TimelineItem, AssistantItem, ToolItem, UserItem, TodoItem, AskQuestion } from '../types';
+import type {
+  TimelineItem,
+  AssistantItem,
+  ToolItem,
+  UserItem,
+  HookItem,
+  TodoItem,
+  AskQuestion,
+} from '../types';
 import { isTodoToolName } from '../store';
 import { Markdown } from './Markdown';
 import { CodeBlock } from './CodeBlock';
@@ -60,13 +68,22 @@ interface Props {
 
 // Groups items into turns: each user message and, after it, the contiguous
 // run of Claude items (text + tools) under a single "Claude" header.
-type Group = { kind: 'user'; item: UserItem } | { kind: 'claude'; items: (AssistantItem | ToolItem)[] };
+type Group =
+  | { kind: 'user'; item: UserItem }
+  | { kind: 'claude'; items: (AssistantItem | ToolItem)[] }
+  // Injeção de hook: faixa própria. Não pertence a nenhum turno — o SessionStart acontece
+  // antes do primeiro prompt e agrupá-lo criaria uma bolha do Claude vazia.
+  | { kind: 'hook'; item: HookItem };
 
 function groupItems(items: TimelineItem[]): Group[] {
   const out: Group[] = [];
   for (const it of items) {
     if (it.kind === 'user') {
       out.push({ kind: 'user', item: it });
+      continue;
+    }
+    if (it.kind === 'hook') {
+      out.push({ kind: 'hook', item: it });
       continue;
     }
     const last = out[out.length - 1];
@@ -134,7 +151,9 @@ export function Timeline({
   return (
     <div className="timeline">
       {groups.map((g, gi) =>
-        g.kind === 'user' ? (
+        g.kind === 'hook' ? (
+          <HookBanner key={g.item.id} item={g.item} t={t} />
+        ) : g.kind === 'user' ? (
           ((userOrdinal += 1),
           (
             <UserBubble
@@ -402,6 +421,8 @@ function visibleInTimeline(it: TimelineItem, verbosity: string, lastAssistId?: s
     if (verbosity === 'dialogo') return true; // all the text
     return it.id === lastAssistId; // necessary/quiet: only the final one
   }
+  // Injeção de hook: custo real no contexto, some junto com as ferramentas no modo quiet.
+  if (it.kind === 'hook') return verbosity !== 'quiet';
   // tool
   if (it.name === 'AskUserQuestion' || isTodoToolName(it.name)) return true;
   if (verbosity === 'quiet') return false;
@@ -509,6 +530,27 @@ function ClaudeTurn({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Faixa do contexto que um hook injetou. Mostra o hook, a skill reconhecida (quando o corpo
+ * casa com um SKILL.md em disco) e o tamanho estimado — o mesmo custo que o card do `Skill`
+ * exibe quando a carga vem pelo caminho normal.
+ */
+function HookBanner({ item, t }: { item: HookItem; t: Translator }) {
+  return (
+    <div className="hook-banner" id={`msg-${item.id}`}>
+      <span className="hook-banner-mark">⚡</span>
+      <span className="hook-banner-label">
+        {item.skill ? t('timeline.hookSkill', item.skill) : t('timeline.hookContext')}
+      </span>
+      <span className="hook-banner-hook">{item.hook}</span>
+      {item.tokens != null && (
+        <span className="hook-banner-tk">{t('skills.activeTokens', fmtTk(item.tokens))}</span>
+      )}
+      {item.ts && <span className="hook-banner-time">{fmtStamp(item.ts)}</span>}
     </div>
   );
 }
@@ -660,7 +702,9 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
             acontece, não só no painel. Sem tamanho informado, mostra só o selo. */}
         {item.skillLoaded && (
           <span className="tool-skill-load" title={t('skills.legend.active')}>
-            ⚡ {item.skillTokens != null ? t('skills.activeTokens', fmtTk(item.skillTokens)) : t('skills.obs.active')}
+            ⚡ <span className="tool-skill-name">{item.skillLoaded}</span>
+            {' · '}
+            {item.skillTokens != null ? t('skills.activeTokens', fmtTk(item.skillTokens)) : t('skills.obs.active')}
           </span>
         )}
         {last.ts && <span className="tool-time">{fmtStamp(last.ts)}</span>}

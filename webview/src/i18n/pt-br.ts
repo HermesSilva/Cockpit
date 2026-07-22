@@ -553,4 +553,12 @@ export const ptBR: Partial<Strings> = {
   'bubble.showMore': 'Mostrar mais',
   'bubble.showLess': 'Mostrar menos',
   'confirm.cancel': 'Cancelar',
+  // Contexto injetado por hook (timeline + painel Skills).
+  'timeline.hookSkill': 'skill carregada por hook: {0}',
+  'timeline.hookContext': 'contexto injetado por hook',
+  'skills.viaHook': 'carregada por hook (reconhecida pelo corpo)',
+  'skills.hooks.title': 'contexto de hook',
+  'skills.hooks.note':
+    'Texto que um hook injetou no contexto. Não faz parte do listing de skills, mas pesa igual.',
+  'skills.hooks.tokens': '~{0} tk injetados (est.)',
 };

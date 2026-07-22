@@ -15,6 +15,7 @@ import type {
   AskRequest,
   AssistantItem,
   ToolItem,
+  HookItem,
   TodoItem,
   TurnUsage,
 } from './types';
@@ -269,6 +270,20 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
           : i,
       );
       return { ...tab, items };
+    }
+    // Hook injetou contexto (skill inclusive): item próprio, já que não há card para selar.
+    case 'hookInjected': {
+      const id = `hook:${msg.hook}`;
+      if (tab.items.some((i) => i.kind === 'hook' && i.id === id)) return tab;
+      const item: HookItem = {
+        kind: 'hook',
+        id,
+        hook: msg.hook,
+        skill: msg.skill,
+        tokens: msg.tokens,
+        ts: Date.now(),
+      };
+      return { ...tab, items: [...tab.items, item] };
     }
     case 'toolResult': {
       const owner = tab.items.find(

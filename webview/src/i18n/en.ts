@@ -120,6 +120,13 @@ export const en = {
   'skills.activeUnknown': 'loaded — the engine does not report the size',
   'skills.residentTokens': '{0} tk still in the context',
   'skills.residentUnknown': 'body still in the context (size not reported)',
+  'skills.viaHook': 'loaded by a hook (recognised by the body)',
+  'timeline.hookSkill': 'skill loaded by a hook: {0}',
+  'timeline.hookContext': 'context injected by a hook',
+  'skills.hooks.title': 'hook context',
+  'skills.hooks.note':
+    'Text a hook injected into the context. It is not part of the skill listing, but it weighs the same.',
+  'skills.hooks.tokens': '~{0} tk injected (est.)',
   'skills.note.nameOnly': 'name only in the listing',
   'skills.note.slashOnly': 'out of the listing, /command still works',
   'skills.note.off': 'out of the listing',

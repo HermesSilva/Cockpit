@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Translator } from '../i18n';
-import type { SkillState, SkillOverride } from '../../../shared/protocol';
+import type { SkillState, SkillOverride, HookInjection } from '../../../shared/protocol';
 import { Portal } from './Portal';
 import { fmtTk } from '../util/format';
 
@@ -10,6 +10,7 @@ interface Props {
   listingTokens?: number;
   total?: number;
   listed?: number;
+  hooks?: HookInjection[];
   busy: boolean;
   onRefresh: () => void;
   onOverride: (name: string, value: SkillOverride) => void;
@@ -53,6 +54,7 @@ export function SkillsModal({
   listingTokens,
   total,
   listed,
+  hooks,
   busy,
   onRefresh,
   onOverride,
@@ -167,6 +169,26 @@ export function SkillsModal({
                 </div>
               ))}
 
+              {hooks && hooks.length > 0 && (
+                <div className="skills-group hooks">
+                  <div className="skills-group-label">
+                    {t('skills.hooks.title')}
+                    <span className="skills-group-n">{hooks.length}</span>
+                  </div>
+                  <div className="skills-hooks-note">{t('skills.hooks.note')}</div>
+                  {hooks.map((h) => (
+                    <div key={h.hook} className="skills-hook-row">
+                      <span className="skills-name">{h.hook}</span>
+                      {h.skill && <span className="skills-hook-skill">→ {h.skill}</span>}
+                      <span className="skills-hook-tk">
+                        {h.count > 1 ? `${h.count}× · ` : ''}
+                        {t('skills.hooks.tokens', fmtTk(h.tokens))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="skills-legend">
                 <div>
                   <span className="skills-obs active">⚡ {t('skills.obs.active')}</span> — {t('skills.legend.active')}
@@ -256,6 +278,10 @@ function SkillRow({
                 ? t('skills.residentTokens', fmtTk(s.activeTokens))
                 : t('skills.residentUnknown')}
             </span>
+          )}
+          {/* Carga por hook é INFERIDA (o corpo injetado casa com o SKILL.md em disco). */}
+          {s.invokedBy === 'hook' && (s.active || obs === 'resident') && (
+            <span className="skills-via-hook"> · {t('skills.viaHook')}</span>
           )}
           {obs === 'light' && s.override === 'name-only' && ` · ${t('skills.note.nameOnly')}`}
           {obs === 'light' && s.override === 'user-invocable-only' && ` · ${t('skills.note.slashOnly')}`}

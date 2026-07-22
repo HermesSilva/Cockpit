@@ -697,9 +697,23 @@ from VS Code theme tokens, so light, dark and high-contrast all work.
   `Execute skill: <name>`, loads **nothing** into the context and is therefore not marked.
   A skill triggered by `/name` **from the Cockpit** is marked too (we sent it), but the engine
   reports no size, so no number is shown rather than a made-up one.
+- **Loaded by a hook:** a hook (`SessionStart`, `UserPromptSubmit`, …) can dump a skill body
+  straight into the context — no `Skill` tool call, no `/name`, so nothing would mark it. The
+  stream does carry `system/hook_response` with the injected text, but not the skill's name
+  (the hook command is usually a script of its own), so the only possible link is the
+  **content**: [`SkillBodyIndex.ts`](src/cli/SkillBodyIndex.ts) matches the injected text
+  against the body of the `SKILL.md` files on disk (a 200-character normalised signature, past
+  the frontmatter). On a match the skill is marked `⚡ loaded` and labelled *loaded by a hook*,
+  because it is an inference. A built-in has no file on disk and therefore cannot be named.
+- **Hook context:** matched or not, every `hook_response` is accounted for under **hook
+  context** in the panel, grouped by hook with the injected size and how many times it fired.
+  That text weighs in the prompt exactly like a skill body, so hiding it would be the same
+  blind spot in a different place.
 - **Visible in the timeline:** when a body enters the context, the `Skill` card gets a
-  `⚡ +N tk loaded (est.)` seal — the cost appears at the moment it happens, not only in the
-  panel.
+  `⚡ <name> · +N tk loaded (est.)` seal — the cost appears at the moment it happens, not only
+  in the panel. A hook injection has no card to seal, so it gets its own thin band in the
+  timeline (a `SessionStart` hook fires before the first prompt and belongs to no turn); a hook
+  that fires on every prompt is banded **once**, and the repetitions are counted in the panel.
 - **Listing control (per skill):** `On (full)` · `Name only` · `Only /command` · `Off`. This maps
   to the CLI's `skillOverrides` and the saving is real — measured on a 14-skill setup, turning
   three of them down took the listing from **1928 → 1027 tokens**. Overrides are stored **per
@@ -711,8 +725,8 @@ from VS Code theme tokens, so light, dark and high-contrast all work.
   `⚠ off · resident`: it will not be listed or triggered again, but the body stays until a new
   session or `/clear`. Measured on the same session: listing dropped by exactly the skill's
   metadata tokens while `Messages` stayed unchanged.
-- Skills triggered by a hook, or by `/name` typed outside the Cockpit, are invisible to us and
-  are not shown.
+- A skill triggered by `/name` typed **outside** the Cockpit (in the terminal, on a session we
+  resumed) is invisible to us and is not shown.
 
 Field notes with the raw captures: [`Docs/pesquisa/skills-transparencia.md`](Docs/pesquisa/skills-transparencia.md).
 

@@ -15,6 +15,7 @@ import type {
   ToolResultBlock,
 } from '../../shared/events';
 import { parseContextUsage } from '../cli/ContextUsage';
+import { matchSkillBody, skillNamesOnDisk } from '../cli/SkillBodyIndex';
 import type { HostToWebview, LimitWindow, SkillOverride } from '../../shared/protocol';
 
 export interface SessionHooks {
@@ -94,7 +95,22 @@ export class Session {
   private pendingPerm = new Map<string, { tool: string; input: unknown; suggestions?: unknown[] }>();
 
   constructor(private hooks: SessionHooks) {
-    this.stats = new StatsAggregator(0);
+    this.stats = this.newStats();
+  }
+
+  /**
+   * Agregador com o reconhecedor de skill por corpo já ligado: hooks injetam contexto sem
+   * emitir `tool_use Skill`, e essa é a única forma de saber QUAL skill entrou por ali.
+   * A lista do `system/init` é a fonte boa, mas o hook de SessionStart chega antes dele —
+   * até lá vale o que existe em disco.
+   */
+  private newStats(): StatsAggregator {
+    const stats = new StatsAggregator(0);
+    stats.setSkillBodyResolver((text) => {
+      const cwd = this.hooks.cwd();
+      return matchSkillBody(text, this.lastSkills ?? skillNamesOnDisk(cwd), cwd);
+    });
+    return stats;
   }
 
   // ---- lifecycle ----
@@ -263,7 +279,7 @@ export class Session {
     // context" on a resumed session the next send() would respawn with --resume of the
     // old session (it wouldn't clear) — and the init pinning would keep that id glued on.
     this.resumeId = undefined;
-    this.stats = new StatsAggregator(0);
+    this.stats = this.newStats();
   }
 
   resume(sessionId: string): void {
@@ -465,6 +481,10 @@ export class Session {
     // Corpo de skill que acabou de entrar no contexto: vira selo no card do Skill.
     for (const load of this.stats.takeSkillLoads()) {
       this.emit({ kind: 'skillLoaded', toolUseId: load.toolUseId, name: load.name, tokens: load.tokens });
+    }
+    // Contexto injetado por hook: não tem card para selar, então é item próprio.
+    for (const h of this.stats.takeHookLoads()) {
+      this.emit({ kind: 'hookInjected', hook: h.hook, event: h.event, skill: h.skill, tokens: h.tokens });
     }
 
     switch (ev.type) {

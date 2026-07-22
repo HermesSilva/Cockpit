@@ -11,6 +11,7 @@ import type {
   DenialEvent,
   SkillState,
   SkillOverride,
+  HookInjection,
 } from '../../shared/protocol';
 import type { ContextUsageInfo } from '../cli/ContextUsage';
 import { STATS_VERSION, capTimeline, type PersistedStats } from './StatsStore';
@@ -224,7 +225,7 @@ export class StatsAggregator {
   // uma delas pelo engine: só sai com /clear ou sessão nova.
   private skillsActive = new Map<
     string,
-    { at: number; by: 'model' | 'user'; tokens?: number }
+    { at: number; by: 'model' | 'user' | 'hook'; tokens?: number }
   >();
   // tool_use_id do `Skill` → nome, para ler o tool_result correspondente.
   private skillByToolUse = new Map<string, string>();
@@ -234,6 +235,13 @@ export class StatsAggregator {
   private skillLoads: { name: string; toolUseId: string; tokens?: number }[] = [];
   // Overrides em vigor (só para exibir na UI; quem aplica é o spawn do CLI).
   private skillOverrides: Record<string, SkillOverride> = {};
+  // Texto injetado por hooks (system/hook_response), acumulado por hook_name.
+  private hookInjections = new Map<string, HookInjection>();
+  // Injeções novas ainda não mostradas no timeline (drenadas pela Session).
+  private hookLoads: { hook: string; event?: string; skill?: string; tokens?: number }[] = [];
+  // Reconhece uma skill pelo corpo injetado (lê SKILL.md do disco). Injetado pela Session:
+  // o agregador não faz I/O nem conhece o workspace.
+  private skillByBody?: (text: string) => string | undefined;
 
   // configuredLimit > 0 = manual override; 0 = auto (derived from the active model).
   constructor(configuredLimit: number) {
@@ -319,14 +327,55 @@ export class StatsAggregator {
    * quando conseguimos medir o corpo injetado; numa invocação por /nome o engine não
    * emite nada e o custo fica desconhecido — melhor omitir do que inventar.
    */
-  markSkillActive(name: string, by: 'model' | 'user', tokens?: number): void {
+  markSkillActive(name: string, by: 'model' | 'user' | 'hook', tokens?: number): void {
     if (!name) return;
     const cur = this.skillsActive.get(name);
     this.skillsActive.set(name, {
       at: cur?.at ?? Date.now(),
       by: cur?.by ?? by,
-      tokens: tokens ?? cur?.tokens,
+      // O maior avistamento: um hook pode reinjetar um resumo curto da mesma skill depois
+      // do corpo inteiro, e o que pesa no contexto é o corpo.
+      tokens: Math.max(tokens ?? 0, cur?.tokens ?? 0) || undefined,
     });
+  }
+
+  /** Reconhecedor de skill pelo corpo injetado (Session liga; testes injetam um fake). */
+  setSkillBodyResolver(fn: (text: string) => string | undefined): void {
+    this.skillByBody = fn;
+  }
+
+  /**
+   * `system/hook_response`: o hook devolveu texto e o CLI o injetou no contexto. Sempre
+   * contabilizado por hook (vale para qualquer hook, skill ou não). Quando o texto casa
+   * com o corpo de um SKILL.md, a skill também é marcada como carregada — é o único sinal
+   * que existe para esse caminho: hook não emite `tool_use Skill` nem passa por /nome.
+   */
+  private noteHookOutput(hookName: unknown, hookEvent: unknown, output: unknown): void {
+    if (typeof output !== 'string' || output.length === 0) return;
+    const hook = typeof hookName === 'string' && hookName ? hookName : 'hook';
+    const tokens = Math.round(output.length / CHARS_PER_TOKEN);
+    const cur = this.hookInjections.get(hook);
+    const skill = cur?.skill ?? this.skillByBody?.(output);
+    const event = typeof hookEvent === 'string' ? hookEvent : cur?.event;
+    this.hookInjections.set(hook, {
+      hook,
+      event,
+      count: (cur?.count ?? 0) + 1,
+      tokens: (cur?.tokens ?? 0) + tokens,
+      skill,
+    });
+    if (skill) this.markSkillActive(skill, 'hook', tokens);
+    // Timeline: só a PRIMEIRA injeção de cada hook. Um hook de UserPromptSubmit dispara
+    // a cada prompt — repetir o marcador afogaria a conversa sem dizer nada de novo.
+    if (!cur) this.hookLoads.push({ hook, event, skill, tokens });
+  }
+
+  /** Injeções de hook novas desde a última chamada (esvazia a fila), para o timeline. */
+  takeHookLoads(): { hook: string; event?: string; skill?: string; tokens?: number }[] {
+    if (this.hookLoads.length === 0) return [];
+    const out = this.hookLoads;
+    this.hookLoads = [];
+    return out;
   }
 
   /**
@@ -485,6 +534,10 @@ export class StatsAggregator {
         if ((ev as any).permissionMode) this.mode = (ev as any).permissionMode;
         if (!this.sessionStartTs && (ev as any).subtype === 'init') {
           this.sessionStartTs = Date.now();
+        }
+        if ((ev as any).subtype === 'hook_response') {
+          const h = ev as any;
+          this.noteHookOutput(h.hook_name, h.hook_event, h.output);
         }
         break;
       case 'stream_event': {
@@ -869,6 +922,10 @@ export class StatsAggregator {
       skillsListingTokens: this.skillsListingTokens,
       skillsTotal: this.skillsTotal,
       skillsListed: this.skillsListed,
+      hookInjections:
+        this.hookInjections.size > 0
+          ? [...this.hookInjections.values()].sort((a, b) => b.tokens - a.tokens)
+          : undefined,
     };
   }
 }

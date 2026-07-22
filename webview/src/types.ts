@@ -1,5 +1,5 @@
 // UI state model.
-export type ItemKind = 'user' | 'assistant' | 'tool';
+export type ItemKind = 'user' | 'assistant' | 'tool' | 'hook';
 
 // Token usage of a turn (normalized for the UI from the engine's usage).
 export interface TurnUsage {
@@ -46,7 +46,20 @@ export interface ToolItem {
   skillTokens?: number;
 }
 
-export type TimelineItem = UserItem | AssistantItem | ToolItem;
+/**
+ * Contexto que um HOOK injetou no prompt. Não passa por tool_use nenhum — sem este item o
+ * custo (e a skill que entrou por ali) só apareceria no painel, nunca na conversa.
+ */
+export interface HookItem {
+  kind: 'hook';
+  id: string;
+  hook: string; // hook_name, ex.: 'SessionStart:startup'
+  skill?: string; // skill reconhecida pelo corpo injetado
+  tokens?: number; // ESTIMATIVA (chars/4)
+  ts?: number;
+}
+
+export type TimelineItem = UserItem | AssistantItem | ToolItem | HookItem;
 
 export interface PermissionSuggestion {
   type?: string;

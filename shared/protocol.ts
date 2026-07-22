@@ -118,6 +118,8 @@ export interface StatsSnapshot {
   skillsListingTokens?: number; // categoria "Skills" do get_context_usage (só metadados)
   skillsTotal?: number; // totalSkills (antes dos overrides)
   skillsListed?: number; // includedSkills (o que realmente entrou no listing)
+  // Texto que hooks injetaram no contexto desta sessão (agrupado por hook).
+  hookInjections?: HookInjection[];
 }
 
 // --- Skills ---
@@ -138,11 +140,25 @@ export interface SkillState {
   listed: boolean; // apareceu no listing da última leitura
   override?: SkillOverride; // ausente = 'on'
   // Corpo do SKILL.md injetado nesta sessão. O CLI NÃO emite evento próprio: isso vem
-  // do tool_use `Skill` (invocação pelo modelo) ou de um /nome enviado pelo Cockpit.
+  // do tool_use `Skill` (invocação pelo modelo), de um /nome enviado pelo Cockpit ou de um
+  // hook cujo texto injetado casa com o corpo do SKILL.md em disco ('hook', inferido).
   active?: boolean;
   activeTokens?: number; // ESTIMATIVA (chars/4). Ausente quando invocada por /nome.
   activatedAt?: number;
-  invokedBy?: 'model' | 'user';
+  invokedBy?: 'model' | 'user' | 'hook';
+}
+
+/**
+ * Contexto injetado por um HOOK (`system/hook_response`), agrupado por hook. Vale para
+ * qualquer hook — o texto entra no prompt e pesa, seja skill ou não. Quando o texto casa
+ * com o corpo de um SKILL.md em disco, `skill` diz qual (inferência, rotulada na UI).
+ */
+export interface HookInjection {
+  hook: string; // hook_name, ex.: 'SessionStart:startup'
+  event?: string; // hook_event, ex.: 'SessionStart'
+  count: number; // quantas vezes injetou nesta sessão
+  tokens: number; // ESTIMATIVA (chars/4) do total injetado
+  skill?: string; // skill reconhecida pelo corpo, quando houver
 }
 
 // --- Plugins (modal "Plugins") ---
@@ -493,6 +509,9 @@ type HostMsg =
   // Corpo de um SKILL.md entrou no contexto: marca isso no card do Skill no timeline.
   // `tokens` é ESTIMATIVA (tamanho da mensagem injetada); ausente = engine não informou.
   | { kind: 'skillLoaded'; toolUseId: string; name: string; tokens?: number }
+  // Um HOOK injetou texto no contexto (sem tool_use para selar): vira item próprio no
+  // timeline. `skill` sai quando o texto casa com o corpo de um SKILL.md em disco.
+  | { kind: 'hookInjected'; hook: string; event?: string; skill?: string; tokens?: number }
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
   | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }

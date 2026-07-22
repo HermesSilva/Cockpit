@@ -440,6 +440,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             listingTokens={tab?.stats?.skillsListingTokens}
             total={tab?.stats?.skillsTotal}
             listed={tab?.stats?.skillsListed}
+            hooks={tab?.stats?.hookInjections}
             busy={skillsBusy}
             onRefresh={() => send({ kind: 'skillsRefresh' })}
             onOverride={(name, value) => send({ kind: 'skillOverrideSet', name, value })}

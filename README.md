@@ -24,7 +24,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.217` |
+| **Extension version** | `1.0.219` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.215`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Sonnet 5 / Opus 4.8 / Fable 5) |
 | **Languages** | pt-BR and international English (runtime switching) |
@@ -117,6 +117,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | MCP servers manage (`/mcp`) | 🟡 | ✅ | both forward to the CLI |
 | Built-in IDE MCP server (getDiagnostics, Jupyter execute) | ❌ | ✅ | official runs a local `ide` MCP |
 | Hooks / skills / subagents UI | 🟡 | ✅ | Cockpit forwards `/hooks` etc.; no dedicated UI |
+| **UTF-8 fix for PowerShell output (Windows)** | ✅ | ❌ | one-click `PreToolUse` hook; see [Accented characters in PowerShell output](#accented-characters-in-powershell-output-windows) |
 | Chrome browser automation (`@browser`) | ❌ | ✅ | official only |
 | Git worktrees (parallel branches) | ❌ | ✅ | official `--worktree` |
 | Dynamic workflows / Artifacts (preview) | ❌ | ✅ | official research preview |

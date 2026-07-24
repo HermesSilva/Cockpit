@@ -27,6 +27,10 @@ export interface CliOptions {
   // Overrides de listing de skills (--settings JSON). Vale só para ESTE processo:
   // o ~/.claude/settings.json do usuário fica intocado.
   skillOverrides?: Record<string, string>;
+  // Encaminha o texto dos subagentes no stream (--forward-subagent-text, 2.1.211). Só
+  // faz sentido quando os agentes estão liberados. Cada evento chega marcado com
+  // `parent_tool_use_id`, roteado para o card do Task que o lançou (não polui a bolha principal).
+  forwardSubagentText?: boolean;
 }
 
 // Short BCP47 code -> language name for the prompt instruction.
@@ -145,6 +149,7 @@ export class CliProcessManager extends EventEmitter {
     if (this.opts.disallowedTools?.length) {
       args.push('--disallowedTools', this.opts.disallowedTools.join(','));
     }
+    if (this.opts.forwardSubagentText) args.push('--forward-subagent-text');
     if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
     // Repetir --append-system-prompt NÃO soma: o último vence (medido no CLI 2.1.217 —
     // dois valores, só o segundo chegou ao modelo). Por isso vai tudo junto.

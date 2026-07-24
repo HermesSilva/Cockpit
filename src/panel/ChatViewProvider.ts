@@ -62,6 +62,9 @@ import { log, dlog } from '../util/logger';
 // (the smaller 200K version is omitted). The CLI validates it at spawn.
 const MODEL_LIST = [
   'default',
+  // Opus 5: the default Opus since 2.1.219. Its 1M window is NATIVE (no `[1m]`
+  // variant), so it stays out of BASE_OF_1M like Sonnet 5. Fast mode covers it.
+  'claude-opus-5',
   'claude-opus-4-8[1m]',
   // Sonnet 5: the CLI default since 2.1.197. Its 1M window is NATIVE — it has no
   // `[1m]` variant (hence it stays out of BASE_OF_1M).
@@ -1050,7 +1053,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ kind: 'mcpBusy', busy: true });
     try {
       const list = await fetchMcpList(this.claudePath());
-      const servers = mergeMcpStatus(s.lastTools, s.lastMcpServers, list);
+      const servers = mergeMcpStatus(s.lastTools, s.lastMcpServers, list, s.lastMcpErrors);
       this.post({ kind: 'mcpData', data: { servers, generatedAt: new Date().toISOString() } });
     } catch (e) {
       log(`sendMcp: ${String(e)}`);
@@ -1065,7 +1068,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       await this.refreshUsage(true); // forces a fresh API call (hot data on click)
       const account = await fetchAuthStatus(this.claudePath());
-      const scoped = this.lastScoped ?? readUsageCache()?.weeklyScoped;
+      const cache = readUsageCache();
+      const scoped = this.lastScoped ?? cache?.weeklyScoped;
+      // Session flags (fast mode, model label, effort) come only from the statusline
+      // payload. Mark them stale when the cache is older than the trust window.
+      if (account && cache?.session) {
+        account.session = {
+          ...cache.session,
+          stale: cache.ageMs != null && cache.ageMs >= USAGE_CACHE_MAX_AGE_MS,
+        };
+      }
       // Detalhamento local 7d (por modelo / origem) — sempre estimativa de tabela,
       // independent of the account's real %. It scans this machine's transcripts.
       const [local, tokens] = await Promise.all([

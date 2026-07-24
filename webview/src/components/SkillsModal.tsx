@@ -19,6 +19,29 @@ interface Props {
 
 const OVERRIDES: SkillOverride[] = ['on', 'name-only', 'user-invocable-only', 'off'];
 
+// Known Claude Code hook events (the trigger each one fires on). DirectoryAdded is new
+// in 2.1.219 (fires after /add-dir or an SDK register_repo_root). An unknown event falls
+// back to a generic hint — the panel never breaks on a new trigger name.
+const HOOK_EVENTS = new Set([
+  'SessionStart',
+  'SessionEnd',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'Notification',
+  'Stop',
+  'SubagentStop',
+  'PreCompact',
+  'DirectoryAdded',
+]);
+function hookEventHint(t: Translator, event: string): string {
+  // Every `hookEvent.<Known>` key exists in the catalog; the cast is safe because we
+  // only build it for events in HOOK_EVENTS. Unknown events use the generic key.
+  return HOOK_EVENTS.has(event)
+    ? t(`hookEvent.${event}` as Parameters<Translator>[0])
+    : t('hookEvent.unknown', event);
+}
+
 // Grupos por origem. `source` vem do engine (get_context_usage): medido no CLI 2.1.217
 // como 'projectSettings' | 'userSettings' | 'built-in'. Qualquer valor novo cai em 'other'.
 type Group = 'project' | 'user' | 'built-in' | 'other';
@@ -179,6 +202,11 @@ export function SkillsModal({
                   {hooks.map((h) => (
                     <div key={h.hook} className="skills-hook-row">
                       <span className="skills-name">{h.hook}</span>
+                      {h.event && (
+                        <span className="skills-hook-event" title={hookEventHint(t, h.event)}>
+                          {h.event}
+                        </span>
+                      )}
                       {h.skill && <span className="skills-hook-skill">→ {h.skill}</span>}
                       <span className="skills-hook-tk">
                         {h.count > 1 ? `${h.count}× · ` : ''}

@@ -4,6 +4,38 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.229] - 2026-07-24
+
+Aligns the extension with **Claude Code CLI 2.1.219**, surfacing engine capabilities added
+across the 2.1.208 → 2.1.219 releases.
+
+### Added
+- **Opus 5 in the model picker.** `claude-opus-5` is the default Opus since 2.1.219 — 1M
+  context native (no `[1m]` variant, like Sonnet 5) and covered by fast mode. Price and
+  context keep coming from live discovery (Models API + pricing docs), so nothing else is
+  hard-coded.
+- **MCP config-validation errors.** The `system/init` event now lists servers the CLI skipped
+  at config validation (`mcp_server_errors`, 2.1.219). A tolerant parser attaches the reason to
+  its server (forcing *failed*) — or adds a standalone row when the server has no name — and the
+  **MCP panel** shows *“skipped by config validation: …”*.
+- **Session flags in the Usage panel.** The statusline wrapper now also captures `fast_mode`,
+  `model.display_name`, `effort.level` and `output_style.name`. The Usage modal shows a
+  **Session** block with fast mode / model / effort / output style, labelled *from statusline*
+  and dimmed when the cache is stale. Same provenance as the real limits (the user's statusline
+  session, not the Cockpit's headless run).
+- **Subagent output on the Task card.** With agents allowed, the CLI is spawned with
+  `--forward-subagent-text` (2.1.211): a subagent's narration arrives tagged with
+  `parent_tool_use_id` and is rendered inside the **Task** card that launched it — kept out of the
+  main bubble and out of the stats (subagent cost stays sourced from the authoritative turn
+  total, so the live counters don't shift). Nested subagents attribute to their own launcher; a
+  subagent's permission prompt (`control_request`) still reaches the normal handler.
+- **Hook-trigger hints in the Skills panel.** Each hook injection now shows its event with a
+  tooltip describing what it fires on, including the new **DirectoryAdded** trigger (after
+  `/add-dir` or an SDK `register_repo_root`, 2.1.219). An unknown event falls back to a generic
+  hint — the panel never breaks on a new trigger name.
+- **EndConversation tool card.** The agent can end a session on its own with abusive users or
+  jailbreak attempts (2.1.214); the timeline gives it a dedicated 🛑 card with the reason it gave.
+
 ## [1.0.228] - 2026-07-22
 
 ### Added

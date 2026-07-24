@@ -46,6 +46,10 @@ export interface SystemInitEvent {
   model?: string;
   tools?: string[];
   mcp_servers?: { name: string; status: string }[];
+  // Servers the CLI SKIPPED at config validation (bad `--mcp-config`/`.mcp.json` entry).
+  // Added to the headless init event in 2.1.219. Shape is tolerant: a string, or an object
+  // carrying the server name plus a message under one of several possible keys.
+  mcp_server_errors?: Array<string | { name?: string; server?: string; error?: string; message?: string }>;
   permissionMode?: string;
 }
 

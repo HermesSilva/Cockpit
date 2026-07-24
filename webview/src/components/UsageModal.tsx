@@ -75,6 +75,35 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                 </div>
               )}
 
+              {/* SESSION FLAGS (statusline): fast mode, model label, effort, output style.
+                  Provenance is the user's statusline session, not the Cockpit's headless run. */}
+              {usage.account.session && (
+                <>
+                  <div className="usage-section-label">
+                    {t('usage.session')}
+                    <span className="usage-badge est">{t('usage.session.src')}</span>
+                  </div>
+                  <div className={`usage-rows${usage.account.session.stale ? ' usage-dim' : ''}`}>
+                    {usage.account.session.fastMode != null && (
+                      <Row
+                        k={t('usage.fastMode')}
+                        v={usage.account.session.fastMode ? t('common.on') : t('common.off')}
+                        accent={usage.account.session.fastMode}
+                      />
+                    )}
+                    {usage.account.session.modelDisplay && (
+                      <Row k={t('usage.modelLabel')} v={usage.account.session.modelDisplay} />
+                    )}
+                    {usage.account.session.effort && (
+                      <Row k={t('usage.effortLevel')} v={usage.account.session.effort} />
+                    )}
+                    {usage.account.session.outputStyle && (
+                      <Row k={t('usage.outputStyle')} v={usage.account.session.outputStyle} />
+                    )}
+                  </div>
+                </>
+              )}
+
               {/* USAGE WINDOWS */}
               <div className="usage-section-label">
                 {t('usage.usage')}

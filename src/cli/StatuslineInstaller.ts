@@ -24,6 +24,10 @@ if ($raw.Trim().Length -gt 0) {
       ts             = (Get-Date).ToUniversalTime().ToString("o")
       rate_limits    = $j.rate_limits
       context_window = $j.context_window
+      model          = $j.model
+      fast_mode      = $j.fast_mode
+      effort         = $j.effort
+      output_style   = $j.output_style
     }
     ($cache | ConvertTo-Json -Depth 12) | Out-File -FilePath (Join-Path $ClaudeDir ".tootega-usage.json") -Encoding utf8
   } catch {}

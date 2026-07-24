@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMcpList } from '../src/cli/McpInventory';
+import { parseMcpList, parseMcpErrors } from '../src/cli/McpInventory';
 import { mergeMcpStatus } from '../src/cli/McpStatus';
 
 // Real output of `claude mcp list` (2.1.207), including the health-check header.
@@ -122,5 +122,39 @@ describe('mergeMcpStatus', () => {
   it('sem mcp list (falhou/timeout): devolve o que o init sabia', () => {
     const servers = mergeMcpStatus(['mcp__api__ping'], [{ name: 'api', status: 'connected' }], []);
     expect(servers[0]).toMatchObject({ name: 'api', status: 'connected', connected: true });
+  });
+
+  it('mcp_server_errors do init: anexa o erro ao servidor e força failed', () => {
+    const servers = mergeMcpStatus(
+      ['mcp__api__ping'],
+      [{ name: 'api', status: 'connected' }],
+      [],
+      parseMcpErrors([{ name: 'api', error: 'invalid url' }]),
+    );
+    expect(servers[0]).toMatchObject({ name: 'api', status: 'failed', connected: false, error: 'invalid url' });
+  });
+
+  it('erro sem servidor conhecido vira uma linha própria failed', () => {
+    const servers = mergeMcpStatus([], [], [], parseMcpErrors(['weather: bad config']));
+    expect(servers).toHaveLength(1);
+    expect(servers[0]).toMatchObject({ name: 'weather', status: 'failed', error: 'bad config' });
+  });
+});
+
+describe('parseMcpErrors', () => {
+  it('aceita string "nome: mensagem"', () => {
+    expect(parseMcpErrors(['weather: invalid url'])).toEqual([{ name: 'weather', error: 'invalid url' }]);
+  });
+  it('aceita string sem nome', () => {
+    expect(parseMcpErrors(['config file not found'])).toEqual([{ error: 'config file not found' }]);
+  });
+  it('aceita objeto com name/server + error/message', () => {
+    expect(parseMcpErrors([{ server: 'db', message: 'timeout' }])).toEqual([{ name: 'db', error: 'timeout' }]);
+    expect(parseMcpErrors([{ name: 'x', error: 'boom' }])).toEqual([{ name: 'x', error: 'boom' }]);
+  });
+  it('tolerante: não-array e lixo viram []/ignorados', () => {
+    expect(parseMcpErrors(undefined)).toEqual([]);
+    expect(parseMcpErrors('nope')).toEqual([]);
+    expect(parseMcpErrors([null, 42, {}, ''])).toEqual([]);
   });
 });

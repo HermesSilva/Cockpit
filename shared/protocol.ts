@@ -200,6 +200,16 @@ export interface UsageAccount {
   orgName?: string;
   plan?: string; // subscriptionType ('max' | 'pro' | …)
   loginExpiresAt?: number; // epoch ms — validade do login (refresh token)
+  // Session flags read from the statusline payload (fast_mode/model/effort/output_style).
+  // Provenance is the user's statusline, not the Cockpit's headless session — same nature
+  // as the real limits. Absent when the statusline wrapper isn't installed or the cache is stale.
+  session?: {
+    fastMode?: boolean;
+    modelDisplay?: string;
+    effort?: string;
+    outputStyle?: string;
+    stale?: boolean; // cache older than the trust window (shown dimmed)
+  };
 }
 export interface UsageBucket {
   usedPct?: number; // 0..1
@@ -308,6 +318,9 @@ export interface McpServerInfo {
   target?: string; // comando (stdio) ou URL (http/sse), sem o sufixo `(HTTP)`/`(SSE)`
   transport?: string; // 'HTTP' | 'SSE' — só p/ servidores remotos; ausente = stdio
   notConfigured?: boolean; // remoto declarado sem URL (a CLI 2.1.208 mostra "not configured")
+  // Motivo pelo qual o CLI recusou o servidor na validação de config (init
+  // `mcp_server_errors`, 2.1.219). Presente = servidor pulado; implica status 'failed'.
+  error?: string;
   tools: string[]; // nomes curtos, sem o prefixo `mcp__<server>__`
 }
 
@@ -459,6 +472,9 @@ type HostMsg =
   | { kind: 'assistantDone'; id: string }
   | { kind: 'thinking'; id: string; delta: string }
   | { kind: 'toolUse'; id: string; name: string; input: unknown }
+  // Subagent text forwarded by the CLI (--forward-subagent-text). `parentId` is the
+  // Task tool_use that launched it — the webview appends it under that Task's card.
+  | { kind: 'subagentText'; parentId: string; delta: string }
   | { kind: 'toolResult'; toolUseId: string; content: unknown; isError?: boolean }
   | {
       kind: 'permissionRequest';

@@ -45,6 +45,8 @@ const TOOL_ICONS: Record<string, string> = {
   WebFetch: '🌐',
   WebSearch: '🔎',
   TodoWrite: '☑️',
+  // The agent ends the session on its own (abusive user / jailbreak) — CLI 2.1.214.
+  EndConversation: '🛑',
 };
 const toolIcon = (name: string): string => TOOL_ICONS[name] ?? '⚙';
 const basename = (p: string): string => p.replace(/["']/g, '').split(/[\\/]/).pop() || p;
@@ -679,9 +681,16 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
   const input = (item.input ?? {}) as Record<string, unknown>;
   const filePath = typeof input.file_path === 'string' ? input.file_path : undefined;
   const name = item.name;
+  // EndConversation: the agent closed the session itself. Surface the reason it gave.
+  const endReason =
+    name === 'EndConversation'
+      ? (typeof input.reason === 'string' && input.reason) ||
+        (typeof input.message === 'string' && input.message) ||
+        undefined
+      : undefined;
 
   return (
-    <div className={`tool-card ${statusCls}`}>
+    <div className={`tool-card ${statusCls}${name === 'EndConversation' ? ' end-conversation' : ''}`}>
       <button type="button" className="tool-head" onClick={() => setOpen((o) => !o)}>
         <span className="tool-icon">{toolIcon(name)}</span>
         <span className="tool-name">{name}{merged && <span className="tool-count">×{items.length}</span>}</span>
@@ -726,8 +735,20 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
         </span>
         <span className="chevron">{open ? '▾' : '▸'}</span>
       </button>
+      {name === 'EndConversation' && (
+        <div className="tool-end-banner">
+          {t('tool.endConversation')}
+          {endReason && <span className="tool-end-reason"> — {endReason}</span>}
+        </div>
+      )}
       {open && (
         <div className="tool-body">
+          {item.subagentText && (
+            <div className="tool-subagent">
+              <div className="tool-subagent-label">{t('tool.subagent')}</div>
+              <Markdown text={item.subagentText} />
+            </div>
+          )}
           {items.map((it, i) => (
             <div key={it.id} className={i > 0 ? 'tool-merge-part' : undefined}>
               {renderBody(it)}

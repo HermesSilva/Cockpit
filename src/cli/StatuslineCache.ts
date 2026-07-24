@@ -4,12 +4,39 @@ import * as fs from 'node:fs';
 import { USAGE_CACHE } from './StatuslineInstaller';
 import type { LimitWindow, ScopedBucket } from '../../shared/protocol';
 
+/** Session flags the statusline payload carries (fast mode, model label, effort, style). */
+export interface StatuslineSession {
+  fastMode?: boolean; // `fast_mode` — fast mode enabled for the session
+  modelId?: string; // `model.id`
+  modelDisplay?: string; // `model.display_name` (the CLI's own label)
+  effort?: string; // `effort.level`
+  outputStyle?: string; // `output_style.name`
+}
+
 export interface RealLimits {
   fiveHour?: LimitWindow; // current session window
   sevenDay?: LimitWindow; // janela semanal de todos os modelos
   weeklyScoped?: ScopedBucket[]; // per-model weekly windows (when present)
+  session?: StatuslineSession; // flags da sessão (fast mode etc.), quando presentes
   ageMs?: number; // idade do cache (now - ts); undefined se ts ausente
   raw?: unknown; // raw rate_limits, for debugging
+}
+
+/** Extracts the session flags from the cached statusline payload. Tolerant. */
+function parseSession(obj: any): StatuslineSession | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const s: StatuslineSession = {};
+  if (typeof obj.fast_mode === 'boolean') s.fastMode = obj.fast_mode;
+  const model = obj.model;
+  if (model && typeof model === 'object') {
+    if (typeof model.id === 'string' && model.id) s.modelId = model.id;
+    if (typeof model.display_name === 'string' && model.display_name) s.modelDisplay = model.display_name;
+  }
+  const level = obj.effort?.level;
+  if (typeof level === 'string' && level) s.effort = level;
+  const style = obj.output_style?.name;
+  if (typeof style === 'string' && style) s.outputStyle = style;
+  return Object.keys(s).length ? s : undefined;
 }
 
 export function readUsageCache(): RealLimits | undefined {
@@ -20,15 +47,16 @@ export function readUsageCache(): RealLimits | undefined {
     return undefined;
   }
   const ageMs = cacheAge(obj?.ts);
+  const session = parseSession(obj);
   const rl = obj?.rate_limits;
-  if (!rl || typeof rl !== 'object') return { ageMs, raw: rl };
+  if (!rl || typeof rl !== 'object') return { session, ageMs, raw: rl };
   const byKind = parseKinds(rl.limits);
   const fiveHour = byKind.fiveHour ?? parseWindow(rl.five_hour ?? rl.fiveHour ?? rl['5h']);
   const sevenDay =
     byKind.sevenDay ?? parseWindow(rl.seven_day ?? rl.sevenDay ?? rl['7d'] ?? rl.weekly);
   const weeklyScoped = byKind.weeklyScoped ?? legacyScoped(rl);
-  if (!fiveHour && !sevenDay && !weeklyScoped) return { ageMs, raw: rl };
-  return { fiveHour, sevenDay, weeklyScoped, ageMs, raw: rl };
+  if (!fiveHour && !sevenDay && !weeklyScoped) return { session, ageMs, raw: rl };
+  return { fiveHour, sevenDay, weeklyScoped, session, ageMs, raw: rl };
 }
 
 /** Current format: `limits[]` with kind session|weekly_all|weekly_scoped + scope.model.display_name. */

@@ -102,6 +102,45 @@ export function parseMcpList(stdout: string): McpListEntry[] {
   return out;
 }
 
+// --- init `mcp_server_errors` (CLI 2.1.219) -----------------------------------
+// Servers the CLI refused to start at config validation. The init event lists them
+// separately from `mcp_servers[]` (those are the ones it DID start). Shape varies, so
+// parsing is tolerant: a bare string ("weather: invalid url") or an object with the name
+// under name/server and the message under error/message.
+
+export interface McpServerError {
+  /** Server name when the CLI provided one; undefined for a bare-string entry. */
+  name?: string;
+  /** Human-readable reason the server was skipped. */
+  error: string;
+}
+
+/** Normalizes the raw `mcp_server_errors` from init into {name?, error}. Never throws. */
+export function parseMcpErrors(raw: unknown): McpServerError[] {
+  if (!Array.isArray(raw)) return [];
+  const out: McpServerError[] = [];
+  for (const e of raw) {
+    if (typeof e === 'string') {
+      const s = e.trim();
+      if (!s) continue;
+      // "name: message" → split the leading name off; otherwise keep the whole string.
+      const m = /^([^:]{1,80}):\s*(.+)$/.exec(s);
+      if (m) out.push({ name: m[1].trim(), error: m[2].trim() });
+      else out.push({ error: s });
+    } else if (e && typeof e === 'object') {
+      const o = e as Record<string, unknown>;
+      const name =
+        (typeof o.name === 'string' && o.name) || (typeof o.server === 'string' && o.server) || undefined;
+      const error =
+        (typeof o.error === 'string' && o.error) ||
+        (typeof o.message === 'string' && o.message) ||
+        undefined;
+      if (name || error) out.push({ name: name || undefined, error: error || 'error' });
+    }
+  }
+  return out;
+}
+
 /** Sanitizes a server name into the form used in the tool prefix. */
 function sanitize(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, '_');

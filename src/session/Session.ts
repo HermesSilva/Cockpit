@@ -16,6 +16,7 @@ import type {
 } from '../../shared/events';
 import { parseContextUsage } from '../cli/ContextUsage';
 import { matchSkillBody, skillNamesOnDisk } from '../cli/SkillBodyIndex';
+import { parseMcpErrors } from '../cli/McpInventory';
 import type { HostToWebview, LimitWindow, SkillOverride } from '../../shared/protocol';
 
 export interface SessionHooks {
@@ -56,6 +57,8 @@ export class Session {
   // it says which tools each server exposes — something `claude mcp list` doesn't report.
   lastTools?: string[];
   lastMcpServers?: { name: string; status: string }[];
+  // Servers the CLI skipped at config validation (init `mcp_server_errors`, 2.1.219).
+  lastMcpErrors?: import('../cli/McpInventory').McpServerError[];
   // Skills anunciadas pelo `system/init` (campo `skills`). Serve para reconhecer
   // um /nome digitado no composer como acionamento de skill.
   lastSkills?: string[];
@@ -92,6 +95,9 @@ export class Session {
   private blockKind = new Map<number, string>();
   private toolBuffers = new Map<number, { id: string; name: string; json: string }>();
   private emittedTools = new Set<string>();
+  // Subagent parents whose text arrived via partial deltas — so the later full `assistant`
+  // event isn't emitted a second time (same guard as `streamedText` for the main agent).
+  private subagentStreamed = new Set<string>();
   private pendingPerm = new Map<string, { tool: string; input: unknown; suggestions?: unknown[] }>();
 
   constructor(private hooks: SessionHooks) {
@@ -159,6 +165,8 @@ export class Session {
       permissionMode: this.permission(),
       // Blocks subagents/workflows when off (token saving).
       disallowedTools: this.allowAgents() ? undefined : ['Task', 'Workflow'],
+      // Com agentes liberados, encaminha o texto dos subagentes p/ mostrá-lo no card do Task.
+      forwardSubagentText: this.allowAgents(),
       // resumeId ?? sessionId: a defense against any path that knows the
       // sessionId but hasn't pinned the resumeId — avoids a spawn without --resume
       // (which would duplicate the context). clearConversation() clears both for a new conversation.
@@ -476,6 +484,17 @@ export class Session {
   }
 
   private onCliEvent(ev: ClaudeEvent): void {
+    // Subagent event (--forward-subagent-text): tagged with parent_tool_use_id. Route its
+    // text to the launching Task card and stop here — it must NOT reach the main bubble nor
+    // stats (subagent cost stays sourced from the authoritative result total / 7d breakdown,
+    // so the live counters don't change from what they were without forwarding).
+    const parentId = (ev as any).parent_tool_use_id;
+    if (typeof parentId === 'string' && parentId && ev.type !== 'control_request') {
+      // A subagent's permission prompt (`control_request`) MUST still reach the normal
+      // handler — only its narration (assistant/stream/user/result) is diverted here.
+      this.onSubagentEvent(parentId, ev);
+      return;
+    }
     const snap = this.stats.ingest(ev);
     this.emit({ kind: 'stats', stats: snap });
     // Corpo de skill que acabou de entrar no contexto: vira selo no card do Skill.
@@ -522,6 +541,7 @@ export class Session {
           // not only at the instant the event goes by.
           this.lastTools = Array.isArray(s.tools) ? s.tools : undefined;
           this.lastMcpServers = Array.isArray(s.mcp_servers) ? s.mcp_servers : undefined;
+          this.lastMcpErrors = parseMcpErrors(s.mcp_server_errors);
           // `skills` existe desde 2.1.x; ausente em versões antigas → segue sem o painel.
           this.lastSkills = Array.isArray(s.skills) ? s.skills.filter((x: unknown) => typeof x === 'string') : undefined;
           this.resolvePendingSlashSkills();
@@ -762,6 +782,29 @@ export class Session {
     }
   }
 
+  // Subagent event forwarded by the CLI (parent_tool_use_id set). We surface only the
+  // subagent's visible TEXT, attributed to the Task tool_use that launched it. Thinking,
+  // tool calls and usage of the subagent are intentionally left out of the main timeline.
+  private onSubagentEvent(parentId: string, ev: ClaudeEvent): void {
+    let delta = '';
+    if (ev.type === 'stream_event') {
+      const d = (ev as any).event?.delta;
+      if (d?.type === 'text_delta' && typeof d.text === 'string') delta = d.text;
+    } else if (ev.type === 'assistant') {
+      // Full assistant message (no partials seen): concatenate its text blocks.
+      const seen = this.subagentStreamed.has(parentId);
+      if (!seen) {
+        const blocks = (ev as any).message?.content ?? [];
+        delta = blocks
+          .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+          .map((b: any) => b.text)
+          .join('');
+      }
+    }
+    if (ev.type === 'stream_event' && delta) this.subagentStreamed.add(parentId);
+    if (delta) this.emit({ kind: 'subagentText', parentId, delta });
+  }
+
   private onUser(ev: UserEvent): void {
     const content = ev.message?.content;
     if (!Array.isArray(content)) return;
@@ -779,6 +822,7 @@ export class Session {
     this.blockKind.clear();
     this.toolBuffers.clear();
     this.emittedTools.clear();
+    this.subagentStreamed.clear();
   }
 }
 

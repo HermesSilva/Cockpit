@@ -44,6 +44,9 @@ export interface ToolItem {
   // mensagem que o engine injetou); ausente = carregou, mas sem tamanho informado.
   skillLoaded?: string;
   skillTokens?: number;
+  // Texto de subagente(s) encaminhado pelo CLI (--forward-subagent-text), acumulado.
+  // Só para a tool Task/Agent: mostra o que o subagente escreveu enquanto trabalhava.
+  subagentText?: string;
 }
 
 /**

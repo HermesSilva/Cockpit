@@ -285,6 +285,18 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       };
       return { ...tab, items: [...tab.items, item] };
     }
+    // Texto de subagente encaminhado pelo CLI: acumula no card do Task que o lançou.
+    case 'subagentText': {
+      let found = false;
+      const items = tab.items.map((i) => {
+        if (i.kind === 'tool' && i.id === msg.parentId) {
+          found = true;
+          return { ...i, subagentText: (i.subagentText ?? '') + msg.delta };
+        }
+        return i;
+      });
+      return found ? { ...tab, items } : tab;
+    }
     case 'toolResult': {
       const owner = tab.items.find(
         (i): i is ToolItem => i.kind === 'tool' && i.id === msg.toolUseId,

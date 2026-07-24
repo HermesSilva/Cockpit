@@ -4345,6 +4345,10 @@ body {
   flex-direction: column;
   gap: 7px;
 }
+/* Cache velho: flags de sessão mostradas esmaecidas (não são o valor "quente"). */
+.usage-rows.usage-dim {
+  opacity: 0.55;
+}
 .usage-row {
   display: flex;
   align-items: baseline;
@@ -4571,6 +4575,38 @@ body {
 }
 .tool-skill-name {
   font-weight: 700;
+}
+
+/* EndConversation: o agente encerrou a sessão sozinho (usuário abusivo/jailbreak). */
+.tool-card.end-conversation {
+  border-left: 3px solid var(--vscode-inputValidation-errorBorder, #be1100);
+}
+.tool-end-banner {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--vscode-foreground, #e0e0e0);
+  background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.12));
+}
+.tool-end-reason {
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+
+/* Saída de subagente encaminhada pelo CLI, dentro do card do Task que o lançou. */
+.tool-subagent {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--vscode-charts-purple, #b180d7);
+  background: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 8%, transparent);
+  border-radius: 4px;
+}
+.tool-subagent-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  color: var(--vscode-charts-purple, #b180d7);
 }
 
 /* Contexto injetado por hook: faixa fina, fora das bolhas — não é fala de ninguém. */
@@ -4909,6 +4945,16 @@ body {
   font-size: 11px;
   color: var(--vscode-charts-blue, #3794ff);
 }
+.skills-hook-event {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.18));
+}
 .skills-hook-tk {
   margin-left: auto;
   font-size: 11px;
@@ -5005,6 +5051,11 @@ body {
   font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-descriptionForeground, #8a8a8a);
   overflow-wrap: anywhere;
+}
+/* init mcp_server_errors: motivo pelo qual o servidor foi recusado (erro, não aviso). */
+.usage-alert.mcp-error {
+  border-left-color: var(--vscode-inputValidation-errorBorder, #be1100);
+  background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.12));
 }
 .mcp-tools-toggle {
   margin-top: 6px;

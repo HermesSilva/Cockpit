@@ -3,6 +3,7 @@
 // Asynchronous so it doesn't block the extension host.
 import { spawn } from 'node:child_process';
 import { readLoginExpiry } from './AiClient';
+import type { UsageAccount } from '../../shared/protocol';
 
 export interface AccountInfo {
   loggedIn: boolean;
@@ -15,6 +16,8 @@ export interface AccountInfo {
   // from ~/.claude/.credentials.json. Used to warn before the login expires (the CLI
   // started warning in 2.1.203) so long/background sessions aren't interrupted.
   loginExpiresAt?: number;
+  // Session flags (fast mode, model label, …) filled in later from the statusline cache.
+  session?: UsageAccount['session'];
 }
 
 /** Fetches the account live (hot data). Tolerant: failure/timeout → { loggedIn:false }. */

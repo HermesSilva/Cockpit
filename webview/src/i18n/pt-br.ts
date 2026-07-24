@@ -43,6 +43,7 @@ export const ptBR: Partial<Strings> = {
   'voicedict.title': 'Dicionários',
   // Cofre de credenciais (TOTP 2FA)
   'creds.open': 'Cofre de credenciais (2FA)',
+  'remote.publish': 'Tornar esta sessão visível no cliente remoto / app',
   'creds.title': 'Cofre de credenciais',
   'creds.enroll.intro':
     'Proteja o cofre com um app autenticador (Google Authenticator, Authy…). Um código é exigido para adicionar e para usar qualquer credencial.',

@@ -227,6 +227,12 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     setShowCreds(true);
     send({ kind: 'credsLoad' });
   };
+  // Publishes THIS session for remote control (phone app / remote client). Same action as
+  // the Hub card's "remote" button, exposed as a composer button. Needs a live session id.
+  const onRemoteControl = () => {
+    const sid = tab?.sessionId ?? tab?.session?.sessionId;
+    if (sid) send({ kind: 'remoteControl', sessionId: sid });
+  };
   const onExportMd = (mode: 'direct' | 'ai') => {
     const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
     send({
@@ -613,6 +619,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         onStop={onStop}
         onVoiceDict={onVoiceDict}
         onCredentials={onCredentials}
+        onRemoteControl={onRemoteControl}
+        canRemoteControl={!!(tab?.sessionId ?? tab?.session?.sessionId)}
       />
 
       {credsModalEl}

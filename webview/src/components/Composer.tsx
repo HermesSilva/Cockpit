@@ -41,6 +41,8 @@ interface Props {
   onStop: () => void;
   onVoiceDict?: () => void; // opens the dictation dictionary modal
   onCredentials?: () => void; // abre o cofre de credenciais (TOTP 2FA)
+  onRemoteControl?: () => void; // publishes this session for remote control (phone/app)
+  canRemoteControl?: boolean; // there is a live session id to publish
 }
 
 interface PendingImage {
@@ -73,6 +75,8 @@ export function Composer({
   onStop,
   onVoiceDict,
   onCredentials,
+  onRemoteControl,
+  canRemoteControl,
   selectionRef,
 }: Props) {
   const [includeSel, setIncludeSel] = useState(true);
@@ -826,6 +830,32 @@ export function Composer({
                 >
                   <rect x="3" y="11" width="18" height="11" rx="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
+          {onRemoteControl && (
+            <Tooltip text={t('remote.publish')}>
+              <button
+                type="button"
+                className="composer-side-btn remote-btn"
+                onClick={onRemoteControl}
+                disabled={disabled || !canRemoteControl}
+                aria-label={t('remote.publish')}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="7" y="2" width="10" height="20" rx="2" />
+                  <line x1="11" y1="18" x2="13" y2="18" />
                 </svg>
               </button>
             </Tooltip>

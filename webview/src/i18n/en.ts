@@ -41,6 +41,7 @@ export const en = {
   'voicedict.title': 'Dictionaries',
   // Cofre de credenciais (TOTP 2FA)
   'creds.open': 'Credentials vault (2FA)',
+  'remote.publish': 'Make this session visible on the remote client / app',
   'creds.title': 'Credentials vault',
   'creds.enroll.intro':
     'Protect the vault with an authenticator app (Google Authenticator, Authy…). A code is required to add and to use any credential.',

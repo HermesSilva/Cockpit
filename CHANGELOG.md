@@ -4,6 +4,14 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.233] - 2026-07-24
+
+### Added
+- **Remote-control button in the composer.** A new button in the composer toolbar (next to
+  the credentials vault) publishes the current session for **remote control**, making it
+  visible on the remote client / phone app — the same action as the Hub card's remote button,
+  now reachable while you type. Disabled until the session has a live id.
+
 ## [1.0.232] - 2026-07-24
 
 ### Added

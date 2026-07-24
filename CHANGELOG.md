@@ -4,7 +4,7 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
-## [1.0.229] - 2026-07-24
+## [1.0.230] - 2026-07-24
 
 Aligns the extension with **Claude Code CLI 2.1.219**, surfacing engine capabilities added
 across the 2.1.208 → 2.1.219 releases.

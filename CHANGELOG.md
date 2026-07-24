@@ -4,6 +4,15 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.232] - 2026-07-24
+
+### Added
+- **FAQ / Q&A document** ([`Docs/FAQ.md`](Docs/FAQ.md)) — factual questions and answers for the
+  Marketplace **Q & A** tab and for anyone evaluating the extension: what it is and how it
+  differs from the official extension, requirements and setup, cost/tokens/privacy, models
+  (Opus 5, discovery-driven picker, fast mode, limits, MCP/skills/hooks/subagents) and
+  troubleshooting. Linked from the README.
+
 ## [1.0.231] - 2026-07-24
 
 ### Fixed

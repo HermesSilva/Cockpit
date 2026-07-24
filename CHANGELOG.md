@@ -4,6 +4,23 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.231] - 2026-07-24
+
+### Fixed
+- **“Default” model no longer sticks to a pinned model.** The observed engine default was
+  cached from any session whose `settings.model` was `default` — even when the tab pinned a
+  concrete model (e.g. Opus 4.8 1M). The pinned id got recorded as the default, so
+  *Default (…)* lied and never reflected the CLI's real default (Opus 5 on 2.1.219+). It is now
+  cached only from a session that ran with **no per-tab override**. Pick *Default* on an
+  un-pinned tab once and it re-observes correctly.
+
+### Changed
+- **The model picker is discovery-driven.** Curated model rows are now offered only when
+  `/v1/models` confirms the account actually has them (matching undated aliases and dated
+  snapshots alike); `Default` and Opus 5 are always valid. A genuinely nonexistent model can no
+  longer sit in the list. Offline (no discovery), the full curated list stays as a fallback so
+  the picker never collapses.
+
 ## [1.0.230] - 2026-07-24
 
 Aligns the extension with **Claude Code CLI 2.1.219**, surfacing engine capabilities added

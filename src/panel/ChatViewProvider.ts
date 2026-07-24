@@ -170,6 +170,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // real context window (max_input_tokens) or undefined when the account doesn't expose it.
   private discoveredModels = new Map<string, number | undefined>();
   private discoveryTried = false;
+  // true once /v1/models returned a real model set. Only then is the picker filtered to
+  // discovered models — before that, `discoveredModels` may hold just the observed init model.
+  private discoveryComplete = false;
   // Price per model (from the pricing docs; cached once a day). Empty until loaded.
   private pricing: PricingMap = {};
   private pricingTried = false;
@@ -487,12 +490,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Global side of a session's init: model discovery + default cache. */
   private onSessionInit(model?: string, slashCommands?: string[], tabId?: string): void {
     void this.researchSlash(slashCommands);
+    const s = tabId ? this.sessions.get(tabId) : undefined;
     // REAL model resolved by the CLI: the timing scope may have changed
     // ('default' -> real id). Recalibrates the gauge with the new scope's averages.
     if (tabId) {
       this.postTaskTimings(tabId);
       // the sessionId now exists: persists the override (when there is one) of this new session.
-      const s = this.sessions.get(tabId);
       if (s) this.saveSessionModel(s);
     }
     if (typeof model === 'string' && model) {
@@ -501,7 +504,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendConfig();
       }
       const settingsModel = this.cfg().get<string>('model', '') || 'default';
-      if (settingsModel === 'default' && !this.defaults.model && this.observedDefaultModel !== model) {
+      // Only a session that ran WITHOUT a per-tab model override reveals the engine's real
+      // default. A tab pinned to a concrete model (e.g. Opus 4.8 1M) reports that pinned id at
+      // init — caching it as "default" is wrong and made "Default (…)" lie (it stuck on the
+      // pinned model instead of the CLI's actual default, now Opus 5 on 2.1.219+).
+      const overridden = !!s?.modelOverride && s.modelOverride !== 'default';
+      if (
+        settingsModel === 'default' &&
+        !this.defaults.model &&
+        !overridden &&
+        this.observedDefaultModel !== model
+      ) {
         this.observedDefaultModel = model;
         void this.memory.update('defaultModel', model);
         this.sendConfig();
@@ -1737,6 +1750,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!creds) return; // no API key and no OAuth token: uses the static fallback
     try {
       const models = await discoverModels(creds);
+      if (models.length > 0) this.discoveryComplete = true;
       let added = false;
       for (const m of models) {
         if (!this.discoveredModels.has(m.id)) added = true;
@@ -1780,12 +1794,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private sendConfig(): void {
-    // Discovered live but missing from the list — skipping the 200K versions
+    // The picker is DISCOVERY-DRIVEN: /v1/models is the source of truth for what the
+    // account actually has. The curated MODEL_LIST is a label/order convenience and a 1M-alias
+    // source, but a curated entry is only offered when discovery confirms it exists (its base id,
+    // ignoring the [1m] suffix). 'default' and Opus 5 are always valid (the current default).
+    // Offline / discovery empty: we can't verify anything, so the full curated list stays as a
+    // fallback instead of collapsing the picker.
+    const haveDiscovery = this.discoveryComplete;
+    const discoveredIds = [...this.discoveredModels.keys()];
+    const isReal = (m: string): boolean => {
+      if (m === 'default' || m === 'claude-opus-5') return true;
+      const base = m.replace(/\[1m\]/i, '');
+      // Discovery returns undated aliases (claude-opus-4-8) AND dated snapshots
+      // (claude-opus-4-5-20251101). Match both: exact, or a dated form of the same base.
+      return discoveredIds.some((d) => d === base || d.startsWith(base + '-'));
+    };
+    const curated = haveDiscovery ? MODEL_LIST.filter(isReal) : [...MODEL_LIST];
+    // Discovered live but missing from the curated list — skipping the 200K versions
     // whose 1M variant is already offered.
     const discoveredExtra = [...this.discoveredModels.keys()].filter(
       (m) => !MODEL_LIST.includes(m) && !BASE_OF_1M.has(m),
     );
-    const models = dedupe([...MODEL_LIST, ...discoveredExtra]);
+    const models = dedupe([...curated, ...discoveredExtra]);
     this.post({
       kind: 'config',
       config: {

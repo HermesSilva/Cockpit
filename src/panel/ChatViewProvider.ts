@@ -250,6 +250,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Shuts down background resources (called in the extension's deactivate). */
   dispose(): void {
+    // Every engine process dies with the extension host.
+    //
+    // On Windows a child does NOT die with its parent, so each reload of the
+    // host left the previous engines running — seven agent.exe at once, on a
+    // machine where each one is a live conversation.
+    for (const s of this.sessions.values()) s.stop();
     this.cacheKeeper.stop();
     this.otel.stop();
     if (this.watchdog) clearInterval(this.watchdog);

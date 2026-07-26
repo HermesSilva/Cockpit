@@ -163,6 +163,10 @@ export class CliProcessManager extends EventEmitter {
       '--cwd', this.opts.cwd,
     ];
     if (this.opts.server) args.push('--server', this.opts.server);
+    // The agent exits on its own after being idle — a process per tab that
+    // never dies becomes a dozen of them. `--resume` is what makes that safe:
+    // the conversation is on disk, and the next message brings it back.
+    if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
     // Plan mode is the closest thing to "do not touch anything": the agent has
     // no plan mode, so it maps to read-only tools.
     if (this.opts.permissionMode === 'plan') args.push('--no-tools');

@@ -552,6 +552,13 @@ export class Session {
           this.lastMcpErrors = parseMcpErrors(s.mcp_server_errors);
           // `skills` existe desde 2.1.x; ausente em versões antigas → segue sem o painel.
           this.lastSkills = Array.isArray(s.skills) ? s.skills.filter((x: unknown) => typeof x === 'string') : undefined;
+          // Engine that knows its own window says so (the Tootega agent reads it
+          // from the server it talks to). Without this the meter would show the
+          // Claude default of 200K over a context that is really 16K, and the
+          // bar would never leave 1%.
+          if (typeof s.context_window === 'number' && s.context_window > 0) {
+            this.stats.setContextLimit(s.context_window);
+          }
           this.resolvePendingSlashSkills();
           this.sessionId = s.session_id;
           if (s.session_id) {

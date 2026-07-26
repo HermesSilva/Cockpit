@@ -51,6 +51,9 @@ export interface SystemInitEvent {
   // carrying the server name plus a message under one of several possible keys.
   mcp_server_errors?: Array<string | { name?: string; server?: string; error?: string; message?: string }>;
   permissionMode?: string;
+  /** Real context window, when the engine knows it (Tootega reports the
+   *  server's `--ctx`; the Claude CLI does not send this). */
+  context_window?: number;
 }
 
 export interface AssistantEvent {

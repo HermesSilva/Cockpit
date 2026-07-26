@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { StreamParser } from './StreamParser';
+import { log, dlog } from '../util/logger';
 import type { EngineId } from './Engine';
 import type { ClaudeEvent } from '../../shared/events';
 
@@ -67,6 +68,10 @@ export class CliProcessManager extends EventEmitter {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private parser = new StreamParser();
   private reqSeq = 0;
+  private lastStderr: string[] = [];
+  private startedAt = 0;
+  private eventsSeen = 0;
+  private stopping = false;
   // control_requests NOSSOS aguardando resposta (request_id → resolve).
   private pendingControl = new Map<string, (payload: unknown) => void>();
   // Arquivos temporários do processo atual (settings, system prompt) — apagados no stop().
@@ -222,6 +227,15 @@ export class CliProcessManager extends EventEmitter {
   /** Spawns the engine binary and wires the streams. Shared by both engines. */
   private spawnWith(args: string[]): void {
     const useShell = process.platform === 'win32';
+    // The exact command line, always — not behind the debug flag.
+    //
+    // `CLI exited (1)` on its own says nothing: it does not say which binary,
+    // with which arguments, from which directory, nor what the process printed
+    // before dying. Reproducing the failure by hand needs all four, and this
+    // line is the difference between "paste it in a terminal" and "guess".
+    log(`spawn [${this.opts.engine ?? 'claude'}] ${this.opts.claudePath} ${args.join(' ')}`);
+    log(`  cwd=${this.opts.cwd}`);
+    this.lastStderr = [];
     // Auto mode (the CLI classifier decides allow/deny) is opt-in on Bedrock/Vertex/
     // Foundry via env (2.1.158/159). Defensive: we turn the flag on when the mode is 'auto'
     // so it behaves uniformly across providers. It does NOT bypass permissions — it only enables the
@@ -246,17 +260,45 @@ export class CliProcessManager extends EventEmitter {
 
     proc.stdout.on('data', (chunk: string) => {
       for (const ev of this.parser.push(chunk)) {
+        this.eventsSeen++;
+        // Every event type except the token-by-token flood, which would bury
+        // the log in a single turn.
+        if (ev.type !== 'stream_event') dlog('cli', `<- ${describeEvent(ev)}`);
         this.settleControl(ev);
         this.emit('event', ev);
       }
     });
-    proc.stderr.on('data', (text: string) => this.emit('stderr', text));
+    proc.stderr.on('data', (text: string) => {
+      // Kept for the post-mortem: an engine that dies at startup usually says
+      // why on stderr, and that text is gone by the time anyone looks.
+      this.lastStderr.push(text);
+      if (this.lastStderr.length > 20) this.lastStderr.shift();
+      this.emit('stderr', text);
+    });
     proc.on('close', (code) => {
       for (const ev of this.parser.flush()) this.emit('event', ev);
       this.proc = null;
+      // A process WE killed reports a non-zero code on Windows (taskkill /F),
+      // and logging that as a failure sends whoever reads the log hunting a
+      // crash that never happened — which is exactly what a switch of engine
+      // used to look like.
+      if (this.stopping) {
+        log(`engine stopped on request (exit ${code})`);
+      } else if (code) {
+        log(`exit ${code} after ${Date.now() - this.startedAt} ms` +
+            ` (${this.eventsSeen} events)`);
+        const tail = this.lastStderr.join('').trim();
+        log(tail ? `  stderr: ${tail}` : '  stderr: (nothing)');
+      }
+      this.stopping = false;
       this.emit('exit', code);
     });
-    proc.on('error', (err) => this.emit('stderr', err.message));
+    proc.on('error', (err) => {
+      log(`spawn failed: ${err.message}`);
+      this.emit('stderr', err.message);
+    });
+    this.startedAt = Date.now();
+    this.eventsSeen = 0;
 
     this.proc = proc;
     // Handshake do protocolo de controle. Habilita o roteamento interativo
@@ -350,7 +392,9 @@ export class CliProcessManager extends EventEmitter {
 
   private writeLine(obj: unknown): void {
     if (!this.proc) this.start();
-    this.proc?.stdin.write(JSON.stringify(obj) + '\n');
+    const line = JSON.stringify(obj);
+    dlog('cli', `-> ${line.length > 400 ? line.slice(0, 400) + '…' : line}`);
+    this.proc?.stdin.write(line + '\n');
   }
 
   /**
@@ -372,6 +416,7 @@ export class CliProcessManager extends EventEmitter {
     if (!this.proc) return;
     const proc = this.proc;
     this.proc = null;
+    this.stopping = true;
     // Ninguém mais vai responder: libera quem espera em vez de deixar pendurado até o timeout.
     for (const done of this.pendingControl.values()) done(undefined);
     this.pendingControl.clear();
@@ -404,6 +449,25 @@ export class CliProcessManager extends EventEmitter {
       /* noop */
     }
   }
+}
+
+/** One readable line per event, for the debug log. */
+function describeEvent(ev: ClaudeEvent): string {
+  const e = ev as unknown as Record<string, unknown>;
+  const msg = e.message as { content?: { type?: string; name?: string }[] } | undefined;
+  const parts: string[] = [String(e.type)];
+  if (e.subtype) parts.push(String(e.subtype));
+  if (Array.isArray(msg?.content)) {
+    parts.push(
+      msg.content
+        .map((b) => (b?.type === 'tool_use' ? `tool_use:${b.name}` : String(b?.type)))
+        .join(','),
+    );
+  }
+  const req = e.request as { subtype?: string; tool_name?: string } | undefined;
+  if (req?.subtype) parts.push(`${req.subtype}${req.tool_name ? `:${req.tool_name}` : ''}`);
+  if (e.is_error) parts.push('IS_ERROR');
+  return parts.join(' ');
 }
 
 /**

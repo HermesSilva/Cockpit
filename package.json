@@ -196,10 +196,33 @@
     "configuration": {
       "title": "Tootega Cockpit",
       "properties": {
+        "tootega.engine": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "tootega"
+          ],
+          "enumDescriptions": [
+            "%cfg.engine.claude%",
+            "%cfg.engine.tootega%"
+          ],
+          "default": "claude",
+          "description": "%cfg.engine%"
+        },
         "tootega.claudePath": {
           "type": "string",
           "default": "claude",
           "description": "%cfg.claudePath%"
+        },
+        "tootega.tootegaPath": {
+          "type": "string",
+          "default": "agent.exe",
+          "description": "%cfg.tootegaPath%"
+        },
+        "tootega.tootegaServer": {
+          "type": "string",
+          "default": "127.0.0.1:8080",
+          "description": "%cfg.tootegaServer%"
         },
         "tootega.language": {
           "type": "string",

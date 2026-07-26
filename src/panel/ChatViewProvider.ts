@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
+import { currentEngine, engineCaps, engineLabel, enginePath, tootegaServer } from '../cli/Engine';
 import { CacheKeeper } from '../cli/CacheKeeper';
 import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
 import { ensurePricing, type PricingMap } from '../cli/ModelPricing';
@@ -222,7 +223,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.reloadBar.command = 'tootega.reloadView';
     this.updateReloadBar();
     setInternalModel(this.cfg().get<string>('internalModel', '')); // model of the internal calls
-    void resolveAccountKey(this.claudePath()); // resolves the account early (dictation dictionary key)
+    // Account-bound extras only exist for the Claude engine; running them
+    // against the local agent would spawn it just to fail.
+    if (engineCaps().account) void resolveAccountKey(this.claudePath());
     // Editor's active selection → shareable @file#a-b ref in the composer.
     this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
     // Automatic keep-alive ping is OFF: any refresh via --resume writes
@@ -331,6 +334,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       onToolUse: (tool, input) => this.autoSaveForTool(tool, input),
       claudePath: () => this.claudePath(),
       cwd: () => this.workspaceCwd(),
+      engine: () => currentEngine(),
+      engineServer: () => tootegaServer(),
       settings: () => ({
         model: this.cfg().get<string>('model', '') || 'default',
         effort: this.cfg().get<string>('effort', 'default') || 'default',
@@ -1967,6 +1972,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void this.refreshUsage();
   }
 
+  /**
+   * The engine (or its path/server) changed.
+   *
+   * Every running process belongs to the OLD binary, so they all have to go —
+   * a live `claude` would keep answering after the user picked the local model.
+   * Conversations stay: the next turn respawns with the new engine and replays
+   * the history, which is what `--resume` already does on any restart.
+   */
+  applyEngineChange(): void {
+    log(`engine switched to ${engineLabel()} (${enginePath()})`);
+    this.resolvedCliPath = undefined;
+    for (const s of this.sessions.values()) s.stop();
+    this.reportCliStatus();
+    this.reportAuth();
+    this.pushConfig();
+  }
+
   /** The model/effort settings changed: clears overrides and reflects them in the UI dropdowns. */
   applyDefaultsFromSettings(): void {
     // The default settings changed: tabs without an override now follow them.
@@ -2440,9 +2462,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private cliAvailable = false;
   private pathFixed = false; // already tried adding ~/.local/bin to the user's PATH
 
-  /** Caminho efetivo do CLI (resolvido) — usado p/ spawn/pesquisa/install. */
+  /** Caminho efetivo do CLI (resolvido) — usado p/ spawn/pesquisa/install.
+   *
+   *  Segue o motor escolhido: com `tootega.engine = "tootega"` isto aponta para
+   *  o agente local, e é o único ponto que precisa saber disso — tudo o que
+   *  gera processo passa por aqui. */
   private claudePath(): string {
-    return this.resolvedCliPath ?? this.cfg().get<string>('claudePath', 'claude');
+    return this.resolvedCliPath ?? enginePath();
   }
 
   /** Comando p/ rodar o claude num TERMINAL (PATH ou ~/.local/bin fora do PATH).
@@ -2454,22 +2480,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private reportCliStatus(): void {
-    const r = CliProcessManager.resolve(this.cfg().get<string>('claudePath', 'claude'));
+    const r = CliProcessManager.resolve(enginePath(), currentEngine());
     this.resolvedCliPath = r.ok ? r.path : undefined;
     this.cliAvailable = r.ok;
     const cockpitVersion = this.cockpitVersion();
     this.post({ kind: 'cliStatus', available: r.ok, version: r.version, error: r.error, cockpitVersion });
     if (r.ok) {
-      log(`CLI detected: ${r.version} @ ${r.path}`);
-      this.ensureLocalBinOnPath(r.path); // native installer: makes sure ~/.local/bin is in the user's PATH
-      // Latest version (npm) in the background → repost with `latest` to flag it as outdated.
-      void getLatestCliVersion().then((latest) => {
-        if (latest) {
-          this.post({ kind: 'cliStatus', available: true, version: r.version, latest, cockpitVersion });
-        }
-      });
+      log(`${engineLabel()} detected: ${r.version} @ ${r.path}`);
+      // Both are Claude-specific: the npm package and the native installer's
+      // directory. The local agent ships with the engine and has neither.
+      if (engineCaps().account) {
+        this.ensureLocalBinOnPath(r.path); // native installer: makes sure ~/.local/bin is in the user's PATH
+        // Latest version (npm) in the background → repost with `latest` to flag it as outdated.
+        void getLatestCliVersion().then((latest) => {
+          if (latest) {
+            this.post({ kind: 'cliStatus', available: true, version: r.version, latest, cockpitVersion });
+          }
+        });
+      }
     } else {
-      log(`CLI not found: ${r.error}`);
+      log(`${engineLabel()} not found: ${r.error}`);
     }
   }
 
@@ -2559,7 +2589,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     let tries = 0;
     const iv = setInterval(() => {
       tries++;
-      const r = CliProcessManager.resolve(this.cfg().get<string>('claudePath', 'claude'));
+      const r = CliProcessManager.resolve(enginePath(), currentEngine());
       if (r.ok || tries > 60) {
         clearInterval(iv);
         if (r.ok) {
@@ -2600,6 +2630,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Fetches the login state and pushes it to the webview (shows Sign in OR Sign out). */
   reportAuth(): void {
+    // The local engine has no account: it is always "logged in", and saying so
+    // keeps the Sign in button out of the way.
+    if (!engineCaps().account) {
+      this.post({ kind: 'auth', loggedIn: true });
+      return;
+    }
     resetAccountKey(); // login/logout may have changed the account → re-resolve the dictionary
     void resolveAccountKey(this.claudePath());
     void fetchAuthStatus(this.claudePath()).then((a) => this.post({ kind: 'auth', loggedIn: a.loggedIn }));

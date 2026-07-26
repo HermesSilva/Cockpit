@@ -48,6 +48,27 @@ This UI is **only a presentation and control layer**. All orchestration — the 
                                                                     └──────────────────────────────┘
 ```
 
+### Two engines, one protocol
+
+`tootega.engine` chooses which binary is spawned:
+
+| engine | binary | what it brings |
+|--------|--------|----------------|
+| `claude` (default) | Claude Code CLI | account, subscription limits, plugins, skills, MCP |
+| `tootega` | Tootega Code CLI (`tools/agent.exe` of TootegaEngine) | local model, no account, no cost, nothing leaves the machine |
+
+They speak the **same process contract** — stream-json over stdin/stdout, the
+shapes in `shared/events.ts` — so the founding principle holds for both: the UI
+still does not reimplement orchestration, it just spawns a different engine.
+
+What differs is only what exists *around* the conversation. `src/cli/Engine.ts`
+holds that in one place (`engineCaps`): the local engine has no account, no
+extensions and no cost, so those panels stay empty instead of failing. Cost
+showing zero is not a gap — running locally costs nothing.
+
+The Tootega engine needs its server up (`serve.cmd` in the TootegaEngine repo);
+`tootega.tootegaServer` says where it is.
+
 **Primary channel with the engine:** `claude` in headless/streaming mode:
 
 ```

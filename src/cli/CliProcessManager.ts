@@ -6,11 +6,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { StreamParser } from './StreamParser';
+import type { EngineId } from './Engine';
 import type { ClaudeEvent } from '../../shared/events';
 
 export interface CliOptions {
   claudePath: string;
   cwd: string;
+  /** Which engine the binary is. Decides the argument list. Default: claude. */
+  engine?: EngineId;
+  /** `host:port` of the tootega engine server (tootega engine only). */
+  server?: string;
   model?: string;
   effort?: string;
   permissionMode?: string;
@@ -97,8 +102,14 @@ export class CliProcessManager extends EventEmitter {
    * probes the NATIVE installer locations (~/.local/bin), which don't enter the PATH
    * automatically on Windows. Returns the first that answers `--version`.
    */
-  static resolve(configured: string): { path: string; ok: boolean; version?: string; error?: string } {
-    const candidates = [configured, ...nativeCandidates()];
+  static resolve(
+    configured: string,
+    engine: EngineId = 'claude',
+  ): { path: string; ok: boolean; version?: string; error?: string } {
+    // `~/.local/bin` is where the Claude native installer puts things; probing
+    // it for the tootega agent would only report the wrong binary as "found".
+    const candidates =
+      engine === 'tootega' ? [configured] : [configured, ...nativeCandidates()];
     let last: { path: string; ok: boolean; version?: string; error?: string } = {
       path: configured,
       ok: false,
@@ -127,9 +138,41 @@ export class CliProcessManager extends EventEmitter {
     if (id) this.opts.resumeSessionId = id;
   }
 
+  /**
+   * Arguments for the Tootega agent.
+   *
+   * The shared part is the process contract itself; everything else the Claude
+   * CLI takes is either meaningless here (there is no account, no model
+   * catalogue, no MCP) or already handled by the agent's own defaults. The
+   * agent tolerates unknown flags on purpose, but sending flags it ignores
+   * would only make the command line harder to read in a bug report.
+   */
+  private tootegaArgs(): string[] {
+    const args = [
+      '-p',
+      '--output-format', 'stream-json',
+      '--input-format', 'stream-json',
+      '--include-partial-messages',
+      '--permission-prompt-tool', 'stdio',
+      '--verbose',
+      '--cwd', this.opts.cwd,
+    ];
+    if (this.opts.server) args.push('--server', this.opts.server);
+    // Plan mode is the closest thing to "do not touch anything": the agent has
+    // no plan mode, so it maps to read-only tools.
+    if (this.opts.permissionMode === 'plan') args.push('--no-tools');
+    // `bypassPermissions` is the CLI's name for "stop asking".
+    if (this.opts.permissionMode === 'bypassPermissions') args.push('--yes');
+    return args;
+  }
+
   /** Starts the process. Idempotent: does nothing when already running. */
   start(): void {
     if (this.proc) return;
+    if (this.opts.engine === 'tootega') {
+      this.spawnWith(this.tootegaArgs());
+      return;
+    }
     const args = [
       '-p',
       '--output-format', 'stream-json',
@@ -173,6 +216,11 @@ export class CliProcessManager extends EventEmitter {
     const settingsFile = this.writeSettingsFile();
     if (settingsFile) args.push('--settings', settingsFile);
 
+    this.spawnWith(args);
+  }
+
+  /** Spawns the engine binary and wires the streams. Shared by both engines. */
+  private spawnWith(args: string[]): void {
     const useShell = process.platform === 'win32';
     // Auto mode (the CLI classifier decides allow/deny) is opt-in on Bedrock/Vertex/
     // Foundry via env (2.1.158/159). Defensive: we turn the flag on when the mode is 'auto'

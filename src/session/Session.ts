@@ -3,6 +3,7 @@
 // tags them with the tab id and forwards them to the webview). Several instances run
 // in parallel — one per tab.
 import { CliProcessManager } from '../cli/CliProcessManager';
+import type { EngineId } from '../cli/Engine';
 import { StatsAggregator } from '../stats/StatsAggregator';
 import { loadStats, saveStats } from '../stats/StatsStore';
 import { log, dlog } from '../util/logger';
@@ -36,6 +37,10 @@ export interface SessionHooks {
   onToolUse?: (tool: string, input: unknown) => void;
   claudePath: () => string;
   cwd: () => string;
+  // Which engine backs this session, and where its server is. Optional so the
+  // default stays the Claude CLI for any caller that predates the switch.
+  engine?: () => EngineId;
+  engineServer?: () => string | undefined;
   // Defaults coming from the settings (what 'default' resolves to when there is no override).
   settings: () => { model: string; effort: string; permission: string; allowAgents: boolean };
   // Language (short code: pt, en…) for the agent's questions (AskUserQuestion).
@@ -157,9 +162,12 @@ export class Session {
     if (this.cli) return;
     const model = this.model();
     const effort = this.effort();
+    const engine = this.hooks.engine?.() ?? 'claude';
     this.cli = new CliProcessManager({
       claudePath: this.hooks.claudePath(),
       cwd: this.hooks.cwd(),
+      engine,
+      server: engine === 'tootega' ? this.hooks.engineServer?.() : undefined,
       model: model && model !== 'default' ? model : undefined,
       effort: effort && effort !== 'default' ? effort : undefined,
       permissionMode: this.permission(),

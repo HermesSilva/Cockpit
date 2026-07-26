@@ -168,6 +168,16 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('tootega.language')) provider.pushLocale();
+      // Switching engine changes which binary is spawned: the running process
+      // has to go, or the next turn would still be answered by the old one.
+      if (
+        e.affectsConfiguration('tootega.engine') ||
+        e.affectsConfiguration('tootega.claudePath') ||
+        e.affectsConfiguration('tootega.tootegaPath') ||
+        e.affectsConfiguration('tootega.tootegaServer')
+      ) {
+        provider.applyEngineChange();
+      }
       if (e.affectsConfiguration('tootega.internalModel')) provider.applyInternalModel();
       if (e.affectsConfiguration('tootega.debugLog')) {
         setDebugLogging(vscode.workspace.getConfiguration('tootega').get<boolean>('debugLog', false));

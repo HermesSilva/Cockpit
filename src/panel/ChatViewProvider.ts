@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
 import { currentEngine, engineCaps, engineLabel, enginePath, tootegaServer } from '../cli/Engine';
+import type { EngineId } from '../cli/Engine';
 import { CacheKeeper } from '../cli/CacheKeeper';
 import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
 import { ensurePricing, type PricingMap } from '../cli/ModelPricing';
@@ -333,7 +334,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
       fileText: (tool, input) => this.currentFileText(tool, input),
       onToolUse: (tool, input) => this.autoSaveForTool(tool, input),
-      claudePath: () => this.claudePath(),
+      claudePath: (engine) => this.claudePath(engine),
       cwd: () => this.workspaceCwd(),
       engine: () => currentEngine(),
       engineServer: () => tootegaServer(),
@@ -1825,7 +1826,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({
       kind: 'config',
       config: {
-        engine: currentEngine(),
+        engine: this.active().engine(),
         engines: ENGINE_OPTIONS,
         model: this.currentModel(),
         effort: this.currentEffort(),
@@ -1976,20 +1977,53 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * The engine (or its path/server) changed.
+   * The engine settings changed (default engine, a path, or the server).
    *
-   * Every running process belongs to the OLD binary, so they all have to go —
-   * a live `claude` would keep answering after the user picked the local model.
-   * Conversations stay: the next turn respawns with the new engine and replays
-   * the history, which is what `--resume` already does on any restart.
+   * Only the tabs WITHOUT an override follow it — a tab that the user pinned to
+   * an engine stays on it. The ones that follow have to be stopped: their live
+   * process belongs to the old binary and would keep answering.
    */
   applyEngineChange(): void {
-    log(`engine switched to ${engineLabel()} (${enginePath()})`);
-    this.resolvedCliPath = undefined;
-    for (const s of this.sessions.values()) s.stop();
+    log(`default engine: ${engineLabel()} (${enginePath()})`);
+    this.resolvedPaths.clear();
+    for (const s of this.sessions.values()) if (!s.engineOverride) s.stop();
     this.reportCliStatus();
     this.reportAuth();
     this.pushConfig();
+  }
+
+  /**
+   * Tab pinned to an engine.
+   *
+   * Only ONE tab may be on Tootega at a time, and that is not a UI whim: the
+   * local server answers one request at a time AND keeps a single KV cache, so
+   * a second tab would both queue behind the first and destroy its prefix
+   * cache on every turn — at ~11 tok/s of prefill that is minutes per turn, in
+   * both tabs. Slots (M3) are what lifts this.
+   */
+  private setTabEngine(tabId: string, engine: EngineId): void {
+    const s = this.sessions.get(tabId);
+    if (!s) return;
+
+    if (engine === 'tootega') {
+      for (const [id, other] of this.sessions) {
+        if (id !== tabId && other.engine() === 'tootega') {
+          void vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              'Only one Tootega tab at a time: the local server answers one request at a time and keeps a single cache.',
+            ),
+          );
+          this.sendConfig();
+          return;
+        }
+      }
+    }
+
+    s.setEngine(engine);
+    log(`tab ${tabId}: engine ${engine}`);
+    this.reportCliStatus();
+    this.reportAuth();
+    this.sendConfig();
   }
 
   /** The model/effort settings changed: clears overrides and reflects them in the UI dropdowns. */
@@ -2163,11 +2197,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendConfig();
         break;
       case 'setEngine':
-        // Persisted in the settings, not per session: the engine is which
-        // program answers, and having two tabs on different engines would make
-        // "how much context is left" mean two different things at once.
-        // The write fires onDidChangeConfiguration → applyEngineChange().
-        void this.cfg().update('engine', m.engine, vscode.ConfigurationTarget.Global);
+        this.setTabEngine(srcTab, m.engine === 'tootega' ? 'tootega' : 'claude');
         break;
       case 'setAllowAgents':
         this.snapComboBaseline(srcTab);
@@ -2468,7 +2498,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return vscode.workspace.getConfiguration('tootega');
   }
 
-  private resolvedCliPath?: string; // caminho funcional do claude (PATH ou ~/.local/bin)
+  // Resolved path per engine: with tabs on different engines, both binaries
+  // have to be findable at the same time.
+  private resolvedPaths = new Map<EngineId, string>();
   private cliAvailable = false;
   private pathFixed = false; // already tried adding ~/.local/bin to the user's PATH
 
@@ -2477,8 +2509,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    *  Segue o motor escolhido: com `tootega.engine = "tootega"` isto aponta para
    *  o agente local, e é o único ponto que precisa saber disso — tudo o que
    *  gera processo passa por aqui. */
-  private claudePath(): string {
-    return this.resolvedCliPath ?? enginePath();
+  private claudePath(engine: EngineId = currentEngine()): string {
+    return this.resolvedPaths.get(engine) ?? enginePath(engine);
   }
 
   /** Comando p/ rodar o claude num TERMINAL (PATH ou ~/.local/bin fora do PATH).
@@ -2490,8 +2522,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private reportCliStatus(): void {
-    const r = CliProcessManager.resolve(enginePath(), currentEngine());
-    this.resolvedCliPath = r.ok ? r.path : undefined;
+    const engine = currentEngine();
+    const r = CliProcessManager.resolve(enginePath(engine), engine);
+    if (r.ok) this.resolvedPaths.set(engine, r.path);
+    else this.resolvedPaths.delete(engine);
     this.cliAvailable = r.ok;
     const cockpitVersion = this.cockpitVersion();
     this.post({ kind: 'cliStatus', available: r.ok, version: r.version, error: r.error, cockpitVersion });

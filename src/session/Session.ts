@@ -35,10 +35,10 @@ export interface SessionHooks {
   fileText: (tool: string, input: unknown) => string | undefined;
   // Each tool_use (before execution): enables autosaving read/write files.
   onToolUse?: (tool: string, input: unknown) => void;
-  claudePath: () => string;
+  /** Executable for an engine. Without an argument: the window's default. */
+  claudePath: (engine?: EngineId) => string;
   cwd: () => string;
-  // Which engine backs this session, and where its server is. Optional so the
-  // default stays the Claude CLI for any caller that predates the switch.
+  // Default engine of the window, when the tab has no override.
   engine?: () => EngineId;
   engineServer?: () => string | undefined;
   // Defaults coming from the settings (what 'default' resolves to when there is no override).
@@ -88,6 +88,10 @@ export class Session {
   private toolNames = new Map<string, string>();
 
   // PER-TAB overrides (in memory). Empty = uses the settings default.
+  // Engine of THIS tab. Per tab and not global because N Claude tabs and one
+  // Tootega tab side by side is the intended use: different processes, and the
+  // Claude ones never touch the local server.
+  engineOverride?: EngineId;
   modelOverride?: string;
   effortOverride?: string;
   permissionOverride?: string;
@@ -127,6 +131,16 @@ export class Session {
   // ---- lifecycle ----
 
   // Effective values (tab override ?? settings default).
+  engine(): EngineId {
+    return this.engineOverride ?? this.hooks.engine?.() ?? 'claude';
+  }
+  /** Changing engine changes which program answers: the process has to go. */
+  setEngine(v: EngineId): void {
+    if (this.engine() === v) return;
+    this.engineOverride = v;
+    this.stop();
+  }
+
   model(): string {
     if (this.modelOverride) return this.modelOverride;
     return this.hooks.settings().model;
@@ -162,9 +176,9 @@ export class Session {
     if (this.cli) return;
     const model = this.model();
     const effort = this.effort();
-    const engine = this.hooks.engine?.() ?? 'claude';
+    const engine = this.engine();
     this.cli = new CliProcessManager({
-      claudePath: this.hooks.claudePath(),
+      claudePath: this.hooks.claudePath(engine),
       cwd: this.hooks.cwd(),
       engine,
       server: engine === 'tootega' ? this.hooks.engineServer?.() : undefined,

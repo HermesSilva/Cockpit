@@ -92,6 +92,8 @@ export class Session {
   // Tootega tab side by side is the intended use: different processes, and the
   // Claude ones never touch the local server.
   engineOverride?: EngineId;
+  /** Empty history already announced for this tab (local engine only). */
+  private historyAnnounced = false;
   modelOverride?: string;
   effortOverride?: string;
   permissionOverride?: string;
@@ -310,6 +312,9 @@ export class Session {
     // old session (it wouldn't clear) — and the init pinning would keep that id glued on.
     this.resumeId = undefined;
     this.stats = this.newStats();
+    // A new conversation gets a new session id, and the webview goes back to
+    // waiting for history — so it has to be announced again.
+    this.historyAnnounced = false;
   }
 
   resume(sessionId: string): void {
@@ -572,6 +577,15 @@ export class Session {
           // bar would never leave 1%.
           if (typeof s.context_window === 'number' && s.context_window > 0) {
             this.stats.setContextLimit(s.context_window);
+          }
+          // The local engine keeps no transcript under ~/.claude: its
+          // conversation IS the timeline. Saying "history loaded, and it is
+          // empty" right here is what lets the view paint — the webview hides
+          // everything while `sessionId` is set and history never arrived, and
+          // `replayTab` cannot answer because the session is busy mid-turn.
+          if (this.engine() === 'tootega' && !this.historyAnnounced) {
+            this.historyAnnounced = true;
+            this.emit({ kind: 'history', items: [] });
           }
           this.resolvePendingSlashSkills();
           this.sessionId = s.session_id;

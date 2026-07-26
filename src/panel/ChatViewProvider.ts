@@ -1164,6 +1164,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!s || (s.busy && !force)) return;
     const id = s.sessionId ?? s.resumeId;
     if (!id) return;
+
+    // The local engine has no transcript under ~/.claude — its conversation is
+    // the timeline itself. Without an answer here the webview stays on the
+    // loading ring forever: it hides everything while `sessionId` is set and
+    // `historyLoaded` is not (App.tsx, `cliLoading`). The turn ran, the log
+    // showed it, and the screen never left the spinner.
+    if (s.engine() === 'tootega') {
+      this.post({ kind: 'history', items: [] }, tabId);
+      return;
+    }
+
     const items = loadTranscript(this.workspaceCwd(), id);
     if (!this.tabMeta.get(tabId)?.title) {
       const names = this.memory.get<Record<string, string>>('sessionNames', {});

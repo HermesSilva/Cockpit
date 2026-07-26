@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
 import { currentEngine, engineCaps, engineLabel, enginePath, tootegaServer } from '../cli/Engine';
 import type { EngineId } from '../cli/Engine';
+import { loadTootegaTranscript } from '../cli/TootegaTranscript';
 import { CacheKeeper } from '../cli/CacheKeeper';
 import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
 import { ensurePricing, type PricingMap } from '../cli/ModelPricing';
@@ -313,7 +314,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private hooksFor(tabId: string): SessionHooks {
     return {
       emit: (msg) => this.post(msg, tabId),
-      onBusy: (busy) => this.setTabStatus(tabId, busy ? 'busy' : 'idle'),
+      onBusy: (busy) => {
+        this.setTabStatus(tabId, busy ? 'busy' : 'idle');
+        // Turn finished on the local engine: repaint from the transcript the
+        // agent just wrote. It is the source of truth, and it costs a file
+        // read once per turn.
+        //
+        // The live stream can miss — a webview hidden during a long prefill is
+        // destroyed by VSCode, and every message sent to it in the meantime is
+        // dropped. That is how a finished turn ended up showing the tool card
+        // and not the answer.
+        if (!busy && this.sessions.get(tabId)?.engine() === 'tootega') {
+          this.replayTab(tabId, true);
+        }
+      },
       onResult: () => {
         this.notifyComplete();
         void this.refreshUsage(); // fetches fresh usage at the end of each interaction (no persisted cache)
@@ -1165,17 +1179,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const id = s.sessionId ?? s.resumeId;
     if (!id) return;
 
-    // The local engine has no transcript under ~/.claude — its conversation is
-    // the timeline itself. Without an answer here the webview stays on the
-    // loading ring forever: it hides everything while `sessionId` is set and
-    // `historyLoaded` is not (App.tsx, `cliLoading`). The turn ran, the log
-    // showed it, and the screen never left the spinner.
-    if (s.engine() === 'tootega') {
-      this.post({ kind: 'history', items: [] }, tabId);
-      return;
-    }
-
-    const items = loadTranscript(this.workspaceCwd(), id);
+    // The local engine keeps its own transcript (the agent writes it after
+    // every turn, because it exits when idle). Repainting from it is what makes
+    // a hidden panel survive: VSCode destroys a hidden webview and re-mounts it
+    // empty, and answering with an empty list would look like the turn vanished
+    // — which is exactly what happened while this read `items: []`.
+    const items =
+      s.engine() === 'tootega'
+        ? loadTootegaTranscript(id)
+        : loadTranscript(this.workspaceCwd(), id);
     if (!this.tabMeta.get(tabId)?.title) {
       const names = this.memory.get<Record<string, string>>('sessionNames', {});
       this.setTabTitle(tabId, names[id] || this.titleFromItems(items));

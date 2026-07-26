@@ -53,6 +53,7 @@ interface Props {
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
   onAllowAgents: (value: boolean) => void;
+  onEngine: (engine: string) => void;
   onResume: (id: string) => void;
   onReload: (id: string) => void;
   onRemote: (id: string) => void;
@@ -97,6 +98,7 @@ export function HubView({
   onEffort,
   onPermission,
   onAllowAgents,
+  onEngine,
   onResume,
   onReload,
   onRemote,
@@ -240,6 +242,7 @@ export function HubView({
                 onEffort={onEffort}
                 onPermission={onPermission}
                 onAllowAgents={onAllowAgents}
+                onEngine={onEngine}
               />
             </div>
           )}

@@ -484,22 +484,31 @@ body {
 .controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  /* Labels sit ON TOP of each control, so the row aligns by the bottom —
+     otherwise the checkbox (which has no label above it) would float. */
+  align-items: flex-end;
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--vscode-panel-border, transparent);
 }
 .ctrl {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
 .ctrl-label {
   font-size: 11px;
   opacity: 0.7;
 }
+/* The checkbox keeps its label beside it: a title above a lone checkbox would
+   read as a section header, not as its name. */
 .ctrl-check {
   cursor: pointer;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 3px;
 }
 .ctrl-check input {
   margin: 0;

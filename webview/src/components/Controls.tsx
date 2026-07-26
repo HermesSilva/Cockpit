@@ -13,9 +13,19 @@ interface Props {
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
   onAllowAgents: (value: boolean) => void;
+  onEngine: (engine: string) => void;
 }
 
-export function Controls({ t, config, activeModel, onModel, onEffort, onPermission, onAllowAgents }: Props) {
+export function Controls({
+  t,
+  config,
+  activeModel,
+  onModel,
+  onEffort,
+  onPermission,
+  onAllowAgents,
+  onEngine,
+}: Props) {
   const [customMode, setCustomMode] = useState(false);
   const [customText, setCustomText] = useState('');
 
@@ -44,6 +54,25 @@ export function Controls({ t, config, activeModel, onModel, onEffort, onPermissi
 
   return (
     <div className="controls">
+      {/* Engine first: it decides WHO answers, and the model list only makes
+          sense inside the engine that offers it. */}
+      <Tooltip className="tt-block" title={t('controls.engine')} text={t('tip.ctrl.engine')}>
+        <label className="ctrl">
+          <span className="ctrl-label">{t('controls.engine')}</span>
+          <select
+            className="ctrl-select"
+            value={config.engine ?? 'claude'}
+            onChange={(e) => onEngine(e.target.value)}
+          >
+            {(config.engines ?? ['claude']).map((en) => (
+              <option key={en} value={en}>
+                {engineLabel(en, t)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </Tooltip>
+
       <Tooltip className="tt-block" title={t('controls.model')} text={t('tip.ctrl.model')}>
         <label className="ctrl">
           <span className="ctrl-label">{t('controls.model')}</span>
@@ -363,6 +392,12 @@ function prettyModel(id: string): string {
     s = id; // desconhecido: mostra o id cru
   }
   return oneM ? `${s} 1M` : s;
+}
+
+function engineLabel(en: string, t: Translator): string {
+  const key = `engine.${en}` as Parameters<Translator>[0];
+  const v = t(key);
+  return v === key ? en : v;
 }
 
 function permLabel(pm: string, t: Translator): string {

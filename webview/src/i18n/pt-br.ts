@@ -245,6 +245,8 @@ export const ptBR: Partial<Strings> = {
   'meta.conf.medium': 'Média',
   'meta.conf.low': 'Baixa',
 
+  'tip.ctrl.engine':
+    'Qual programa responde: Claude Code (sua conta da Anthropic) ou Tootega Code (modelo local via servidor do TootegaEngine — sem conta, sem custo, nada sai da máquina). Trocar reinicia o motor; a conversa é mantida.',
   'tip.ctrl.model':
     'Modelo desta sessão. "Padrão" segue suas settings; escolha um Opus/Sonnet/Haiku específico ou digite um id custom. Vale na próxima mensagem.',
   'tip.ctrl.effort':
@@ -391,6 +393,9 @@ export const ptBR: Partial<Strings> = {
   'controls.usage': 'Consumo',
   'tip.effort.est': 'Consumo relativo estimado de tokens por nível de effort (high = 1x). Aproximado — a Anthropic não publica fator oficial.',
   'controls.effort': 'Esforço',
+  'controls.engine': 'Motor',
+  'engine.claude': 'Claude Code',
+  'engine.tootega': 'Tootega Code',
   'controls.permission': 'Permissão',
   'controls.agents': 'Agentes e workflows',
   'controls.applies': 'Aplica na próxima mensagem (reinicia a sessão).',

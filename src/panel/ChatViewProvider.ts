@@ -82,6 +82,7 @@ const MODEL_LIST = [
 const BASE_OF_1M = new Set(['claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6']);
 const EFFORT_OPTIONS = ['default', 'low', 'medium', 'high', 'xhigh', 'max'];
 const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'];
+const ENGINE_OPTIONS = ['claude', 'tootega'];
 // A statusline cache older than this isn't trustworthy as the "real" % (it misleads).
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
@@ -1824,6 +1825,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.post({
       kind: 'config',
       config: {
+        engine: currentEngine(),
+        engines: ENGINE_OPTIONS,
         model: this.currentModel(),
         effort: this.currentEffort(),
         models,
@@ -2158,6 +2161,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         srcSession().setPermission(m.mode);
         this.pendingRestart = true;
         this.sendConfig();
+        break;
+      case 'setEngine':
+        // Persisted in the settings, not per session: the engine is which
+        // program answers, and having two tabs on different engines would make
+        // "how much context is left" mean two different things at once.
+        // The write fires onDidChangeConfiguration → applyEngineChange().
+        void this.cfg().update('engine', m.engine, vscode.ConfigurationTarget.Global);
         break;
       case 'setAllowAgents':
         this.snapComboBaseline(srcTab);

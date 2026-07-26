@@ -305,6 +305,8 @@ export const en = {
   'meta.conf.medium': 'Medium',
   'meta.conf.low': 'Low',
 
+  'tip.ctrl.engine':
+    'Which program answers: Claude Code (your Anthropic account) or Tootega Code (a local model through the TootegaEngine server — no account, no cost, nothing leaves the machine). Switching restarts the engine; the conversation is kept.',
   'tip.ctrl.model':
     'Model running this session. "Default" follows your settings; pick a specific Opus/Sonnet/Haiku or enter a custom id. Applies on next message.',
   'tip.ctrl.effort':
@@ -451,6 +453,9 @@ export const en = {
   'controls.usage': 'Usage',
   'tip.effort.est': 'Estimated relative token consumption per effort level (high = 1x). Approximate — Anthropic does not publish an official factor.',
   'controls.effort': 'Effort',
+  'controls.engine': 'Engine',
+  'engine.claude': 'Claude Code',
+  'engine.tootega': 'Tootega Code',
   'controls.permission': 'Permission',
   'controls.agents': 'Agents & workflows',
   'controls.applies': 'Applied on the next message (restarts the session).',

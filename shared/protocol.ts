@@ -330,6 +330,8 @@ export interface McpData {
 }
 
 export interface SessionConfig {
+  engine: string; // 'claude' | 'tootega' — which binary backs the session
+  engines: string[];
   model: string; // valor selecionado ('default' = padrão do CLI)
   effort: string; // 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   models: string[]; // flat options (compat)
@@ -594,6 +596,7 @@ export type WebviewToHost =
   | { kind: 'setModel'; model: string }
   | { kind: 'setEffort'; effort: string }
   | { kind: 'setPermissionMode'; mode: string }
+  | { kind: 'setEngine'; engine: string }
   | { kind: 'setAllowAgents'; value: boolean }
   | { kind: 'renameSession'; sessionId: string; name: string }
   | { kind: 'openSettings' }

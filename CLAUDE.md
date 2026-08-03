@@ -50,7 +50,12 @@ This UI is **only a presentation and control layer**. All orchestration — the 
 
 ### Two engines, one protocol
 
-`tootega.engine` chooses which binary is spawned:
+**`tootega.tootegaEnabled` is the master switch** (off by default). Off, the local engine does
+not exist for the installation: nothing spawns `agent.exe`, `tootega.engine` is ignored and the
+Engine picker hides itself (the host offers a single engine, and the UI renders the combo only
+when there is a choice). On, `tootega.engine` chooses the default binary and the per-tab
+override comes back. `availableEngines()` / `tootegaEnabled()` in `src/cli/Engine.ts` are the
+single source for both — do not read the setting directly elsewhere.
 
 | engine | binary | what it brings |
 |--------|--------|----------------|

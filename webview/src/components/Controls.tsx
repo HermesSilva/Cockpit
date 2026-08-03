@@ -54,24 +54,27 @@ export function Controls({
 
   return (
     <div className="controls">
-      {/* Engine first: it decides WHO answers, and the model list only makes
-          sense inside the engine that offers it. */}
-      <Tooltip className="tt-block" title={t('controls.engine')} text={t('tip.ctrl.engine')}>
-        <label className="ctrl">
-          <span className="ctrl-label">{t('controls.engine')}</span>
-          <select
-            className="ctrl-select"
-            value={config.engine ?? 'claude'}
-            onChange={(e) => onEngine(e.target.value)}
-          >
-            {(config.engines ?? ['claude']).map((en) => (
-              <option key={en} value={en}>
-                {engineLabel(en, t)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </Tooltip>
+      {/* Engine first: it decides WHO answers, and the model list only makes sense inside the
+          engine that offers it. Only rendered when there IS a choice — with `tootega.tootegaEnabled`
+          off the host offers Claude alone, and a one-option combo is just noise. */}
+      {(config.engines?.length ?? 1) > 1 && (
+        <Tooltip className="tt-block" title={t('controls.engine')} text={t('tip.ctrl.engine')}>
+          <label className="ctrl">
+            <span className="ctrl-label">{t('controls.engine')}</span>
+            <select
+              className="ctrl-select"
+              value={config.engine ?? 'claude'}
+              onChange={(e) => onEngine(e.target.value)}
+            >
+              {(config.engines ?? ['claude']).map((en) => (
+                <option key={en} value={en}>
+                  {engineLabel(en, t)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </Tooltip>
+      )}
 
       <Tooltip className="tt-block" title={t('controls.model')} text={t('tip.ctrl.model')}>
         <label className="ctrl">
@@ -202,7 +205,7 @@ function ModelSelect({
   rows.push(...models);
 
   const currentLabel =
-    value === CUSTOM ? `${t('controls.model')} …` : modelLabel(value, t, defaultFor);
+    value === CUSTOM ? `${t('controls.model')} …` : modelLabel(value, t, defaultFor, meta);
 
   const pick = (v: string) => {
     setOpen(false);
@@ -237,7 +240,7 @@ function ModelSelect({
                 className={`ctrl-modelsel-row${m === value ? ' sel' : ''}`}
                 onClick={() => pick(m)}
               >
-                <span className="c-model">{modelLabel(m, t, defaultFor)}</span>
+                <span className="c-model">{modelLabel(m, t, defaultFor, meta)}</span>
                 <span className="c-ctx">
                   {md?.contextTokens ? formatContext(md.contextTokens) : '—'}
                 </span>
@@ -365,20 +368,32 @@ function EffortSelect({ t, value, efforts, defaultEffort, onSelect }: EffortSele
   );
 }
 
-function modelLabel(m: string, t: Translator, defaultForParen?: string): string {
+function modelLabel(
+  m: string,
+  t: Translator,
+  defaultForParen?: string,
+  meta?: Record<string, ModelMeta>,
+): string {
+  // Official display_name (/v1/models) when we have it; prettyModel only derives from the id
+  // for what discovery doesn't cover (custom id, alias, no credential).
+  const named = (id: string): string => {
+    const label = meta?.[id]?.label;
+    if (!label) return prettyModel(id);
+    return /\[1m\]/i.test(id) ? `${label} 1M` : label;
+  };
   if (m === 'default') {
     return defaultForParen
-      ? `${t('model.default')} (${prettyModel(defaultForParen)})`
+      ? `${t('model.default')} (${named(defaultForParen)})`
       : t('model.default');
   }
   // alias puro (opus/sonnet/haiku/...) -> capitaliza ("Opus")
   if (/^(opus|sonnet|haiku|fable|mythos)$/i.test(m)) {
     return m[0].toUpperCase() + m.slice(1).toLowerCase();
   }
-  return prettyModel(m);
+  return named(m);
 }
 
-/** Elegant title: claude-opus-4-8 -> "Claude Opus 4.8"; …[1m] -> "… 1M". */
+/** Fallback title derived from the id: claude-opus-4-8 -> "Claude Opus 4.8"; …[1m] -> "… 1M". */
 function prettyModel(id: string): string {
   const oneM = /\[1m\]/i.test(id);
   const core = id.replace(/^claude-/i, '').replace(/\[1m\]/i, '');

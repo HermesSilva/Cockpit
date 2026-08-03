@@ -171,6 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // Switching engine changes which binary is spawned: the running process
       // has to go, or the next turn would still be answered by the old one.
       if (
+        e.affectsConfiguration('tootega.tootegaEnabled') ||
         e.affectsConfiguration('tootega.engine') ||
         e.affectsConfiguration('tootega.claudePath') ||
         e.affectsConfiguration('tootega.tootegaPath') ||

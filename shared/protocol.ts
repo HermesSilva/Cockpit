@@ -361,10 +361,11 @@ export interface ModelGroup {
 // The context comes REAL from the Models API (/v1/models: max_input_tokens); the price from the
 // pricing docs (there is no price endpoint). Absent fields = unknown.
 export interface ModelMeta {
+  label?: string; // display_name oficial ("Claude Opus 4.8"); ausente = derivar do id
   contextTokens?: number; // janela de contexto (max_input_tokens)
   inMTok?: number; // input price in USD per 1M tokens
   outMTok?: number; // output price in USD per 1M tokens
-  priceMult?: number; // multiplicador de entrada normalizado (Opus 4.8 = 1x)
+  priceMult?: number; // multiplicador de entrada normalizado (o mais caro da lista = 1x)
 }
 
 // Existing session/conversation ("context") to resume.

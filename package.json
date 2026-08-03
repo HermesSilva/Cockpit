@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.233",
+  "version": "1.0.235",
   "publisher": "HermesSilva",
   "license": "MIT",
   "author": {
@@ -196,6 +196,11 @@
     "configuration": {
       "title": "Tootega Cockpit",
       "properties": {
+        "tootega.tootegaEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%cfg.tootegaEnabled%"
+        },
         "tootega.engine": {
           "type": "string",
           "enum": [
@@ -237,30 +242,6 @@
         "tootega.model": {
           "type": "string",
           "default": "default",
-          "enum": [
-            "default",
-            "claude-opus-4-8[1m]",
-            "claude-sonnet-5",
-            "claude-opus-4-7[1m]",
-            "claude-opus-4-6",
-            "claude-sonnet-4-6[1m]",
-            "claude-haiku-4-5",
-            "claude-opus-4-5",
-            "claude-sonnet-4-5",
-            "claude-fable-5"
-          ],
-          "enumDescriptions": [
-            "Account default (the CLI chooses)",
-            "Claude Opus 4.8 · 1M context",
-            "Claude Sonnet 5 · 1M context (CLI default)",
-            "Claude Opus 4.7 · 1M context",
-            "Claude Opus 4.6",
-            "Claude Sonnet 4.6 · 1M context",
-            "Claude Haiku 4.5",
-            "Claude Opus 4.5",
-            "Claude Sonnet 4.5",
-            "Claude Fable 5"
-          ],
           "description": "%cfg.model%"
         },
         "tootega.effort": {

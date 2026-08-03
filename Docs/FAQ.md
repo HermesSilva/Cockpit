@@ -148,9 +148,11 @@ the rendering. Update the extension and report a mismatch on GitHub with your `c
 --version`.
 
 ### A model I expected is missing from the picker.
-The picker only offers models your account has, per `/v1/models`. If discovery is unavailable
-(offline / no credentials), it falls back to the full curated list. Verify your account with
-`claude --version` and that you're signed in.
+The picker only offers models your account has, per `/v1/models` — there is no hardcoded list
+to be out of date. If discovery is unavailable (offline / no credentials), it falls back to the
+last answer it cached, and **Custom…** still accepts any id. Make sure you're signed in
+(`claude --version`); setting the API key (**Tootega: Set Anthropic API key**) re-runs
+discovery right away.
 
 ### Where do I report bugs or ask questions?
 Open an issue in the [GitHub repository](https://github.com/HermesSilva/Cockpit). That is the

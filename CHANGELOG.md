@@ -4,6 +4,32 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.235] - 2026-08-03
+
+### Added
+- **`tootega.tootegaEnabled` — one switch for the local engine** (off by default). Off, Tootega
+  does not exist for the installation: nothing spawns `agent.exe`, `tootega.engine` is ignored,
+  a tab still pinned to Tootega is unpinned, and the **Engine** combo disappears from the
+  toolbar (the host offers a single engine, and the picker only renders when there is a choice).
+  On, the combo and the per-tab override come back. The guard is in the host, not just the UI.
+
+### Changed
+- **No hardcoded model data anywhere.** The curated `MODEL_LIST` / `BASE_OF_1M` tables and the
+  `tootega.model` enum in the manifest are gone. The picker is built entirely from
+  `/v1/models`: `display_name` is the label (no more titles guessed from the id),
+  `max_input_tokens` gives the context column *and* decides the `[1m]` suffix (the suffix is a
+  no-op on natively-1M models, verified on CLI 2.1.220, so no per-model table is needed), and
+  `created_at` sets the order. A model released to your account shows up with no extension
+  update. The last successful catalogue is cached, so offline no longer falls back to a stale
+  list. The price multiplier is now anchored on **your default model** (1x) instead of a model
+  pinned in the code.
+
+### Fixed
+- ***Default (…)* no longer shows a stale model.** `~/.claude/settings.json` was read once, in
+  the provider's constructor, so changing `model` outside VS Code (the CLI's own `/config`) kept
+  showing the old default until the window was reloaded. It is now re-read on every session
+  init — the moment the CLI resolves its default from that same file.
+
 ## [1.0.233] - 2026-07-24
 
 ### Added

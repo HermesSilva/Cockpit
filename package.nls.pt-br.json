@@ -18,7 +18,8 @@
   "cmd.disableUsageTracking": "Desativar uso real da conta",
   "cmd.enableUtf8Fix": "Corrigir acentuação na saída do PowerShell (instalar hook UTF-8)",
   "cmd.disableUtf8Fix": "Remover o hook UTF-8 do PowerShell",
-  "cfg.engine": "Motor que roda o agente. Os dois falam o mesmo protocolo de processo; o que muda é qual executável sobe.",
+  "cfg.tootegaEnabled": "Usar o motor local Tootega Code. Desligado (o default), o Cockpit roda só no Claude Code: nada sobe o agente local e o seletor Engine fica escondido. Ligado, o seletor volta e o 'Engine' abaixo escolhe o default. Exige o servidor do TootegaEngine no ar (serve.cmd).",
+  "cfg.engine": "Motor que roda o agente — só vale com 'Tootega enabled' ligado. Os dois falam o mesmo protocolo de processo; o que muda é qual executável sobe.",
   "cfg.engine.claude": "Claude Code CLI — conta da Anthropic, limites da assinatura, plugins, skills e MCP.",
   "cfg.engine.tootega": "Tootega Code CLI — modelo local via servidor do TootegaEngine. Sem conta, sem custo, nada sai da máquina.",
   "cfg.claudePath": "Caminho do executável do Claude Code CLI.",
@@ -41,7 +42,7 @@
   "cfg.otelEnabled": "Sobe um receiver OpenTelemetry local (127.0.0.1) e liga o export de telemetria da CLI Claude para o painel de Uso mostrar linhas de código, sessões, commits e decisões de ferramenta de edição por modelo. Opt-in, desligado por padrão. Só tráfego loopback; nunca registra credenciais nem texto de resposta.",
   "cfg.internalModel": "Modelo usado nas chamadas internas de IA do Cockpit (correção do ditado, ajuda dos comandos '/'). São chamadas limpas e isoladas (sem tools/MCP/contexto). O Haiku é o mais rápido/barato.",
   "cfg.verbosity": "Quanto do timeline mostrar (só exibição — não muda o agente). Verbose = tudo; Necessary = edições + explicações finais; Dialogo = edições + o que está fazendo; Quiet = só explicações finais.",
-  "cfg.model": "Modelo default para novas sessões. 'Account default' deixa o CLI escolher. Reflete (pré-seleciona) no combo Model do painel; mude lá para sobrepor só a sessão atual.",
+  "cfg.model": "Modelo default para novas sessões. Deixe 'default' para o CLI escolher. Não há lista fixa aqui: o combo Model do painel oferece o que a sua conta realmente tem (descoberta ao vivo); mude lá para sobrepor só a sessão atual.",
   "cfg.effort": "Esforço de raciocínio default para novas sessões. 'CLI default' usa o effortLevel do ~/.claude/settings.json. Reflete (pré-seleciona) no combo Effort do painel; mude lá para sobrepor só a sessão atual.",
   "cfg.autoResumeLastSession": "Ao abrir uma pasta, retoma automaticamente a sessão mais recente dela (carrega o histórico). Desligue para sempre começar vazio.",
   "cfg.autosave": "Salva automaticamente um arquivo aberto antes do Claude ler ou escrever nele, para o agente trabalhar com o conteúdo atual."

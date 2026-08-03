@@ -5,11 +5,25 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { CliProcessManager } from '../cli/CliProcessManager';
-import { currentEngine, engineCaps, engineLabel, enginePath, tootegaServer } from '../cli/Engine';
+import {
+  availableEngines,
+  currentEngine,
+  engineCaps,
+  engineLabel,
+  enginePath,
+  tootegaEnabled,
+  tootegaServer,
+} from '../cli/Engine';
 import type { EngineId } from '../cli/Engine';
 import { loadTootegaTranscript } from '../cli/TootegaTranscript';
 import { CacheKeeper } from '../cli/CacheKeeper';
-import { discoverModels, resolveCreds } from '../cli/ModelDiscovery';
+import {
+  discoverModels,
+  resolveCreds,
+  pickerIds,
+  ONE_M,
+  type DiscoveredModel,
+} from '../cli/ModelDiscovery';
 import { ensurePricing, type PricingMap } from '../cli/ModelPricing';
 import {
   listSessions,
@@ -58,33 +72,15 @@ import { researchCommands } from '../cli/SlashCommandResearch';
 import { getLatestCliVersion } from '../cli/CliVersion';
 import { log, dlog } from '../util/logger';
 
-// Always-valid aliases (they resolve to the account's most recent). 'default' = no flag.
-// The CLI doesn't expose a model list; the UI complements it with the active model discovered
-// live (init event) and with free input ("Custom…"). Effort is a fixed CLI enum.
-// Flat list (no grouping). Models with a 1M variant appear only as [1m]
-// (the smaller 200K version is omitted). The CLI validates it at spawn.
-const MODEL_LIST = [
-  'default',
-  // Opus 5: the default Opus since 2.1.219. Its 1M window is NATIVE (no `[1m]`
-  // variant), so it stays out of BASE_OF_1M like Sonnet 5. Fast mode covers it.
-  'claude-opus-5',
-  'claude-opus-4-8[1m]',
-  // Sonnet 5: the CLI default since 2.1.197. Its 1M window is NATIVE — it has no
-  // `[1m]` variant (hence it stays out of BASE_OF_1M).
-  'claude-sonnet-5',
-  'claude-opus-4-7[1m]',
-  'claude-opus-4-6',
-  'claude-sonnet-4-6[1m]',
-  'claude-haiku-4-5',
-  'claude-opus-4-5',
-  'claude-sonnet-4-5',
-  'claude-fable-5',
-];
-// 200K versions that have a 1M variant in the list — filtered out of discovery.
-const BASE_OF_1M = new Set(['claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6']);
+// NO curated model list. The CLI has no `models` subcommand (checked on 2.1.220: `--model`
+// just takes an id/alias and validates at spawn), so the account's real catalogue comes from
+// /v1/models — id, display_name, max_input_tokens and created_at are enough to build the whole
+// picker. 'default' (no flag) is the only entry the extension itself contributes.
+// A model whose window is 1M is offered as `<id>[1m]` — see `pickerIds` in ModelDiscovery.
 const EFFORT_OPTIONS = ['default', 'low', 'medium', 'high', 'xhigh', 'max'];
 const PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'];
-const ENGINE_OPTIONS = ['claude', 'tootega'];
+// Engines on offer: see `availableEngines` — one entry while the Tootega switch is off, and
+// the picker hides itself when there is nothing to choose between.
 // A statusline cache older than this isn't trustworthy as the "real" % (it misleads).
 const USAGE_CACHE_MAX_AGE_MS = 6 * 3600_000; // 6h
 
@@ -170,12 +166,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // open. It recovers the gray/dead webview (same action as the watchdog) — it runs in the
   // host, so it is independent of the renderer and of the editor action settings.
   private reloadBar?: vscode.StatusBarItem;
-  // Models discovered live (the init's active model + /v1/models). Value =
-  // real context window (max_input_tokens) or undefined when the account doesn't expose it.
-  private discoveredModels = new Map<string, number | undefined>();
+  // Models discovered live (/v1/models + the init's active model). The picker is built
+  // entirely from this map — see the header comment on why there is no curated list.
+  private discoveredModels = new Map<string, DiscoveredModel>();
   private discoveryTried = false;
-  // true once /v1/models returned a real model set. Only then is the picker filtered to
-  // discovered models — before that, `discoveredModels` may hold just the observed init model.
+  // true once /v1/models returned a real model set (this run OR the cached last result).
   private discoveryComplete = false;
   // Price per model (from the pricing docs; cached once a day). Empty until loaded.
   private pricing: PricingMap = {};
@@ -217,6 +212,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (secrets) this.creds = new CredentialsStore(secrets);
     this.defaults = readClaudeDefaults();
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
+    this.restoreDiscovery();
     this.statusBar = statusBar;
     this.updateStatusBar(false);
     // Reload button (status bar, right). Hidden until a context is opened.
@@ -517,6 +513,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Global side of a session's init: model discovery + default cache. */
   private onSessionInit(model?: string, slashCommands?: string[], tabId?: string): void {
     void this.researchSlash(slashCommands);
+    // Re-reads ~/.claude/settings.json: `model`/`effortLevel` can change outside VS Code (the
+    // CLI's own /config), and reading it only in the constructor made *Default (…)* show a
+    // stale value until the window was reloaded. A session init is exactly when it matters —
+    // the CLI has just resolved its default from that very file.
+    this.defaults = readClaudeDefaults();
     const s = tabId ? this.sessions.get(tabId) : undefined;
     // REAL model resolved by the CLI: the timing scope may have changed
     // ('default' -> real id). Recalibrates the gauge with the new scope's averages.
@@ -526,8 +527,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (s) this.saveSessionModel(s);
     }
     if (typeof model === 'string' && model) {
-      if (!this.discoveredModels.has(model)) {
-        this.discoveredModels.set(model, undefined); // context comes from /v1/models
+      // The init reports the id the CLI resolved, possibly with the [1m] suffix; the
+      // catalogue is keyed by the bare id (as /v1/models returns it).
+      const baseId = model.replace(/\[1m\]/i, '');
+      if (!this.discoveredModels.has(baseId)) {
+        // Seen live but not (yet) in the catalogue: registers it with no metadata, so a model
+        // the account has before /v1/models answers is still selectable.
+        this.discoveredModels.set(baseId, { id: baseId });
         this.sendConfig();
       }
       const settingsModel = this.cfg().get<string>('model', '') || 'default';
@@ -1774,8 +1780,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * Queries /v1/models once. It uses the API key (when present) or the subscription's
-   * OAuth token — so new models released to the account show up without editing the
-   * static list. It is a no-op only when there is no credential at all.
+   * OAuth token — so a model released to the account shows up on its own, with no list to
+   * edit. It is a no-op only when there is no credential at all.
    */
   private async tryDiscoverModels(): Promise<void> {
     // The price is independent of the credential (public docs) — fetched in parallel.
@@ -1783,24 +1789,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this.discoveryTried) return;
     this.discoveryTried = true;
     const creds = resolveCreds(await this.getApiKey());
-    if (!creds) return; // no API key and no OAuth token: uses the static fallback
+    if (!creds) return; // no credential: the picker lives off the cached catalogue
     try {
       const models = await discoverModels(creds);
-      if (models.length > 0) this.discoveryComplete = true;
-      let added = false;
+      if (models.length === 0) return; // offline/denied: keeps the cached catalogue
+      this.discoveryComplete = true;
       for (const m of models) {
-        if (!this.discoveredModels.has(m.id)) added = true;
-        this.discoveredModels.set(m.id, m.contextTokens);
+        this.discoveredModels.set(m.id, m);
         registerModelContext(m.id, m.contextTokens); // fonte p/ o limite da barra (1M nativo)
       }
-      if (added) {
-        log(`Discovered ${models.length} models via /v1/models`);
-        this.sendConfig();
-        this.refreshContextLimits(); // post-init discovery: fixes the bar of the 1M models
-      }
+      void this.memory.update('modelCatalog', models);
+      log(`Discovered ${models.length} models via /v1/models`);
+      this.sendConfig();
+      this.refreshContextLimits(); // post-init discovery: fixes the bar of the 1M models
     } catch {
-      /* silent — the fallback already covers it */
+      /* silent — the cached catalogue already covers it */
     }
+  }
+
+  /**
+   * Last successful /v1/models result, cached in globalState. It is what the picker shows
+   * before discovery answers (and when it can't: offline, no credential) — the alternative
+   * would be a hardcoded list, which goes stale exactly when a new model ships.
+   */
+  private restoreDiscovery(): void {
+    const cached = this.memory.get<DiscoveredModel[]>('modelCatalog');
+    if (!Array.isArray(cached) || cached.length === 0) return;
+    for (const m of cached) {
+      if (!m?.id) continue;
+      this.discoveredModels.set(m.id, m);
+      registerModelContext(m.id, m.contextTokens);
+    }
+    this.discoveryComplete = true;
   }
 
   /** Loads prices from the docs (cached once a day). No-op after the first time. */
@@ -1830,39 +1850,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private sendConfig(): void {
-    // The picker is DISCOVERY-DRIVEN: /v1/models is the source of truth for what the
-    // account actually has. The curated MODEL_LIST is a label/order convenience and a 1M-alias
-    // source, but a curated entry is only offered when discovery confirms it exists (its base id,
-    // ignoring the [1m] suffix). 'default' and Opus 5 are always valid (the current default).
-    // Offline / discovery empty: we can't verify anything, so the full curated list stays as a
-    // fallback instead of collapsing the picker.
-    const haveDiscovery = this.discoveryComplete;
-    const discoveredIds = [...this.discoveredModels.keys()];
-    const isReal = (m: string): boolean => {
-      if (m === 'default' || m === 'claude-opus-5') return true;
-      const base = m.replace(/\[1m\]/i, '');
-      // Discovery returns undated aliases (claude-opus-4-8) AND dated snapshots
-      // (claude-opus-4-5-20251101). Match both: exact, or a dated form of the same base.
-      return discoveredIds.some((d) => d === base || d.startsWith(base + '-'));
-    };
-    const curated = haveDiscovery ? MODEL_LIST.filter(isReal) : [...MODEL_LIST];
-    // Discovered live but missing from the curated list — skipping the 200K versions
-    // whose 1M variant is already offered.
-    const discoveredExtra = [...this.discoveredModels.keys()].filter(
-      (m) => !MODEL_LIST.includes(m) && !BASE_OF_1M.has(m),
+    // The picker: 'default' (no --model flag) plus the account's catalogue, straight from
+    // discovery. Nothing is hardcoded — see the header comment.
+    const models = dedupe(['default', ...pickerIds([...this.discoveredModels.values()])]);
+    // The tab's current model may be an id the catalogue doesn't offer (a pinned bare id, a
+    // custom one): it still needs a label/context, hence it goes into the meta too.
+    const defaultModel = this.defaults.model ?? this.observedDefaultModel;
+    const meta = this.buildModelMeta(
+      dedupe([...models, this.currentModel(), ...(defaultModel ? [defaultModel] : [])]),
+      defaultModel,
     );
-    const models = dedupe([...curated, ...discoveredExtra]);
     this.post({
       kind: 'config',
       config: {
         engine: this.active().engine(),
-        engines: ENGINE_OPTIONS,
+        engines: availableEngines(),
         model: this.currentModel(),
         effort: this.currentEffort(),
         models,
-        modelMeta: this.buildModelMeta(models),
+        modelMeta: meta,
         efforts: EFFORT_OPTIONS,
-        defaultModel: this.defaults.model ?? this.observedDefaultModel,
+        defaultModel,
         defaultEffort: this.defaults.effort,
         permissionMode: this.currentPermissionMode(),
         permissionModes: PERMISSION_MODES,
@@ -1879,25 +1887,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Per-model metadata for the selector columns. The context is REAL from the Models
-   * API when discovered; otherwise derived ([1m]→1M, else 200K). The price comes from the
-   * docs (base id, without the [1m] suffix); the multiplier normalizes the input by
-   * Opus 4.8 (=1x), or by the highest price when Opus isn't in the table.
+   * Per-model metadata for the selector columns. The label and the context are REAL from the
+   * Models API (display_name / max_input_tokens); the price comes from the docs (base id,
+   * without the [1m] suffix). The multiplier reads "relative to your default model" (1x = the
+   * default): anchoring it on a model pinned in the code would be one more thing to go stale.
    */
-  private buildModelMeta(models: string[]): Record<string, ModelMeta> {
+  private buildModelMeta(models: string[], anchorId?: string): Record<string, ModelMeta> {
+    const priceOf = (id: string): PricingMap[string] | undefined =>
+      // Price key: without the [1m] suffix and without a dated snapshot (-YYYYMMDD).
+      this.pricing[id.replace(/\[1m\]/i, '').replace(/-\d{8}$/, '')];
+    // No known default (or no price for it): falls back to the priciest model on offer.
     const anchor =
-      this.pricing['claude-opus-4-8']?.inMTok ??
-      Math.max(0, ...Object.values(this.pricing).map((p) => p.inMTok));
+      (anchorId ? priceOf(anchorId)?.inMTok : undefined) ??
+      Math.max(0, ...models.map((id) => priceOf(id)?.inMTok ?? 0));
     const meta: Record<string, ModelMeta> = {};
     for (const id of models) {
-      if (id === 'default' || /^(opus|sonnet|haiku|fable|mythos)$/i.test(id)) continue;
-      const is1m = /\[1m\]/i.test(id);
-      // Price key: without the [1m] suffix and without a dated snapshot (-YYYYMMDD).
-      const baseId = id.replace(/\[1m\]/i, '').replace(/-\d{8}$/, '');
-      const contextTokens = is1m ? 1_000_000 : (this.discoveredModels.get(id) ?? 200_000);
-      const price = this.pricing[baseId];
+      if (id === 'default') continue;
+      const known = this.discoveredModels.get(id.replace(/\[1m\]/i, ''));
+      const price = priceOf(id);
       meta[id] = {
-        contextTokens,
+        label: known?.displayName,
+        contextTokens: known?.contextTokens ?? (/\[1m\]/i.test(id) ? ONE_M : 200_000),
         inMTok: price?.inMTok,
         outMTok: price?.outMTok,
         priceMult:
@@ -2015,6 +2025,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   applyEngineChange(): void {
     log(`default engine: ${engineLabel()} (${enginePath()})`);
     this.resolvedPaths.clear();
+    // The switch went off: a tab pinned to Tootega would keep talking to the local server with
+    // no way back (the picker is gone), so the pin is dropped and the tab falls to Claude.
+    if (!tootegaEnabled()) {
+      for (const s of this.sessions.values()) {
+        if (s.engineOverride === 'tootega') s.engineOverride = undefined;
+      }
+    }
     for (const s of this.sessions.values()) if (!s.engineOverride) s.stop();
     this.reportCliStatus();
     this.reportAuth();
@@ -2035,6 +2052,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!s) return;
 
     if (engine === 'tootega') {
+      // Master switch off: the local engine does not exist here. Guarded in the host, not
+      // just in the UI, so a stale message or a leftover override can't spawn `agent.exe`.
+      if (!tootegaEnabled()) {
+        this.sendConfig();
+        return;
+      }
       for (const [id, other] of this.sessions) {
         if (id !== tabId && other.engine() === 'tootega') {
           void vscode.window.showWarningMessage(

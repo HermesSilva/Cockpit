@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.233` |
+| **Extension version** | `1.0.235` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.219`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; tracks Opus 5 / Sonnet 5 / Opus 4.8 / Fable 5) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.220`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -626,19 +626,29 @@ context, and **never** write or log credentials.
 
 - **Model** and **Effort** are *session overrides* (they do not change global settings);
   switching restarts the CLI session.
-- **Layered model discovery** (the CLI does not list models):
-  1. always-valid aliases (`default` / `opus` / `sonnet` / `haiku`);
-  2. the **active model** captured live from the `init` event (exact id/variant, e.g.
-     `claude-opus-4-8[1m]`);
-  3. **`/v1/models`** when an API credential is present (the API key set via the
-     **Tootega: Set Anthropic API key** command — stored in the OS keychain — or
-     `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`);
-  4. a **Custom…** field for any id (the CLI validates on spawn).
-- **Subscription** accounts (no API key) use (1) + (2) + (4).
-- The manifest ships a curated **Versions** list (e.g. `claude-opus-4-8[1m]`,
-  `claude-sonnet-4-6[1m]`, `claude-haiku-4-5`, `claude-fable-5`) as the fallback when
-  `/v1/models` is not reachable.
+- **The model list is not hardcoded anywhere.** The CLI has no `models` subcommand, so the
+  catalogue comes from **`/v1/models`** — id, `display_name` (the label shown),
+  `max_input_tokens` (the context column, and what decides the `[1m]` suffix) and
+  `created_at` (newest first). A model released to your account appears on its own, with no
+  extension update.
+  - The credential is the API key set via **Tootega: Set Anthropic API key** (OS keychain),
+    `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`, or — on **subscription** accounts with no
+    API key — the CLI's own OAuth token. `GET /v1/models` spends no tokens.
+  - The last successful answer is cached (globalState) and is what the picker shows while
+    offline or before discovery replies, instead of a list that goes stale.
+  - `default` (no `--model` flag) and the **Custom…** field (any id, validated by the CLI on
+    spawn) are the only entries the extension itself contributes.
+- **Default (…)** in the picker is not ours either: it is `model` from
+  `~/.claude/settings.json` (re-read on every session init, so a change made with the CLI's own
+  `/config` shows up without reloading the window), or the default observed in the `init` of a
+  session with no per-tab override.
 - **Effort** is a fixed CLI enum: `low / medium / high / xhigh / max`.
+- **Engine** — `tootega.tootegaEnabled` is the master switch for the local **Tootega Code**
+  engine, **off by default**. Off, the Cockpit runs on Claude Code alone: nothing spawns
+  `agent.exe`, `tootega.engine` is ignored and the Engine combo is not rendered (the host
+  offers a single engine, and a one-option picker is noise). On, the combo returns and each tab
+  can be pinned — N Claude tabs plus one Tootega tab, which needs the TootegaEngine server up
+  (`serve.cmd`; `tootega.tootegaServer` says where).
 
 ---
 

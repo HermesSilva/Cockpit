@@ -31,12 +31,14 @@ Updated per the first build cycle. Tracks the [execution plan](execution-plan.md
 ### Model and effort selection (Phase 6 / M2) — implemented
 - **Model** and **effort** selectors in the UI (`--model` / `--effort` of the CLI), applied as an
   in-memory session override (they do not alter global settings); the switch restarts the CLI session.
-- **Models: layered discovery** (the CLI does not list models):
-  1. always-valid aliases (`default`/`opus`/`sonnet`/`haiku`);
-  2. **active model** captured live from the `init` event (exact id/variant, e.g., `claude-opus-4-7[1m]`);
-  3. **`/v1/models`** when an API credential is present (`tootega.apiKey` or `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`);
-  4. a **Custom…** field for any id (the CLI validates on spawn).
-- **Subscription** accounts (`apiKeySource: none`) have no API key → use (1)+(2)+(4).
+- **Models: discovery is the only source** (the CLI has no `models` subcommand):
+  1. **`/v1/models`** builds the whole picker — `id`, `display_name` (label), `max_input_tokens`
+     (context column + the `[1m]` suffix rule) and `created_at` (ordering). Credential: API key
+     (`tootega.apiKey`), `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, or the CLI's OAuth token —
+     so **subscription** accounts (`apiKeySource: none`) are covered too;
+  2. the last successful answer, cached in globalState (offline / pre-discovery fallback);
+  3. **active model** captured live from the `init` event, when discovery hasn't seen it;
+  4. `default` (no flag) and a **Custom…** field for any id (the CLI validates on spawn).
 - Effort is a fixed CLI enum (`low/medium/high/xhigh/max`), validated against v2.1.143.
 
 ### Session list / "existing contexts" (Phase 2 / C8) — implemented
@@ -47,8 +49,10 @@ Updated per the first build cycle. Tracks the [execution plan](execution-plan.md
 - Validated against real data: encoding, ordering, and UTF-8 titles (correct accents).
 
 ### Model versions in the selector — implemented
-- Grouped selector: **Aliases** (latest) + **Versions** (curated list of versioned ids) + discovered active + Custom.
-- The curated list covers the fallback when `/v1/models` is not accessible (subscription). The CLI validates on spawn.
+- Flat selector (model · context · price), built from the discovered catalogue: newest first, the
+  official `display_name` as the label, `[1m]` on every model whose window is 1M (accepted as a
+  no-op by the CLI on the natively-1M ones — verified on 2.1.220), plus `default` and Custom.
+- No hardcoded ids: a new model shows up from `/v1/models`, and the cached catalogue covers offline.
 
 ### Composer attachments: paste image and file (Phase 2 / C4-C5) — implemented
 - **Paste image** (screenshot/bitmap without a path): attaches as a base64 image block in the `user` message

@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.235` |
+| **Extension version** | `1.0.239` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.220`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.223`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -104,7 +104,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | **Close the webview without stopping the run** | ✅ | 🟡 | Cockpit keeps the CLI/session alive in the host; reopening replays the full timeline. Official tab-close behavior is not documented |
 | **Manual reload (fix gray/dead webview)** | ✅ | ➖ | status-bar ↻ + per-session-card ↻ + auto render-watchdog |
 | Reopen closed session | ✅ | ✅ | `Ctrl+Shift+T` + command palette |
-| **Remote control (follow from phone)** | ✅ | ✅ | 📱 on the session card runs `/remote-control` (pairing link/QR in the timeline) |
+| **Remote control (follow from phone)** | ✅ | ✅ | 📱 on the session card (and in the composer) hands the conversation to `claude --remote-control --resume` in a visible terminal — see [Remote Control](#remote-control) |
 | Resume **cloud / remote** sessions (claude.ai) | ❌ | ✅ | official Remote tab |
 | Reposition panel (sidebar / editor / window) | 🟡 | ✅ | Cockpit lives in editor + activity-bar hub |
 
@@ -240,6 +240,7 @@ terminal mode.
 - [Features](#features)
 - [Cockpit-exclusive features](#cockpit-exclusive-features)
 - [Models, effort, and sessions](#models-effort-and-sessions)
+- [Remote Control](#remote-control)
 - [Plugins](#plugins)
 - [Skills](#skills)
 - [Custom system prompt](#custom-system-prompt)
@@ -344,7 +345,7 @@ The stream parser ([`src/cli/StreamParser.ts`](src/cli/StreamParser.ts)) is
 | Claude Code CLI | recent | `claude` on the `PATH`, **authenticated** |
 | Git | any | Recommended for checkpoints (planned) |
 
-Tested against Claude CLI **2.1.x** (aligned with `2.1.215`; screenshots show `2.1.177`). The
+Tested against Claude CLI **2.1.x** (aligned with `2.1.223`; screenshots show `2.1.177`). The
 parser is version-tolerant — unknown stream events are ignored gracefully — but the event
 contract can vary between versions, see [Known limitations](#known-limitations).
 
@@ -505,9 +506,10 @@ automatically resumes the most recent session for that directory.
 | Feature | Status | How to use | Limitations |
 |---|---|---|---|
 | Permission approval (Allow / Always / Deny) | ✅ | Per-tool modal with preview (Bash, Write, WebFetch, JSON); **Ctrl+Enter** = allow, **Esc** = deny | — |
+| **Invisible characters exposed in the command** | ✅ | Zero-width, bidi overrides, non-ASCII spaces, tab padding and C0 controls show as a marked glyph (hover gives `U+XXXX NAME`), with a warning above the command | Applies to the command preview; other previews show the raw text |
 | Permission modes (HITL ↔ auto) | ✅ | **Permission** dropdown (`default`, `plan`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`) | `bypassPermissions` disables approvals — use with care |
-| **Plan mode** (view, **edit** and approve a plan) | ✅ | `ExitPlanMode` permission with **Edit/Preview** toggle; **Approve & run** or **Keep planning (send my notes)** feeds your edits back | — |
-| Composed questions (AskUserQuestion) | ✅ | Modal with tabs per question, option cards, `multiSelect`, and an **Other** option (free text) | — |
+| **Plan mode** (view, **edit** and approve a plan) | ✅ | `ExitPlanMode` permission with **Edit/Preview** toggle and a **⛶ maximize** toggle for long plans; **Approve & run** or **Keep planning (send my notes)** feeds your edits back | — |
+| Composed questions (AskUserQuestion) | ✅ | Modal with tabs per question, option cards, `multiSelect`, an **Other** option, and a **text box per question** that is added to that question's choices (**Enter** sends, **Shift+Enter** new line) | — |
 | Side-by-side diff in the native editor | ✅ | **Open diff in editor** button on the edit-permission modal → VS Code `vscode.diff` | Editing inside the native diff to change the proposal is still in the webview path |
 | **@-mention file autocomplete** | ✅ | Type `@` to pick a workspace file (fuzzy) | No `Alt+K` line-range shortcut |
 | **Share editor selection** | ✅ | Composer chip (`@file#a-b`) with an eye toggle to include/exclude | — |
@@ -537,7 +539,8 @@ automatically resumes the most recent session for that directory.
 
 | Feature | Status | How to use | Limitations |
 |---|---|---|---|
-| **Context window** meter (used / remaining / limit) | ✅ | Bar at the top, with color bands; 200K or 1M limit | Limit auto-derived from the active model |
+| **Context window** meter (used / remaining / limit) | ✅ | Bar at the top, with color bands; 200K or 1M limit. `CLAUDE_CODE_DISABLE_1M_CONTEXT` (environment or the `env` block of user/project settings) caps it at 200K, where the CLI auto-compacts | Limit auto-derived from the active model when the engine doesn't report its own |
+| **Engine warnings** (fast-mode credits, restricted subagent model) | ✅ | ⚠ banner in the timeline, once per session | Recognised by shape from `system` events — a warning the CLI stops emitting simply stops appearing |
 | **Cache**: hit-rate, read, write | ✅ | **Cache** block in the panel | — |
 | **Cost** per turn and session | 🟡 | Cost block ("estimated" label) | Estimate, not the official invoice |
 | Tokens in / out / cache-create / cache-read | ✅/🟡 | **Tokens** block | Full breakdown partial |
@@ -649,6 +652,38 @@ context, and **never** write or log credentials.
   offers a single engine, and a one-option picker is noise). On, the combo returns and each tab
   can be pinned — N Claude tabs plus one Tootega tab, which needs the TootegaEngine server up
   (`serve.cmd`; `tootega.tootegaServer` says where).
+
+---
+
+## Remote Control
+
+Continue a Cockpit conversation from your phone or from `claude.ai/code`. The 📱 button — on the
+session card in the Hub and in the composer — starts it.
+
+**Why it is a terminal, not a slash command.** `/remote-control` only exists in an *interactive*
+session. The Cockpit's session is headless (`-p --input-format stream-json`, which is what gives
+us the event stream), and there the CLI answers *"/remote-control isn't available in this
+environment"* — the command isn't even in that session's `slash_commands` (measured on 2.1.223).
+So the Cockpit hands the conversation over the way the CLI does support it.
+
+What the button does:
+
+1. **Stops the tab's headless process.** Two processes owning one session would duplicate the
+   context on disk.
+2. **Opens a visible terminal** with `claude --remote-control --resume <session-id>` — an
+   interactive session that continues *this* conversation and prints the pairing URL/QR.
+3. **Keeps the timeline following.** The interactive session writes to the same transcript, so
+   the tab repaints from it while the remote session runs: local history and remote turns side
+   by side.
+4. **Steps the composer aside.** The button turns green; typing in the Cockpit is refused with an
+   explanation and reveals the terminal instead of respawning a process over the conversation.
+5. **Clicking again turns it off** (same toggle as the official extension): the terminal closes
+   and the Cockpit drives the conversation again. Nothing is lost — the next message resumes it.
+   Closing the terminal by hand does the same.
+
+Requirements are the CLI's, not ours: Remote Control needs a **claude.ai login** (an
+`ANTHROPIC_API_KEY` in the environment, or an `ANTHROPIC_BASE_URL` outside `api.anthropic.com`,
+disables it), and the local process must stay alive while the remote session is connected.
 
 ---
 

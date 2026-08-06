@@ -42,6 +42,7 @@ export const en = {
   // Cofre de credenciais (TOTP 2FA)
   'creds.open': 'Credentials vault (2FA)',
   'remote.publish': 'Make this session visible on the remote client / app',
+  'remote.active': 'Under Remote Control — click to turn it off (closes the terminal)',
   'creds.title': 'Credentials vault',
   'creds.enroll.intro':
     'Protect the vault with an authenticator app (Google Authenticator, Authy…). A code is required to add and to use any credential.',
@@ -124,6 +125,7 @@ export const en = {
   'skills.viaHook': 'loaded by a hook (recognised by the body)',
   'timeline.hookSkill': 'skill loaded by a hook: {0}',
   'timeline.hookContext': 'context injected by a hook',
+  'timeline.engineNotice': 'engine warning',
   'skills.hooks.title': 'hook context',
   'skills.hooks.note':
     'Text a hook injected into the context. It is not part of the skill listing, but it weighs the same.',
@@ -242,6 +244,7 @@ export const en = {
   'cmd.config': 'Open settings / configuration.',
   'cmd.permissions': 'Manage tool permissions and allow/deny rules.',
   'cmd.review': 'Review a pull request or the pending diff.',
+  'cmd.codeReview': 'Review a pull request or the current branch (add "ultra" for a cloud review).',
   'cmd.init': 'Generate a CLAUDE.md for this codebase.',
   'cmd.mcp': 'Manage MCP servers and their tools.',
   'cmd.agents': 'List and configure subagents.',
@@ -369,6 +372,10 @@ export const en = {
   'usage.session': 'Session',
   'usage.session.src': 'from statusline',
   'usage.fastMode': 'Fast mode',
+  'usage.sessionKind': 'Session kind',
+  'usage.sessionKind.interactive': 'Interactive',
+  'usage.sessionKind.attached': 'Attached',
+  'usage.sessionKind.unattended': 'Unattended',
   'usage.modelLabel': 'Model',
   'usage.effortLevel': 'Effort',
   'usage.outputStyle': 'Output style',
@@ -579,6 +586,10 @@ export const en = {
   'permission.keepPlanning': 'Keep planning',
   'permission.planEdit': 'Edit',
   'permission.planPreview': 'Preview',
+  'permission.invisibleChars':
+    'This command contains characters that do not show up on screen (marked below). Read it before approving.',
+  'permission.planMaximize': 'Maximize',
+  'permission.planRestore': 'Restore',
   'permission.planSendNotes': 'Keep planning (send my notes)',
 
   'ask.title': 'Claude has a question',
@@ -587,6 +598,10 @@ export const en = {
   'ask.other': 'Other…',
   'ask.otherPlaceholder': 'Type your answer',
   'ask.multiHint': 'Select one or more',
+  'ask.notesLabel': 'Add to this answer (optional)',
+  'ask.notesPlaceholder': 'Context, a constraint, an exception to the choice above…',
+  'ask.notesCard': 'Added:',
+  'ask.notesHint': 'Enter sends · Shift+Enter for a new line',
 
   'empty.welcome': 'Start a conversation with Claude Code.',
   'empty.cliHint': 'The Claude Code CLI must be installed and authenticated.',

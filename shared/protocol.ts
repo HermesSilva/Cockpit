@@ -208,6 +208,7 @@ export interface UsageAccount {
     modelDisplay?: string;
     effort?: string;
     outputStyle?: string;
+    kind?: string; // interactive | attached | unattended (CLI 2.1.221)
     stale?: boolean; // cache older than the trust window (shown dimmed)
   };
 }
@@ -531,6 +532,16 @@ type HostMsg =
   // Um HOOK injetou texto no contexto (sem tool_use para selar): vira item próprio no
   // timeline. `skill` sai quando o texto casa com o corpo de um SKILL.md em disco.
   | { kind: 'hookInjected'; hook: string; event?: string; skill?: string; tokens?: number }
+  // A warning the engine emitted mid-session as a `system` event: fast mode running out of
+  // usage credits (CLI 2.1.221), a subagent whose model is restricted so the parent's model
+  // answers instead (2.1.223), and whatever the next release adds. It has no tool_use to seal,
+  // so it becomes its own timeline item — otherwise the effect (another model answering, fast
+  // mode silently off) would reach the user with no cause.
+  | { kind: 'engineNotice'; id: string; text: string; topic?: string }
+  // The tab was handed over to an interactive Remote Control session in the terminal: the
+  // composer stops being the way in (the terminal / phone is), and the timeline keeps
+  // following the transcript that session writes.
+  | { kind: 'remoteState'; active: boolean }
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
   | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }

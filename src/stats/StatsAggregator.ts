@@ -89,19 +89,32 @@ export function registerModelContext(model: string, tokens?: number): void {
   knownContextLimits.set(ctxKey(model), tokens);
 }
 
+// `CLAUDE_CODE_DISABLE_1M_CONTEXT` is on for the CLI we spawn. Injected by the host
+// (the aggregator does no I/O); since CLI 2.1.223 it caps EVERY 1M model at 200K.
+let oneMDisabled = false;
+
+/** Records whether the engine has the 1M window disabled. */
+export function setOneMContextDisabled(disabled: boolean): void {
+  oneMDisabled = disabled;
+}
+
 /**
  * Claude Code's effective limit:
  *  - [1m] suffix → 1M;
  *  - known real context (/v1/models discovery) → uses that;
  *  - the Claude 5 family (…-5) is natively 1M even without [1m] (fallback before discovery);
  *  - otherwise 200K.
+ *
+ * With `CLAUDE_CODE_DISABLE_1M_CONTEXT` on, everything is capped at 200K — that is where the
+ * CLI auto-compacts, whatever the model's own window says (2.1.223).
  */
 export function deriveContextLimit(model?: string): number {
+  const cap = (n: number): number => (oneMDisabled ? Math.min(n, 200_000) : n);
   if (!model) return 200_000;
-  if (/\[1m\]/i.test(model)) return 1_000_000;
+  if (/\[1m\]/i.test(model)) return cap(1_000_000);
   const known = knownContextLimits.get(ctxKey(model));
-  if (known) return known;
-  if (/(?:fable|sonnet|opus|haiku|mythos)-5\b/i.test(model)) return 1_000_000;
+  if (known) return cap(known);
+  if (/(?:fable|sonnet|opus|haiku|mythos)-5\b/i.test(model)) return cap(1_000_000);
   return 200_000;
 }
 

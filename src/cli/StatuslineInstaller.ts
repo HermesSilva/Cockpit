@@ -28,6 +28,9 @@ if ($raw.Trim().Length -gt 0) {
       fast_mode      = $j.fast_mode
       effort         = $j.effort
       output_style   = $j.output_style
+      # Session kind (interactive|attached|unattended), que a CLI 2.1.221 passou a
+      # informar no /status. Tolerante: só grava se o payload trouxer.
+      session_kind   = if ($j.session_kind) { $j.session_kind } elseif ($j.session -and $j.session.kind) { $j.session.kind } else { $null }
     }
     ($cache | ConvertTo-Json -Depth 12) | Out-File -FilePath (Join-Path $ClaudeDir ".tootega-usage.json") -Encoding utf8
   } catch {}

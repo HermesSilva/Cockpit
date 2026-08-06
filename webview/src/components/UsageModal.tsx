@@ -20,6 +20,15 @@ interface Props {
   onEnableTracking: () => void;
 }
 
+// Session kind reported by the CLI (2.1.221). An unknown value is shown as it came — the
+// engine may add kinds we don't know about yet.
+function sessionKindLabel(t: Translator, kind: string): string {
+  if (kind === 'interactive') return t('usage.sessionKind.interactive');
+  if (kind === 'attached') return t('usage.sessionKind.attached');
+  if (kind === 'unattended') return t('usage.sessionKind.unattended');
+  return kind;
+}
+
 // "Account & Usage" modal (Usage button). It reproduces the CLI's /usage: exact account
 // (auth status) + janelas de limite reais (API OAuth, read-only).
 export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracking }: Props) {
@@ -99,6 +108,10 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                     )}
                     {usage.account.session.outputStyle && (
                       <Row k={t('usage.outputStyle')} v={usage.account.session.outputStyle} />
+                    )}
+                    {/* interactive | attached | unattended — informado a partir da CLI 2.1.221. */}
+                    {usage.account.session.kind && (
+                      <Row k={t('usage.sessionKind')} v={sessionKindLabel(t, usage.account.session.kind)} />
                     )}
                   </div>
                 </>

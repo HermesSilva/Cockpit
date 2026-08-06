@@ -44,6 +44,7 @@ export const ptBR: Partial<Strings> = {
   // Cofre de credenciais (TOTP 2FA)
   'creds.open': 'Cofre de credenciais (2FA)',
   'remote.publish': 'Tornar esta sessão visível no cliente remoto / app',
+  'remote.active': 'Sob Controle remoto — clique para desligar (encerra o terminal)',
   'creds.title': 'Cofre de credenciais',
   'creds.enroll.intro':
     'Proteja o cofre com um app autenticador (Google Authenticator, Authy…). Um código é exigido para adicionar e para usar qualquer credencial.',
@@ -184,6 +185,7 @@ export const ptBR: Partial<Strings> = {
   'cmd.config': 'Abre as configurações.',
   'cmd.permissions': 'Gerencia permissões de tools e regras allow/deny.',
   'cmd.review': 'Revisa um pull request ou o diff pendente.',
+  'cmd.codeReview': 'Revisa um pull request ou o branch atual (use "ultra" para revisão na nuvem).',
   'cmd.init': 'Gera um CLAUDE.md para este repositório.',
   'cmd.mcp': 'Gerencia servidores MCP e suas tools.',
   'cmd.agents': 'Lista e configura subagentes.',
@@ -309,6 +311,10 @@ export const ptBR: Partial<Strings> = {
   'usage.session': 'Sessão',
   'usage.session.src': 'da statusline',
   'usage.fastMode': 'Modo rápido',
+  'usage.sessionKind': 'Tipo de sessão',
+  'usage.sessionKind.interactive': 'Interativa',
+  'usage.sessionKind.attached': 'Anexada',
+  'usage.sessionKind.unattended': 'Autônoma',
   'usage.modelLabel': 'Modelo',
   'usage.effortLevel': 'Esforço',
   'usage.outputStyle': 'Estilo de saída',
@@ -519,6 +525,10 @@ export const ptBR: Partial<Strings> = {
   'permission.keepPlanning': 'Continuar planejando',
   'permission.planEdit': 'Editar',
   'permission.planPreview': 'Visualizar',
+  'permission.invisibleChars':
+    'Este comando contém caracteres que não aparecem na tela (marcados abaixo). Leia antes de aprovar.',
+  'permission.planMaximize': 'Maximizar',
+  'permission.planRestore': 'Restaurar',
   'permission.planSendNotes': 'Continuar planejando (enviar minhas notas)',
 
   'ask.title': 'O Claude tem uma pergunta',
@@ -527,6 +537,10 @@ export const ptBR: Partial<Strings> = {
   'ask.other': 'Outro…',
   'ask.otherPlaceholder': 'Digite sua resposta',
   'ask.multiHint': 'Selecione uma ou mais',
+  'ask.notesLabel': 'Acrescentar a esta resposta (opcional)',
+  'ask.notesPlaceholder': 'Contexto, uma restrição, uma exceção à escolha acima…',
+  'ask.notesCard': 'Acrescentado:',
+  'ask.notesHint': 'Enter envia · Shift+Enter quebra linha',
 
   'empty.welcome': 'Inicie uma conversa com o Claude Code.',
   'empty.cliHint': 'O Claude Code CLI precisa estar instalado e autenticado.',
@@ -573,6 +587,7 @@ export const ptBR: Partial<Strings> = {
   // Contexto injetado por hook (timeline + painel Skills).
   'timeline.hookSkill': 'skill carregada por hook: {0}',
   'timeline.hookContext': 'contexto injetado por hook',
+  'timeline.engineNotice': 'aviso do engine',
   'skills.viaHook': 'carregada por hook (reconhecida pelo corpo)',
   'skills.hooks.title': 'contexto de hook',
   'skills.hooks.note':

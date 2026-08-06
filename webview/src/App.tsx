@@ -184,6 +184,12 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // HOST (it reads the folder's CLAUDE.md): when it blocks, it sends 'effortGate' and doesn't run;
   // on confirmation, we re-send the last one with force=true.
   const onSend = (text: string, images: ImageAttachment[], selection?: string) => {
+    // Aba sob Remote Control: quem conduz é o terminal/celular. O host recusa e explica —
+    // não criamos a bolha local, que ficaria órfã.
+    if (tab?.remote) {
+      send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
+      return;
+    }
     lastSendRef.current = { text, images };
     const previews = images.map((i) => `data:${i.mediaType};base64,${i.data}`);
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
@@ -623,6 +629,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         onCredentials={onCredentials}
         onRemoteControl={onRemoteControl}
         canRemoteControl={!!(tab?.sessionId ?? tab?.session?.sessionId)}
+        remoteActive={tab?.remote === true}
       />
 
       {credsModalEl}

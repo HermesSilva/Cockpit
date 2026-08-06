@@ -71,6 +71,8 @@ export class Session {
   skillOverrides: Record<string, SkillOverride> = {};
   // `/nome` enviados antes de o init dizer quais nomes são skills.
   private pendingSlashSkills: string[] = [];
+  // Engine warnings already shown (the CLI may repeat the same one every turn).
+  private noticesSeen = new Set<string>();
 
   // Background tasks still running (Workflow / tool with run_in_background).
   // The turn that launches them ends (`result` clears busy), but the work goes on;
@@ -562,6 +564,15 @@ export class Session {
           }
           break;
         }
+        const notice = engineNotice(s);
+        if (notice) {
+          // Once per session per warning: the CLI may repeat it every turn.
+          if (!this.noticesSeen.has(notice.id)) {
+            this.noticesSeen.add(notice.id);
+            this.emit({ kind: 'engineNotice', ...notice });
+          }
+          break;
+        }
         if (s.subtype === 'init') {
           if (Array.isArray(s.slash_commands)) this.slashCommands = s.slash_commands;
           // Stores the init inventory: the MCP panel needs it at any moment,
@@ -880,6 +891,39 @@ function taskTool(taskType: unknown): string {
     default:
       return typeof taskType === 'string' && taskType ? taskType : 'Task';
   }
+}
+
+// `system` subtypes this file handles on its own — never a notice.
+const KNOWN_SYSTEM = new Set([
+  'init',
+  'background_tasks_changed',
+  'task_started',
+  'task_updated',
+  'task_notification',
+  'compact_boundary',
+]);
+
+/**
+ * A mid-session warning carried by a `system` event, recognised by SHAPE and not by an exact
+ * subtype: fast mode reporting usage credits exhausted (CLI 2.1.221) and a restricted subagent
+ * model falling back to the parent's (2.1.223) arrived this way, and the next release will add
+ * more. Anything with a warning-ish subtype, or an explicit `warning` field, is surfaced; the
+ * rest of the unknown events keep being ignored, as the stream contract requires.
+ */
+function engineNotice(s: any): { id: string; text: string; topic?: string } | undefined {
+  const subtype = typeof s?.subtype === 'string' ? s.subtype : '';
+  if (!subtype || KNOWN_SYSTEM.has(subtype)) return undefined;
+  const warnish = /warn|notice|credit|limit|restrict|degrad|fallback/i.test(subtype);
+  const explicit = typeof s.warning === 'string' && s.warning ? s.warning : undefined;
+  if (!warnish && !explicit) return undefined;
+  const text =
+    explicit ??
+    (typeof s.message === 'string' && s.message
+      ? s.message
+      : typeof s.text === 'string' && s.text
+        ? s.text
+        : subtype.replace(/_/g, ' '));
+  return { id: `${subtype}:${text}`.slice(0, 200), text, topic: subtype };
 }
 
 function safeJson(s: string): unknown {

@@ -62,7 +62,20 @@ export interface HookItem {
   ts?: number;
 }
 
-export type TimelineItem = UserItem | AssistantItem | ToolItem | HookItem;
+/**
+ * Aviso que o engine emitiu no meio da sessão (créditos do modo rápido esgotados, modelo de
+ * subagente restrito, …). Não tem tool_use para selar: vira item próprio, senão o efeito
+ * chegaria ao usuário sem a causa.
+ */
+export interface NoticeItem {
+  kind: 'notice';
+  id: string;
+  text: string;
+  topic?: string; // subtype do evento, quando o engine informou
+  ts?: number;
+}
+
+export type TimelineItem = UserItem | AssistantItem | ToolItem | HookItem | NoticeItem;
 
 export interface PermissionSuggestion {
   type?: string;

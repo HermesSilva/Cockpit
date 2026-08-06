@@ -16,6 +16,7 @@ import type {
   AssistantItem,
   ToolItem,
   HookItem,
+  NoticeItem,
   TodoItem,
   TurnUsage,
 } from './types';
@@ -30,6 +31,9 @@ export interface TabState {
   // each process is doing. `bgBusy` = derived (bgTasks.length > 0).
   bgTasks?: BackgroundTask[];
   bgBusy?: boolean;
+  // A aba foi entregue a uma sessão de Remote Control no terminal: quem conduz é o
+  // terminal/celular, e o composer daqui fica fora do caminho.
+  remote?: boolean;
   sessionId?: string; // id do transcript (casa com SessionInfo.id); vem do 'tabs'
   session?: { sessionId: string; model?: string; cwd?: string; mode?: string };
   items: TimelineItem[];
@@ -285,6 +289,18 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       };
       return { ...tab, items: [...tab.items, item] };
     }
+    // Aviso do engine (créditos do modo rápido, modelo de subagente restrito, …).
+    case 'engineNotice': {
+      if (tab.items.some((i) => i.kind === 'notice' && i.id === msg.id)) return tab;
+      const item: NoticeItem = {
+        kind: 'notice',
+        id: msg.id,
+        text: msg.text,
+        topic: msg.topic,
+        ts: Date.now(),
+      };
+      return { ...tab, items: [...tab.items, item] };
+    }
     // Texto de subagente encaminhado pelo CLI: acumula no card do Task que o lançou.
     case 'subagentText': {
       let found = false;
@@ -314,6 +330,9 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
 
     case 'stats':
       return { ...tab, stats: msg.stats };
+
+    case 'remoteState':
+      return { ...tab, remote: msg.active };
 
     case 'background':
       return { ...tab, bgTasks: msg.tasks, bgBusy: msg.tasks.length > 0 };

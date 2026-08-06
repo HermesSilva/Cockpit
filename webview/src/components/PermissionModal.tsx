@@ -5,6 +5,7 @@ import { Markdown } from './Markdown';
 import { DiffView } from './DiffView';
 import { Portal } from './Portal';
 import { send } from '../vscodeApi';
+import { splitInvisible, hasInvisible, codeLabel, codeMark } from '../invisible';
 
 interface Props {
   t: Translator;
@@ -63,6 +64,12 @@ export function PermissionModal({ t, req, onDecision }: Props) {
           </div>
 
           {req.description && <div className="perm-desc">{req.description}</div>}
+
+          {/* O comando carrega caracteres que não se veem (zero-width, bidi, padding de tab):
+              quem aprova precisa saber ANTES de decidir, não depois. */}
+          {preview?.kind === 'cmd' && hasInvisible(preview.text) && (
+            <div className="perm-warn">{t('permission.invisibleChars')}</div>
+          )}
 
           {preview && <PreviewBlock p={preview} />}
 
@@ -124,7 +131,17 @@ function PreviewBlock({ p }: { p: Preview }) {
     return (
       <div className="perm-term">
         <span className="perm-term-prompt">❯</span>
-        <code className="perm-term-cmd">{p.text}</code>
+        <code className="perm-term-cmd">
+          {splitInvisible(p.text).map((s, i) =>
+            s.code == null ? (
+              <span key={i}>{s.text}</span>
+            ) : (
+              <span key={i} className="perm-inv" title={codeLabel(s.code)}>
+                {codeMark(s.code)}
+              </span>
+            ),
+          )}
+        </code>
       </div>
     );
   }
@@ -195,13 +212,17 @@ function clip(s: string, n: number): string {
 function PlanModal({ t, req, onDecision }: Props) {
   const plan = String((req.input as Record<string, unknown>)?.plan ?? '');
   const [editing, setEditing] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [draft, setDraft] = useState(plan);
   const edited = draft.trim() !== plan.trim();
   const keepPlanning = () => onDecision('deny', edited ? draft : undefined);
   return (
     <Portal>
       <div className="modal-overlay" onClick={keepPlanning}>
-        <div className="modal perm plan" onClick={(e) => e.stopPropagation()}>
+        <div
+          className={`modal perm plan ${maximized ? 'maximized' : ''}`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="perm-head">
             <span className="perm-icon">◑</span>
             <div className="perm-headtext">
@@ -214,6 +235,17 @@ function PlanModal({ t, req, onDecision }: Props) {
               onClick={() => setEditing((v) => !v)}
             >
               {editing ? t('permission.planPreview') : t('permission.planEdit')}
+            </button>
+            {/* A long plan is unreadable in a 540px card — the toggle gives it the panel. */}
+            <button
+              type="button"
+              className="btn perm-plan-max"
+              title={maximized ? t('permission.planRestore') : t('permission.planMaximize')}
+              aria-label={maximized ? t('permission.planRestore') : t('permission.planMaximize')}
+              aria-pressed={maximized}
+              onClick={() => setMaximized((v) => !v)}
+            >
+              {maximized ? '❐' : '⛶'}
             </button>
           </div>
           <div className="perm-plan-body">

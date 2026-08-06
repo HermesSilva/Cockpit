@@ -4,14 +4,96 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.239] - 2026-08-06
+
+> Alignment with **Claude Code CLI 2.1.223** (sweep of the official changelog, 2.1.221 → 2.1.223,
+> looking for what we needed to implement, fix or stop guessing).
+
+### Added
+- **Engine warnings in the timeline.** The CLI started reporting mid-session facts that reach the
+  user as *effects* with no cause: fast mode running out of usage credits (2.1.221) and a
+  subagent whose model is restricted, so the parent's model answers instead (2.1.223). They come
+  as `system` events with no `tool_use` to seal, so each becomes its own ⚠ banner, shown once per
+  session at any verbosity. Recognised by **shape** (a warning-ish subtype or an explicit
+  `warning` field), not by a pinned subtype — the next release's warning surfaces with no code
+  change, and unknown events keep being ignored as the stream contract requires.
+- **`/code-review` in the slash catalog.** 2.1.223 renamed `/review` (adding PR support and the
+  `ultra` cloud review). The new name was landing in *Other*, with its description researched by
+  AI; it is now a curated entry, and `review` stays as the legacy alias.
+- **Maximize button in the plan review.** A long plan was unreadable inside a 540px card — the
+  toggle gives the plan the whole panel, in both the read and the edit views.
+- **A text editor per question in the Ask dialog.** Each tab (one per question) now has its own
+  free-text box that is **added to** the choices of that question — a picked option rarely says
+  everything, and the constraint that qualifies it had nowhere to go. Written text alone is a
+  valid answer too. The answer travels with the choices on the first line and the text on the
+  next, and the timeline card splits it back, so the chosen option still reads as chosen and the
+  added text shows under it. **Enter sends** (like the button), Shift+Enter breaks the line.
+- **Session kind in the Usage panel.** The CLI started reporting whether the session is
+  *interactive*, *attached* or *unattended* (2.1.221). The statusline wrapper captures it when the
+  payload carries it, and the panel shows it beside the other session flags — no field, no row.
+- **Invisible characters exposed in the permission prompt.** Zero-width, bidi overrides,
+  non-ASCII spaces, tab padding and C0 controls now show as a marked glyph (hover gives
+  `U+XXXX NAME`), with a warning above the command. The CLI hardened its own prompts against the
+  same trick in 2.1.221/2.1.223; here the approval is a person reading the command, so what is
+  hidden has to be visible before the click, not after.
+
+### Changed
+- **Picking an option in the Ask dialog no longer jumps to the next question.** With a text box
+  per question, the jump took what you were writing off the screen.
+
+### Fixed
+- **The Remote Control button actually publishes the session.** It used to send
+  `/remote-control` down the stream, and that command **only exists in an interactive
+  session** — in our headless one (`-p --input-format stream-json`, which is what gives us the
+  stream) the CLI answers *"/remote-control isn't available in this environment"*, and the
+  command isn't even in that init's `slash_commands` (measured on 2.1.223). The button now hands
+  the conversation over the way the CLI supports: it stops the tab's headless process — two
+  processes owning one session would duplicate the context on disk — and opens a **visible**
+  terminal with `claude --remote-control --resume <id>`, which continues *this* conversation and
+  prints the pairing URL/QR. The timeline keeps following the same transcript while the remote
+  session runs, so local and remote history show side by side; the composer steps aside and the
+  button turns green. Clicking it again **turns Remote Control off** (same toggle as the official
+  extension): it closes the terminal and the Cockpit drives the conversation again — nothing is
+  lost, the next message resumes it. Closing the terminal by hand does the same.
+- **The context meter no longer promises headroom the engine won't give.** With
+  `CLAUDE_CODE_DISABLE_1M_CONTEXT` set, CLI 2.1.223 disables the 1M window for **every** model
+  that has one and auto-compacts at 200K; we were still deriving 1M from the model (the `[1m]`
+  suffix, the discovered window, or the Claude 5 family), so the bar showed 1M while the CLI
+  compacted at a fifth of it. The switch is now read from the same places the CLI reads it — the
+  process environment and the `env` block of the user/project settings — and caps the meter.
+
 ## [1.0.235] - 2026-08-03
 
 ### Added
+- **A second engine: Tootega Code CLI (local model).** `tootega.engine` chooses between the
+  Claude Code CLI (default) and the `tools/agent.exe` of a TootegaEngine build
+  (`tootega.tootegaPath`), which talks to a local server (`tootega.tootegaServer`, default
+  `127.0.0.1:8080`, started with `serve.cmd`). Both engines speak the **same process
+  contract** — stream-json over stdin/stdout, the shapes in `shared/events.ts` — so the founding
+  principle is untouched: the UI still does not reimplement orchestration, it spawns a different
+  binary. `src/cli/Engine.ts` is the single place that knows which engine is active and what it
+  offers: `engineCaps` states that the local engine has no account, no extensions and no cost, so
+  those panels stay empty instead of failing (cost showing zero is not a gap — running locally
+  costs nothing). Plan mode maps to `--no-tools`, bypass-permissions to `--yes`.
+- **Engine combo in the control bar**, first from the left, before **Model** — it decides *who*
+  answers, and the model list only makes sense inside the engine that offers it. Labels moved
+  from beside each control to **above** it: with four combos in a row the inline labels doubled
+  the width and the bar wrapped. The checkbox keeps its label beside it.
+- **Engine per tab — N Claude tabs plus one Tootega tab.** The engine used to be one choice per
+  window; it is now a per-tab override, the same pattern model and effort already use, so several
+  Claude tabs and one local tab can be live at once as separate processes. Only **one** tab may
+  sit on Tootega, and the guard says why: the local server answers one request at a time and
+  keeps a single KV cache, so a second tab would queue behind the first and destroy its prefix
+  cache every turn. Switching the global setting stops only the tabs *without* an override.
 - **`tootega.tootegaEnabled` — one switch for the local engine** (off by default). Off, Tootega
   does not exist for the installation: nothing spawns `agent.exe`, `tootega.engine` is ignored,
   a tab still pinned to Tootega is unpinned, and the **Engine** combo disappears from the
   toolbar (the host offers a single engine, and the picker only renders when there is a choice).
   On, the combo and the per-tab override come back. The guard is in the host, not just the UI.
+- **A diagnosable spawn log.** The spawn line now records engine, binary, full argument list and
+  cwd; a non-zero exit records how long the process lived, how many events it emitted and the
+  tail of its stderr — where an engine that dies at startup says why. With `tootega.debugLog` on,
+  every event in and out is logged one per line, minus the `stream_event` flood.
 
 ### Changed
 - **No hardcoded model data anywhere.** The curated `MODEL_LIST` / `BASE_OF_1M` tables and the
@@ -25,6 +107,25 @@ and the project adopts semantic versioning.
   pinned in the code.
 
 ### Fixed
+- **Engine processes no longer survive a reload.** On Windows a child does not die with its
+  parent, so every reload of the extension host left the previous engines running — up to seven
+  `agent.exe` at once, each one a live conversation nobody could see. `dispose()` now stops every
+  session, and the Tootega argument list passes `--resume <sessionId>`: the agent exits on its
+  own when idle and the conversation comes back from disk with the next message.
+- **The Tootega panel no longer sits on the spinner forever.** The webview waited for a `history`
+  message that only ever came from a transcript under `~/.claude`; the local engine has none, so
+  the loader hid everything, including the user's own bubble. Empty history is now announced at
+  init, the moment the session id becomes known, and `clearConversation()` resets the flag.
+- **The Tootega answer no longer goes missing.** VS Code destroys a hidden webview and drops the
+  messages posted meanwhile; the repaint that should have recovered the timeline was replying
+  with an empty list and wiping it instead, and nothing repainted at the end of a turn. The
+  repaint now reads the transcript the agent writes after every turn
+  (`%LOCALAPPDATA%\tootega\sessions\<id>.json`): the system prompt is skipped, `tool_calls`
+  become cards with parsed input, each tool result goes **into** the card that asked for it, and
+  a turn that only called a tool does not become a bubble of raw markup.
+- **Context meter on the real window.** `system/init` may carry `context_window` and the session
+  now uses it — the Tootega agent reports the server's window, without which the meter measured a
+  16 384-token context against 200 000.
 - ***Default (…)* no longer shows a stale model.** `~/.claude/settings.json` was read once, in
   the provider's constructor, so changing `model` outside VS Code (the CLI's own `/config`) kept
   showing the old default until the window was reloaded. It is now re-read on every session

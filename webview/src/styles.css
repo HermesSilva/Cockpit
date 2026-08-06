@@ -3374,6 +3374,22 @@ body {
 .modal.perm.plan {
   width: 540px;
 }
+/* Plano maximizado: ocupa o painel inteiro, e o corpo cresce com ele. */
+.modal.perm.plan.maximized {
+  width: 96vw;
+  height: 94vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal.perm.plan.maximized .perm-plan-body {
+  flex: 1;
+  max-height: none;
+}
+.modal.perm.plan.maximized .perm-plan-textarea {
+  height: 100%;
+  min-height: 0;
+  resize: none;
+}
 .modal.perm.has-diff {
   width: 660px;
 }
@@ -3484,6 +3500,40 @@ body {
   margin-left: auto;
   font-size: 11px;
   padding: 2px 10px;
+}
+/* Botão de Controle remoto ligado: a conversa está sendo conduzida pelo terminal. */
+.composer-side-btn.remote-btn.on {
+  color: var(--vscode-charts-green, #89d185);
+  border-color: color-mix(in srgb, var(--vscode-charts-green, #89d185) 60%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 14%, transparent);
+}
+
+/* Aviso de caractere invisível no comando a aprovar + a marca de cada ocorrência. */
+.perm-warn {
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--vscode-foreground, #ddd);
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 55%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 12%, transparent);
+}
+.perm-inv {
+  display: inline-block;
+  min-width: 0.7em;
+  text-align: center;
+  border-radius: 3px;
+  color: var(--vscode-editor-background, #1f1f1f);
+  background: var(--vscode-charts-yellow, #cca700);
+  cursor: help;
+}
+
+/* Alterna maximizar/restaurar: só o glifo, ao lado de "Editar". */
+.perm-plan-max {
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 8px;
 }
 /* Textarea de edição do plano (modo editar). */
 .perm-plan-textarea {
@@ -3670,6 +3720,39 @@ body {
 .ask-other-input:focus {
   outline: 1px solid var(--vscode-focusBorder);
 }
+/* Editor de texto por pergunta: acrescenta às escolhas da aba corrente. */
+.ask-notes {
+  display: block;
+  margin-top: 10px;
+}
+.ask-notes-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+.ask-notes-hint {
+  margin-left: auto;
+  opacity: 0.75;
+}
+.ask-notes-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #444));
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ask-notes-input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
 .ask-actions {
   margin-top: 14px;
 }
@@ -3723,6 +3806,22 @@ body {
   max-height: none;
   overflow: visible;
   margin-top: 6px;
+}
+/* Texto acrescentado à escolha, registrado no card da timeline. */
+.ask-card-note {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ask-card-note-label {
+  flex: none;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.ask-card-note-text {
+  white-space: pre-wrap;
 }
 .ask-options-static .ask-option {
   cursor: default;
@@ -4647,6 +4746,35 @@ body {
   color: var(--vscode-charts-blue, #3794ff);
 }
 .hook-banner-time {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Aviso do engine (créditos do modo rápido, modelo de subagente restrito). Mesma faixa
+   do hook, em amarelo: é aviso, não erro — a sessão continua. */
+.notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 5px 10px;
+  border: 1px dashed color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 55%, transparent);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+}
+.notice-banner-mark {
+  color: var(--vscode-charts-yellow, #cca700);
+}
+.notice-banner-label {
+  font-weight: 600;
+  color: var(--vscode-foreground, #ddd);
+}
+.notice-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.notice-banner-time {
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
 }

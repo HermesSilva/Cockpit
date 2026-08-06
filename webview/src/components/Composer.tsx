@@ -43,6 +43,7 @@ interface Props {
   onCredentials?: () => void; // abre o cofre de credenciais (TOTP 2FA)
   onRemoteControl?: () => void; // publishes this session for remote control (phone/app)
   canRemoteControl?: boolean; // there is a live session id to publish
+  remoteActive?: boolean; // a aba já está sob Remote Control (terminal conduzindo)
 }
 
 interface PendingImage {
@@ -77,6 +78,7 @@ export function Composer({
   onCredentials,
   onRemoteControl,
   canRemoteControl,
+  remoteActive,
   selectionRef,
 }: Props) {
   const [includeSel, setIncludeSel] = useState(true);
@@ -835,13 +837,15 @@ export function Composer({
             </Tooltip>
           )}
           {onRemoteControl && (
-            <Tooltip text={t('remote.publish')}>
+            <Tooltip text={remoteActive ? t('remote.active') : t('remote.publish')}>
               <button
                 type="button"
-                className="composer-side-btn remote-btn"
+                className={`composer-side-btn remote-btn${remoteActive ? ' on' : ''}`}
                 onClick={onRemoteControl}
-                disabled={disabled || !canRemoteControl}
-                aria-label={t('remote.publish')}
+                // Ligado, o botão continua clicável: é o desligar (toggle).
+                disabled={!remoteActive && (disabled || !canRemoteControl)}
+                aria-pressed={remoteActive}
+                aria-label={remoteActive ? t('remote.active') : t('remote.publish')}
               >
                 <svg
                   width="15"

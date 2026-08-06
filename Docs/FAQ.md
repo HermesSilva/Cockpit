@@ -104,7 +104,14 @@ un-pinned tab once and it re-observes correctly. Make sure the installed CLI is 
 When the statusline wrapper is installed, the Usage panel surfaces session flags the CLI
 reports — **fast mode**, model label, effort and output style. These come from your
 **statusline** session (the same provenance as the real limits), labelled accordingly and
-dimmed when the cached value is stale.
+dimmed when the cached value is stale. Since CLI 2.1.221 fast mode also reports usage-credit
+exhaustion mid-session; that warning shows up in the timeline as an *engine warning* banner.
+
+### Why does the context meter show 200K on a 1M model?
+Because the engine is capped there. With `CLAUDE_CODE_DISABLE_1M_CONTEXT` set — in your
+environment or in the `env` block of `~/.claude/settings.json` / the project's
+`.claude/settings.json` — CLI 2.1.223+ disables the 1M window for **every** model that has one
+and auto-compacts at 200K. The meter follows the engine, not the model's nominal window.
 
 ### How does it show subscription limits (5h / 7d)?
 From, in order of trust: the OAuth `/usage` endpoint → the statusline wrapper's real

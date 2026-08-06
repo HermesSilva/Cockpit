@@ -20,6 +20,9 @@ export const SLASH_CATALOG: Record<string, CmdMeta> = {
   config: { cat: 'cmdcat.config', desc: 'cmd.config' },
   permissions: { cat: 'cmdcat.config', desc: 'cmd.permissions' },
   // Tools
+  // 2.1.223 renamed /review to /code-review (PR support + the `ultra` cloud review).
+  // `review` stays as the legacy alias, still offered by older CLIs.
+  'code-review': { cat: 'cmdcat.tools', desc: 'cmd.codeReview' },
   review: { cat: 'cmdcat.tools', desc: 'cmd.review' },
   init: { cat: 'cmdcat.tools', desc: 'cmd.init' },
   mcp: { cat: 'cmdcat.tools', desc: 'cmd.mcp' },

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { StatsAggregator, normalizeModel, deriveContextLimit } from '../src/stats/StatsAggregator';
+import {
+  StatsAggregator,
+  normalizeModel,
+  deriveContextLimit,
+  setOneMContextDisabled,
+} from '../src/stats/StatsAggregator';
 
 // Helpers to forge events in the shape the ingest expects.
 const initEv = (model: string) => ({ type: 'system', subtype: 'init', model } as any);
@@ -48,6 +53,18 @@ describe('StatsAggregator — robustez do parser', () => {
     expect(normalizeModel(undefined)).toBeUndefined();
     // The limit stays 1M even after the collapse.
     expect(deriveContextLimit(normalizeModel('claude-opus-4-8[1m][1m]'))).toBe(1_000_000);
+  });
+
+  it('CLAUDE_CODE_DISABLE_1M_CONTEXT derruba QUALQUER janela de 1M para 200K (CLI 2.1.223)', () => {
+    try {
+      setOneMContextDisabled(true);
+      expect(deriveContextLimit('claude-opus-4-8[1m]')).toBe(200_000);
+      expect(deriveContextLimit('claude-opus-5')).toBe(200_000); // 1M nativo
+      expect(deriveContextLimit('claude-3-5-haiku')).toBe(200_000);
+    } finally {
+      setOneMContextDisabled(false);
+    }
+    expect(deriveContextLimit('claude-opus-5')).toBe(1_000_000);
   });
 
   it('o modelo de sessão é guardado já normalizado', () => {

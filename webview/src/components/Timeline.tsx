@@ -8,10 +8,12 @@ import type {
   ToolItem,
   UserItem,
   HookItem,
+  NoticeItem,
   TodoItem,
   AskQuestion,
 } from '../types';
 import { isTodoToolName } from '../store';
+import { splitAnswerNote } from '../askAnswer';
 import { Markdown } from './Markdown';
 import { CodeBlock } from './CodeBlock';
 import { DiffView } from './DiffView';
@@ -75,7 +77,9 @@ type Group =
   | { kind: 'claude'; items: (AssistantItem | ToolItem)[] }
   // Injeção de hook: faixa própria. Não pertence a nenhum turno — o SessionStart acontece
   // antes do primeiro prompt e agrupá-lo criaria uma bolha do Claude vazia.
-  | { kind: 'hook'; item: HookItem };
+  | { kind: 'hook'; item: HookItem }
+  // Aviso do engine: faixa própria, pelo mesmo motivo do hook — pode chegar fora de turno.
+  | { kind: 'notice'; item: NoticeItem };
 
 function groupItems(items: TimelineItem[]): Group[] {
   const out: Group[] = [];
@@ -86,6 +90,10 @@ function groupItems(items: TimelineItem[]): Group[] {
     }
     if (it.kind === 'hook') {
       out.push({ kind: 'hook', item: it });
+      continue;
+    }
+    if (it.kind === 'notice') {
+      out.push({ kind: 'notice', item: it });
       continue;
     }
     const last = out[out.length - 1];
@@ -153,7 +161,9 @@ export function Timeline({
   return (
     <div className="timeline">
       {groups.map((g, gi) =>
-        g.kind === 'hook' ? (
+        g.kind === 'notice' ? (
+          <NoticeBanner key={g.item.id} item={g.item} t={t} />
+        ) : g.kind === 'hook' ? (
           <HookBanner key={g.item.id} item={g.item} t={t} />
         ) : g.kind === 'user' ? (
           ((userOrdinal += 1),
@@ -425,6 +435,8 @@ function visibleInTimeline(it: TimelineItem, verbosity: string, lastAssistId?: s
   }
   // Injeção de hook: custo real no contexto, some junto com as ferramentas no modo quiet.
   if (it.kind === 'hook') return verbosity !== 'quiet';
+  // Aviso do engine aparece em qualquer verbosidade: é a causa de algo que o usuário vai notar.
+  if (it.kind === 'notice') return true;
   // tool
   if (it.name === 'AskUserQuestion' || isTodoToolName(it.name)) return true;
   if (verbosity === 'quiet') return false;
@@ -553,6 +565,21 @@ function HookBanner({ item, t }: { item: HookItem; t: Translator }) {
         <span className="hook-banner-tk">{t('skills.activeTokens', fmtTk(item.tokens))}</span>
       )}
       {item.ts && <span className="hook-banner-time">{fmtStamp(item.ts)}</span>}
+    </div>
+  );
+}
+
+/**
+ * Aviso do engine no meio da sessão: créditos do modo rápido esgotados, modelo de subagente
+ * restrito rodando no modelo do pai. Sem esta faixa, o usuário só veria o efeito.
+ */
+function NoticeBanner({ item, t }: { item: NoticeItem; t: Translator }) {
+  return (
+    <div className="notice-banner" id={`msg-${item.id}`}>
+      <span className="notice-banner-mark">⚠</span>
+      <span className="notice-banner-label">{t('timeline.engineNotice')}</span>
+      <span className="notice-banner-text">{item.text}</span>
+      {item.ts && <span className="notice-banner-time">{fmtStamp(item.ts)}</span>}
     </div>
   );
 }
@@ -879,9 +906,9 @@ function AskCard({
       </div>
 
       {questions.map((q, i) => {
-        const ans = answerOf(q.question);
-        const tokens = ans ? ans.split(',').map((s) => s.trim()).filter(Boolean) : [];
         const known = new Set(q.options.map((o) => o.label));
+        const { core, note } = splitAnswerNote(answerOf(q.question), known);
+        const tokens = core ? core.split(',').map((s) => s.trim()).filter(Boolean) : [];
         const picked = new Set(tokens.filter((tk) => known.has(tk)));
         const other = tokens.filter((tk) => !known.has(tk)).join(', ');
         return (
@@ -914,6 +941,13 @@ function AskCard({
                 </div>
               )}
             </div>
+            {/* Texto que o usuário acrescentou à escolha (editor por aba do modal). */}
+            {note && (
+              <div className="ask-card-note">
+                <span className="ask-card-note-label">{t('ask.notesCard')}</span>
+                <span className="ask-card-note-text">{note}</span>
+              </div>
+            )}
           </div>
         );
       })}

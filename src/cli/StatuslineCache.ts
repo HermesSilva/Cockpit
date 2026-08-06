@@ -11,6 +11,9 @@ export interface StatuslineSession {
   modelDisplay?: string; // `model.display_name` (the CLI's own label)
   effort?: string; // `effort.level`
   outputStyle?: string; // `output_style.name`
+  // interactive | attached | unattended — the kind the CLI started reporting in 2.1.221
+  // (`/status`). Only shown when the payload carries it; older CLIs simply have no field.
+  kind?: string;
 }
 
 export interface RealLimits {
@@ -36,6 +39,8 @@ function parseSession(obj: any): StatuslineSession | undefined {
   if (typeof level === 'string' && level) s.effort = level;
   const style = obj.output_style?.name;
   if (typeof style === 'string' && style) s.outputStyle = style;
+  const kind = obj.session_kind ?? obj.session?.kind;
+  if (typeof kind === 'string' && kind) s.kind = kind;
   return Object.keys(s).length ? s : undefined;
 }
 

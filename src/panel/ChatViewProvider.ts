@@ -53,10 +53,10 @@ import { setInternalModel } from '../cli/AiClient';
 import { listPlugins, pluginAction } from '../cli/PluginManager';
 import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
-import { readClaudeDefaults } from '../cli/ClaudeSettings';
+import { readClaudeDefaults, oneMContextDisabled } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
 import { computeDailyTokens } from '../stats/DailyTokens';
-import { registerModelContext } from '../stats/StatsAggregator';
+import { registerModelContext, setOneMContextDisabled } from '../stats/StatsAggregator';
 import { readUsageCache } from '../cli/StatuslineCache';
 import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
@@ -143,12 +143,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // Ref of the editor's active selection (@file#a-b) to share via the composer.
   private lastSelRef?: string;
   private selListener?: vscode.Disposable;
+  private termListener?: vscode.Disposable;
   private tabSeq = 0;
 
   // Session overrides (in memory — they don't change the user's global settings).
   private modelOverride?: string;
   private effortOverride?: string;
   private permissionOverride?: string;
+  // Tabs handed over to an interactive Remote Control session: terminal + the poll that keeps
+  // the timeline following the transcript that session writes.
+  private remoteTerms = new Map<string, vscode.Terminal>();
+  private remoteWatch = new Map<string, NodeJS.Timeout>();
   // Baseline of the active tab's dropdowns before the user touched them. If, after
   // touching them, they create a NEW context (instead of sending a prompt), the choice was
   // for the new context: the new one is born with the chosen values and the previous tab
@@ -211,6 +216,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.secrets = secrets;
     if (secrets) this.creds = new CredentialsStore(secrets);
     this.defaults = readClaudeDefaults();
+    setOneMContextDisabled(oneMContextDisabled(this.workspaceCwd()));
     this.observedDefaultModel = this.memory.get<string>('defaultModel');
     this.restoreDiscovery();
     this.statusBar = statusBar;
@@ -227,6 +233,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (engineCaps().account) void resolveAccountKey(this.claudePath());
     // Editor's active selection → shareable @file#a-b ref in the composer.
     this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
+    // Closing the Remote Control terminal ends the remote session: the tab goes back to being
+    // driven from the Cockpit.
+    this.termListener = vscode.window.onDidCloseTerminal((t) => {
+      for (const [tabId, term] of this.remoteTerms) {
+        if (term === t) this.endRemoteControl(tabId);
+      }
+    });
     // Automatic keep-alive ping is OFF: any refresh via --resume writes
     // a real turn into the .jsonl (pollutes the conversation, spends tokens and reaches the agent).
     // O medidor de vida do cache no painel continua (independe do keeper).
@@ -259,6 +272,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.windowStateSub?.dispose();
     this.reloadBar?.dispose();
     this.selListener?.dispose();
+    this.termListener?.dispose();
+    for (const poll of this.remoteWatch.values()) clearInterval(poll);
+    this.remoteWatch.clear();
+    this.remoteTerms.clear();
     this.diffProviderReg?.dispose();
   }
 
@@ -518,6 +535,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // stale value until the window was reloaded. A session init is exactly when it matters —
     // the CLI has just resolved its default from that very file.
     this.defaults = readClaudeDefaults();
+    // Same reasoning for the 1M switch: it lives in the environment / the settings `env` block
+    // and decides where the CLI auto-compacts, so the meter's ceiling is re-read here too.
+    setOneMContextDisabled(oneMContextDisabled(this.workspaceCwd()));
+    this.refreshContextLimits();
     const s = tabId ? this.sessions.get(tabId) : undefined;
     // REAL model resolved by the CLI: the timing scope may have changed
     // ('default' -> real id). Recalibrates the gauge with the new scope's averages.
@@ -1239,18 +1260,89 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Publishes the session for remote control (follow/interact from the phone): it opens
-   * o contexto e roda /remote-control no CLI dele — o CLI devolve o link/QR de
-   * pareamento na conversa.
+   * Publishes the session for remote control (follow/interact from the phone).
+   *
+   * It does NOT go through `/remote-control`: that command only exists in an INTERACTIVE
+   * session. Our session is headless (`-p --input-format stream-json`, which is what gives us
+   * the stream), and there the CLI answers *"/remote-control isn't available in this
+   * environment"* — the command isn't even in the `slash_commands` of that init. Measured on
+   * CLI 2.1.223.
+   *
+   * So the Cockpit hands the conversation over to an interactive session in a visible
+   * terminal: `claude --remote-control --resume <id>` continues THIS conversation and prints
+   * the pairing URL/QR. The tab's headless process is stopped first — two processes owning the
+   * same session would duplicate the context on disk — and the tab keeps showing the
+   * transcript, repainted while the remote session runs.
    */
   private remoteControl(sessionId: string): void {
     this.openSession(sessionId); // makes sure the session is open/loaded
-    for (const [, s] of this.sessions) {
-      if (s.sessionId === sessionId || s.resumeId === sessionId) {
-        s.send('/remote-control');
-        return;
-      }
+    const entry = [...this.sessions].find(
+      ([, s]) => s.sessionId === sessionId || s.resumeId === sessionId,
+    );
+    if (!entry) return;
+    const [tabId, s] = entry;
+
+    // Toggle, like the official extension: clicking again disconnects. Closing the terminal
+    // ends the interactive session, and `onDidCloseTerminal` clears the tab's remote mode.
+    // Nothing is lost — the conversation is on disk, and turning it on again resumes it.
+    const open = this.remoteTerms.get(tabId);
+    if (open) {
+      open.dispose();
+      this.endRemoteControl(tabId);
+      return;
     }
+
+    s.stop(); // hands the conversation over: only one process owns it at a time
+    const title = this.tabMeta.get(tabId)?.title || sessionId.slice(0, 8);
+    const term = vscode.window.createTerminal({
+      name: `Claude Remote Control · ${title}`,
+      cwd: this.workspaceCwd(),
+    });
+    term.show(false); // visible while the remote session is up — never a hidden terminal
+    term.sendText(`${this.claudeCmd()} --remote-control --resume ${sessionId}`);
+    this.remoteTerms.set(tabId, term);
+    this.post({ kind: 'remoteState', active: true }, tabId);
+    this.post(
+      {
+        kind: 'engineNotice',
+        id: `remote:${sessionId}`,
+        text: vscode.l10n.t(
+          'Remote Control: this conversation now runs in the terminal. The pairing link/QR is there; the timeline keeps following it. Type in the terminal, on the phone or at claude.ai/code — the Cockpit takes over again when you close the terminal.',
+        ),
+        topic: 'remote_control',
+      },
+      tabId,
+    );
+
+    // The timeline follows what happens remotely: the interactive session writes to the same
+    // transcript, so repainting from it shows the remote turns next to the local history.
+    const poll = setInterval(() => this.replayTab(tabId, true), 3000);
+    this.remoteWatch.set(tabId, poll);
+  }
+
+  /**
+   * Ends the tab's remote mode: stops following and repaints one last time. Idempotent —
+   * disposing the terminal also fires `onDidCloseTerminal`, so this runs twice on a toggle.
+   */
+  private endRemoteControl(tabId: string): void {
+    if (!this.remoteTerms.has(tabId) && !this.remoteWatch.has(tabId)) return;
+    const poll = this.remoteWatch.get(tabId);
+    if (poll) clearInterval(poll);
+    this.remoteWatch.delete(tabId);
+    this.remoteTerms.delete(tabId);
+    this.post({ kind: 'remoteState', active: false }, tabId);
+    this.post(
+      {
+        kind: 'engineNotice',
+        id: `remote-off:${Date.now()}`,
+        text: vscode.l10n.t(
+          'Remote Control off: the conversation is back in the Cockpit. The next message resumes it here.',
+        ),
+        topic: 'remote_control',
+      },
+      tabId,
+    );
+    this.replayTab(tabId, true);
   }
 
   /** Reopens the last session the user closed (Ctrl+Shift+T). */
@@ -2165,6 +2257,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // Minimum effort gate: resolved NOW from the CLAUDE.md applicable to the session's
         // working folder (it doesn't live in the config — different folders, different
         // values). Below the minimum and without 'force' → asks for confirmation and does NOT send.
+        // Handed over to Remote Control: sending from here would respawn the headless process
+        // over a conversation the interactive session already owns.
+        const remote = this.remoteTerms.get(srcTab);
+        if (remote) {
+          remote.show(false); // o terminal é a entrada agora: traz de volta à vista
+          this.post(
+            {
+              kind: 'engineNotice',
+              id: `remote-busy:${Date.now()}`,
+              text: vscode.l10n.t(
+                'This conversation is under Remote Control: type in the terminal, on the phone or at claude.ai/code. Close the terminal to drive it from the Cockpit again.',
+              ),
+              topic: 'remote_control',
+            },
+            srcTab,
+          );
+          break;
+        }
         const s = srcSession();
         const cwd = this.workspaceCwd();
         const min = resolveMinEffort(cwd, cwd);

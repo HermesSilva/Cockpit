@@ -73,6 +73,9 @@ export interface NoticeItem {
   text: string;
   topic?: string; // subtype do evento, quando o engine informou
   ts?: number;
+  // Fronteira de compactação (S11): o banner mostra quanto foi condensado, traduzido aqui —
+  // o host manda os números crus porque não tem camada de i18n para a linha do tempo.
+  compaction?: { pre?: number; post?: number; trigger?: string; durationMs?: number };
 }
 
 export type TimelineItem = UserItem | AssistantItem | ToolItem | HookItem | NoticeItem;

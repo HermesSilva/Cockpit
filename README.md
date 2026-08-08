@@ -490,6 +490,7 @@ automatically resumes the most recent session for that directory.
 | Token-by-token streaming chat | ✅ | Type and send; the answer appears incrementally | — |
 | *Thinking* blocks with toggle | ✅ | Expand in the chat; default controlled by `tootega.showThinking` | Only appears if the model/effort emits thinking |
 | Tool-call timeline (expandable cards) | ✅ | Click a card for input/output; default via `tootega.expandToolCards` | Inline diff in the editor not yet (rendered in the webview) |
+| **Sandbox denials on the Bash card** | ✅ | An access the sandbox refused shows in an amber band above the output — the cause of the failure, not just its effect | The CLI only annotates the result with them from 2.1.224; recognised by shape, so a line we don't recognise stays in the output where it always was |
 | Interrupt the agent (Stop) | ✅ | **Stop** button or **Ctrl+Alt+.** | Stops by ending the CLI process; it respawns on the next send |
 | Session history: list, resume, rename | ✅ | **Saved contexts** drawer; click to resume; **rename** button on the context card (updates the open webview title) | Advanced search partial |
 | **Rewind** from a prompt | ✅ | Rewind button on a prompt — truncates the transcript at that point and re-arms `--resume` | Restores the conversation, not the files on disk (Git checkpoints still planned) |
@@ -548,6 +549,7 @@ automatically resumes the most recent session for that directory.
 | **Usage attribution** (long context, subagents, cache hit-rate, context per tool/MCP) | ✅ | "Where your tokens went" section in the Usage dialog | Estimated from local transcripts; `tool_result` tokens approximated at ~4 chars/token |
 | **Turn timing** segmented by (model, effort, type) | ✅ | Sample counts per segment; debounced flush with a cross-process lock (atomic merge) | — |
 | Context-near-limit alert | ✅ | Automatic warning above ~85% | — |
+| **Visible compaction** (S11) | ✅ | While it happens the indicator says *"Compacting the context…"* instead of looking stuck; the `compact_boundary` closes it with a blue band in the timeline: `before → after · −condensed · duration` | The sizes are the CLI's own (`compact_metadata`); a field it stops sending just disappears from the band |
 | Context **breakdown** via `/context` | ⏳ | — | UI ready, data source pending |
 | Historical consumption charts | ⏳ | — | — |
 | Active model / effort / mode | ✅ | Dropdowns in the panel + status bar | — |
@@ -680,6 +682,16 @@ What the button does:
 5. **Clicking again turns it off** (same toggle as the official extension): the terminal closes
    and the Cockpit drives the conversation again. Nothing is lost — the next message resumes it.
    Closing the terminal by hand does the same.
+
+**The button says what is known, not what was hoped for.** Spawning the terminal is not proof
+that the session came up, so the state is *confirmed*: the CLI registers every running process in
+`~/.claude/sessions/<pid>.json`, and [`SessionRegistry`](src/cli/SessionRegistry.ts) looks for
+this conversation there (checking the pid is really alive — a hard kill leaves the file behind).
+The button is **amber and pulsing** while connecting, **green** once the process is registered,
+and **red** if it never appeared (45s) or disappeared after being up. A failure leaves the
+terminal open — it holds the reason (login, network, a CLI error) — and the next click
+reconnects instead of toggling off. Assuming success was the bug the official extension fixed in
+2.1.224; the fix here is the same one, at the same place.
 
 Requirements are the CLI's, not ours: Remote Control needs a **claude.ai login** (an
 `ANTHROPIC_API_KEY` in the environment, or an `ANTHROPIC_BASE_URL` outside `api.anthropic.com`,

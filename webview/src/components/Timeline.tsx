@@ -68,6 +68,7 @@ interface Props {
   stats?: StatsSnapshot; // tokens enviados/recebidos p/ o contador do indicador
   onRewind?: (userIndex: number) => void; // rewind to this prompt (removing it)
   verbosity?: string; // verbose|necessary|dialogo|quiet — filters the display
+  compacting?: boolean; // o CLI está condensando o contexto (S11)
 }
 
 // Groups items into turns: each user message and, after it, the contiguous
@@ -135,6 +136,7 @@ export function Timeline({
   stats,
   onRewind,
   verbosity = 'verbose',
+  compacting,
 }: Props) {
   if (items.length === 0 && emptyHint) {
     return (
@@ -191,7 +193,15 @@ export function Timeline({
           />
         ),
       )}
-      {busy && <ActivityIndicator t={t} items={items} stats={stats} verbosity={verbosity} />}
+      {busy && (
+        <ActivityIndicator
+          t={t}
+          items={items}
+          stats={stats}
+          verbosity={verbosity}
+          compacting={compacting}
+        />
+      )}
     </div>
   );
 }
@@ -269,11 +279,13 @@ function ActivityIndicator({
   items,
   stats,
   verbosity = 'verbose',
+  compacting,
 }: {
   t: Translator;
   items: TimelineItem[];
   stats?: StatsSnapshot;
   verbosity?: string;
+  compacting?: boolean;
 }) {
   const icon = window.__TOOTEGA_ICON__;
   // "Information received" signature: it changes on every new item (text/tool),
@@ -282,7 +294,7 @@ function ActivityIndicator({
   // The gauge must only restart when something is REALLY painted in the timeline (according to
   // the verbosity). In quiet, hidden tools change command without painting anything → they don't
   // reset. That's why we count only the VISIBLE items.
-  const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant')?.id;
+  const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant' && !isEmptyAssistant(i))?.id;
   const vis = items.filter((it) => visibleInTimeline(it, verbosity, lastAssistId));
   let doneAssist = 0;
   let doneTools = 0;
@@ -383,7 +395,10 @@ function ActivityIndicator({
         <span className="activity-up" title={t('activity.sent')}>↑ {fmtCompact(sent)}</span>
         <span className="activity-down" title={t('activity.received')}>↓ {fmtCompact(received)}</span>
       </span>
-      <span className="activity-label">{cmd || t('activity.working')}</span>
+      {/* Compactando: o turno não travou, o CLI está condensando o contexto. */}
+      <span className="activity-label">
+        {compacting ? t('activity.compacting') : cmd || t('activity.working')}
+      </span>
       {showGauge && (
         <span
           className="activity-gauge"
@@ -422,11 +437,50 @@ function mergeKey(it: ToolItem): string {
 }
 
 /**
+ * Lines of a Bash result that report an access the sandbox refused. The CLI only started
+ * annotating the tool result with them in 2.1.224 (`annotateStderrWithSandboxFailures`) — before
+ * that the command just failed with no stated reason, and the user was left guessing.
+ *
+ * Recognised by SHAPE, like every other stream reading here: a line that names the sandbox and a
+ * refusal verb. The wording differs per platform and per release (`[sandbox] Blocked network
+ * request to <host>`, `denied by sandbox policy`, the filesystem denials the macOS/Linux monitors
+ * annotate), so pinning any single sentence would break on the next version — and a line we
+ * don't recognise simply stays in the output below, where it always was.
+ */
+function sandboxDenials(out: string): string[] {
+  const hits: string[] = [];
+  for (const raw of out.split('\n')) {
+    const line = raw.trim();
+    if (!line || !/sandbox/i.test(line)) continue;
+    if (!/\b(blocked|denied|denies|refused|not permitted)\b/i.test(line)) continue;
+    const clean = line.replace(/^\[sandbox\]\s*/i, '');
+    if (!hits.includes(clean)) hits.push(clean);
+    if (hits.length === 8) break; // a wall of identical denials helps nobody
+  }
+  return hits;
+}
+
+/**
+ * A turn that produced NO output — `/clear` and the other output-less commands, or a message
+ * whose blocks were all tool calls — still opens an assistant item on `message_start`. Finished
+ * with no text and no thinking, it has nothing to render: showing it paints the same blank
+ * "(no content)" bubble the CLI stopped sending its own remote/SDK clients in 2.1.224. While it
+ * is still streaming (`!done`) the empty item is the legitimate placeholder, and a cancelled one
+ * carries the "interrupted" mark — both stay.
+ */
+function isEmptyAssistant(it: TimelineItem): boolean {
+  return (
+    it.kind === 'assistant' && !!it.done && !it.canceled && !it.text?.trim() && !it.thinking?.trim()
+  );
+}
+
+/**
  * An item is DISPLAYED in the timeline according to the verbosity (display only):
  *   verbose=everything; dialogo=edits+all text; necessary=edits+final text;
  *   quiet=final text only. Ask/checklist always; user always.
  */
 function visibleInTimeline(it: TimelineItem, verbosity: string, lastAssistId?: string): boolean {
+  if (isEmptyAssistant(it)) return false; // nada a dizer: não vira bolha vazia
   if (verbosity === 'verbose') return true;
   if (it.kind === 'user') return true;
   if (it.kind === 'assistant') {
@@ -473,7 +527,7 @@ function ClaudeTurn({
   //   necessary = edits + final explanation
   //   dialogo   = edits + text of what it is doing (all the text)
   //   quiet     = only the final explanation
-  const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant')?.id;
+  const lastAssistId = [...items].reverse().find((i) => i.kind === 'assistant' && !isEmptyAssistant(i))?.id;
   const visible = items.filter((it) => visibleInTimeline(it, verbosity, lastAssistId));
   // Buffer to merge ADJACENT tools with the same key (same file/command).
   let group: ToolItem[] = [];
@@ -574,6 +628,29 @@ function HookBanner({ item, t }: { item: HookItem; t: Translator }) {
  * restrito rodando no modelo do pai. Sem esta faixa, o usuário só veria o efeito.
  */
 function NoticeBanner({ item, t }: { item: NoticeItem; t: Translator }) {
+  // Fronteira de compactação: não é aviso, é a MEDIDA do que saiu do contexto.
+  const c = item.compaction;
+  if (c) {
+    const dropped = c.pre !== undefined && c.post !== undefined ? c.pre - c.post : undefined;
+    return (
+      <div className="notice-banner compact-banner" id={`msg-${item.id}`}>
+        <span className="notice-banner-mark">⇲</span>
+        <span className="notice-banner-label">
+          {t(c.trigger === 'manual' ? 'timeline.compactManual' : 'timeline.compactAuto')}
+        </span>
+        <span className="notice-banner-text">
+          {c.pre !== undefined && c.post !== undefined
+            ? `${fmtTk(c.pre)} → ${fmtTk(c.post)}`
+            : c.pre !== undefined
+              ? fmtTk(c.pre)
+              : ''}
+          {dropped !== undefined && dropped > 0 && ` · −${fmtTk(dropped)}`}
+          {c.durationMs !== undefined && ` · ${fmtMs(c.durationMs)}`}
+        </span>
+        {item.ts && <span className="notice-banner-time">{fmtStamp(item.ts)}</span>}
+      </div>
+    );
+  }
   return (
     <div className="notice-banner" id={`msg-${item.id}`}>
       <span className="notice-banner-mark">⚠</span>
@@ -801,15 +878,27 @@ function ToolCard({ items, t, defaultOpen }: { items: ToolItem[]; t: Translator;
           : undefined;
     // Bash: highlighted shell command + output (stdout) as text.
     if (name === 'Bash' && command !== undefined) {
+      const out = item.result !== undefined ? toText(item.result) : undefined;
+      const denials = out ? sandboxDenials(out) : [];
       return (
         <>
           {description && <div className="tool-desc">{description}</div>}
           <div className="tool-section-label">{t('tool.command')}</div>
           <CodeBlock code={command} language="bash" />
-          {item.result !== undefined && (
+          {denials.length > 0 && (
+            <div className="tool-sandbox">
+              <div className="tool-sandbox-head">⛨ {t('tool.sandboxDenied')}</div>
+              <ul className="tool-sandbox-list">
+                {denials.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {out !== undefined && (
             <>
               <div className="tool-section-label">{t('tool.output')}</div>
-              <pre className="tool-pre">{toText(item.result)}</pre>
+              <pre className="tool-pre">{out}</pre>
             </>
           )}
         </>

@@ -44,6 +44,7 @@ export interface PersistedStats {
   reopenCount: number; // how many times the context was reopened/resumed
   peakContextUsed: number;
   peakContextTs?: number;
+  peakCacheTokens?: number; // cache size (create+read) at the peak turn
   activeMs: number; // real execution time (sum of the prompts, without idleness)
   // State for between-turn detection (not displayed, but must survive a reopen)
   lastContextUsed: number;

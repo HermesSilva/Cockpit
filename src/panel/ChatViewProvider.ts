@@ -51,6 +51,7 @@ import {
 } from '../cli/VoiceDictionary';
 import { setInternalModel } from '../cli/AiClient';
 import { listPlugins, pluginAction } from '../cli/PluginManager';
+import { isSessionLive } from '../cli/SessionRegistry';
 import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults, oneMContextDisabled } from '../cli/ClaudeSettings';
@@ -154,6 +155,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // the timeline following the transcript that session writes.
   private remoteTerms = new Map<string, vscode.Terminal>();
   private remoteWatch = new Map<string, NodeJS.Timeout>();
+  // What is KNOWN about each handover (see `watchRemote`) — never an assumption.
+  private remotePhase = new Map<string, 'connecting' | 'active' | 'failed'>();
   // Baseline of the active tab's dropdowns before the user touched them. If, after
   // touching them, they create a NEW context (instead of sending a prompt), the choice was
   // for the new context: the new one is born with the chosen values and the previous tab
@@ -276,6 +279,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     for (const poll of this.remoteWatch.values()) clearInterval(poll);
     this.remoteWatch.clear();
     this.remoteTerms.clear();
+    this.remotePhase.clear();
     this.diffProviderReg?.dispose();
   }
 
@@ -1301,7 +1305,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     term.show(false); // visible while the remote session is up — never a hidden terminal
     term.sendText(`${this.claudeCmd()} --remote-control --resume ${sessionId}`);
     this.remoteTerms.set(tabId, term);
-    this.post({ kind: 'remoteState', active: true }, tabId);
+    this.remotePhase.set(tabId, 'connecting');
+    this.post({ kind: 'remoteState', active: true, phase: 'connecting' }, tabId);
     this.post(
       {
         kind: 'engineNotice',
@@ -1315,9 +1320,70 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
 
     // The timeline follows what happens remotely: the interactive session writes to the same
-    // transcript, so repainting from it shows the remote turns next to the local history.
-    const poll = setInterval(() => this.replayTab(tabId, true), 3000);
+    // transcript, so repainting from it shows the remote turns next to the local history. The
+    // same tick confirms the handover really happened.
+    const ids = [sessionId, s.sessionId, s.resumeId];
+    const since = Date.now();
+    const poll = setInterval(() => {
+      this.replayTab(tabId, true);
+      void this.watchRemote(tabId, ids, since);
+    }, 3000);
     this.remoteWatch.set(tabId, poll);
+  }
+
+  /**
+   * Confirms — or denies — the handover, instead of assuming it worked. The interactive process
+   * registers itself in the CLI's live-session registry at startup, so its presence there is the
+   * evidence: while it is missing we are still `connecting`; once it shows up we are `active`;
+   * if it never appears, or disappears while we still believe we are connected, the session is
+   * down and the user has to be told, with the terminal left open so the error is readable.
+   */
+  private static readonly REMOTE_CONNECT_MS = 45_000;
+
+  private async watchRemote(tabId: string, ids: (string | undefined)[], since: number) {
+    if (!this.remoteWatch.has(tabId)) return; // toggled off between ticks
+    const live = await isSessionLive(...ids);
+    if (!this.remoteWatch.has(tabId)) return; // …or during the read
+    const phase = this.remotePhase.get(tabId);
+
+    if (live) {
+      if (phase !== 'active') {
+        this.remotePhase.set(tabId, 'active');
+        this.post({ kind: 'remoteState', active: true, phase: 'active' }, tabId);
+      }
+      return;
+    }
+    // Still within the startup window and never seen up: keep waiting.
+    if (phase === 'connecting' && Date.now() - since < ChatViewProvider.REMOTE_CONNECT_MS) return;
+
+    this.failRemoteControl(
+      tabId,
+      phase === 'active'
+        ? vscode.l10n.t(
+            'Remote Control dropped: the interactive session in the terminal is no longer running. The conversation is intact on disk — check the terminal for the reason and click the button to reconnect.',
+          )
+        : vscode.l10n.t(
+            'Remote Control did not connect: the interactive session never started. The terminal is still open with the reason (login, network or a CLI error) — fix it and click the button to try again.',
+          ),
+    );
+  }
+
+  /**
+   * Failure state: stops following, keeps the terminal open (it holds the reason) and leaves the
+   * tab ready for another attempt — the remote button reconnects instead of toggling off.
+   */
+  private failRemoteControl(tabId: string, detail: string): void {
+    const poll = this.remoteWatch.get(tabId);
+    if (poll) clearInterval(poll);
+    this.remoteWatch.delete(tabId);
+    this.remoteTerms.delete(tabId); // not disposed: the error stays on screen
+    this.remotePhase.set(tabId, 'failed');
+    this.post({ kind: 'remoteState', active: false, phase: 'failed', detail }, tabId);
+    this.post(
+      { kind: 'engineNotice', id: `remote-fail:${Date.now()}`, text: detail, topic: 'remote_control' },
+      tabId,
+    );
+    this.replayTab(tabId, true);
   }
 
   /**
@@ -1330,6 +1396,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (poll) clearInterval(poll);
     this.remoteWatch.delete(tabId);
     this.remoteTerms.delete(tabId);
+    this.remotePhase.delete(tabId);
     this.post({ kind: 'remoteState', active: false }, tabId);
     this.post(
       {
@@ -1999,7 +2066,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const price = priceOf(id);
       meta[id] = {
         label: known?.displayName,
-        contextTokens: known?.contextTokens ?? (/\[1m\]/i.test(id) ? ONE_M : 200_000),
+        contextTokens: known?.contextTokens ?? (/\[1m\]/i.test(id) || /muse-spark/i.test(id) || /(?:fable|sonnet|opus|haiku|mythos|spark)-5\b/i.test(id) ? ONE_M : 200_000),
         inMTok: price?.inMTok,
         outMTok: price?.outMTok,
         priceMult:
@@ -2344,6 +2411,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendConfig();
         this.postTaskTimings(srcTab); // novo escopo: recalibra o gauge
         break;
+      case 'removeModel': {
+        const baseId = m.model.replace(/\[1m\]/i, '');
+        const key = baseId.toLowerCase();
+        // Só remove modelos que foram adicionados (custom/observados): não apaga o catálogo descoberto real
+        // mas a remoção é permitida para qualquer entrada — descoberta recria os oficiais no próximo tryDiscoverModels.
+        let removed = false;
+        for (const k of [...this.discoveredModels.keys()]) {
+          if (k.toLowerCase() === key) {
+            this.discoveredModels.delete(k);
+            removed = true;
+          }
+        }
+        // Também remove a variante [1m] se existir
+        for (const k of [...this.discoveredModels.keys()]) {
+          if (k.toLowerCase() === `${key}[1m]`.toLowerCase()) {
+            this.discoveredModels.delete(k);
+            removed = true;
+          }
+        }
+        // Se a sessão estava pinada no modelo removido, volta para default (mesmo se não estava no catálogo)
+        const cur = srcSession().modelOverride;
+        let curCleared = false;
+        if (cur && cur.replace(/\[1m\]/i, '').toLowerCase() === key) {
+          srcSession().setModel('default');
+          this.saveSessionModel(srcSession());
+          this.pendingRestart = true;
+          curCleared = true;
+        }
+        if (removed) {
+          const remaining = [...this.discoveredModels.values()];
+          void this.memory.update('modelCatalog', remaining);
+        }
+        if (removed || curCleared) this.sendConfig();
+        break;
+      }
       case 'setEffort':
         this.snapComboBaseline(srcTab);
         srcSession().setEffort(m.effort);

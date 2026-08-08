@@ -45,6 +45,8 @@ export const ptBR: Partial<Strings> = {
   'creds.open': 'Cofre de credenciais (2FA)',
   'remote.publish': 'Tornar esta sessão visível no cliente remoto / app',
   'remote.active': 'Sob Controle remoto — clique para desligar (encerra o terminal)',
+  'remote.connecting': 'Conectando o Controle remoto — aguardando a sessão no terminal',
+  'remote.failed': 'Controle remoto caiu — veja o motivo no terminal; clique para reconectar',
   'creds.title': 'Cofre de credenciais',
   'creds.enroll.intro':
     'Proteja o cofre com um app autenticador (Google Authenticator, Authy…). Um código é exigido para adicionar e para usar qualquer credencial.',
@@ -141,6 +143,7 @@ export const ptBR: Partial<Strings> = {
   'attach.view': 'Ver imagem',
 
   'activity.working': 'Processando…',
+  'activity.compacting': 'Compactando o contexto…',
   'activity.sent': 'Tokens enviados',
   'activity.received': 'Tokens recebidos',
 
@@ -226,7 +229,7 @@ export const ptBR: Partial<Strings> = {
   'tip.ctx.toolAcceptance':
     'Proporção de solicitações de permissão de ferramenta que você permitiu vs. negou nesta sessão, por ferramenta.',
   'tip.ctx.activity': 'Contadores que sobrevivem à reabertura/retomada do contexto.',
-  'tip.ctx.peak': 'Maior tamanho de contexto já atingido nesta sessão (em tokens).',
+  'tip.ctx.peak': 'Maior tamanho de contexto já atingido nesta sessão (em tokens), com o tamanho do cache (creation + read) naquele pico.',
   'tip.ctx.compactions':
     'Quantas vezes o contexto foi condensado entre turnos para liberar espaço (detectado quando o total encolhe).',
   'tip.ctx.resets':
@@ -268,6 +271,7 @@ export const ptBR: Partial<Strings> = {
 
   'tool.input': 'Entrada',
   'tool.output': 'Saída',
+  'tool.sandboxDenied': 'Bloqueado pelo sandbox',
   'tool.command': 'Comando',
   'tool.running': 'Executando…',
   'tool.error': 'Erro',
@@ -394,6 +398,7 @@ export const ptBR: Partial<Strings> = {
   'tip.stop.desc': 'Para o agente agora. O turno atual encerra e a sessão continua aberta.',
 
   'controls.model': 'Modelo',
+  'controls.model.remove': 'Remover modelo',
   'controls.context': 'Contexto',
   'controls.price': 'Preço',
   'controls.usage': 'Consumo',
@@ -588,6 +593,8 @@ export const ptBR: Partial<Strings> = {
   'timeline.hookSkill': 'skill carregada por hook: {0}',
   'timeline.hookContext': 'contexto injetado por hook',
   'timeline.engineNotice': 'aviso do engine',
+  'timeline.compactAuto': 'contexto compactado (auto)',
+  'timeline.compactManual': 'contexto compactado (manual)',
   'skills.viaHook': 'carregada por hook (reconhecida pelo corpo)',
   'skills.hooks.title': 'contexto de hook',
   'skills.hooks.note':

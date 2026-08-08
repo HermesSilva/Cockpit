@@ -264,6 +264,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   };
 
   const onModel = (model: string) => send({ kind: 'setModel', model });
+  const onRemoveModel = (model: string) => send({ kind: 'removeModel', model });
   const onEffort = (effort: string) => send({ kind: 'setEffort', effort });
   const onPermissionMode = (mode: string) => send({ kind: 'setPermissionMode', mode });
   const onAllowAgents = (value: boolean) => send({ kind: 'setAllowAgents', value });
@@ -379,6 +380,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onInstall={() => send({ kind: 'installCli' })}
           onOpenLink={(href) => send({ kind: 'openLink', href })}
           onModel={onModel}
+          onRemoveModel={onRemoveModel}
           onEffort={onEffort}
           onPermission={onPermissionMode}
           onAllowAgents={onAllowAgents}
@@ -512,6 +514,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             stats={tab?.stats}
             onRewind={tab?.status === 'busy' ? undefined : (idx) => setConfirmRewind(idx)}
             verbosity={state.config?.verbosity}
+            compacting={tab?.compacting === true}
           />
           {/* Link de exportação: SÓ no fim e quando ocioso. Some ao recomeçar um
               turno (busy) e reaparece no novo fim ao concluir. */}
@@ -630,6 +633,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         onRemoteControl={onRemoteControl}
         canRemoteControl={!!(tab?.sessionId ?? tab?.session?.sessionId)}
         remoteActive={tab?.remote === true}
+        remotePhase={tab?.remotePhase}
       />
 
       {credsModalEl}

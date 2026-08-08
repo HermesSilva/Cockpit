@@ -114,7 +114,8 @@ export function deriveContextLimit(model?: string): number {
   if (/\[1m\]/i.test(model)) return cap(1_000_000);
   const known = knownContextLimits.get(ctxKey(model));
   if (known) return cap(known);
-  if (/(?:fable|sonnet|opus|haiku|mythos)-5\b/i.test(model)) return cap(1_000_000);
+  if (/(?:fable|sonnet|opus|haiku|mythos|spark)-5\b/i.test(model)) return cap(1_000_000);
+  if (/muse-spark/i.test(model)) return 1_000_000;
   return 200_000;
 }
 
@@ -205,6 +206,7 @@ export class StatsAggregator {
   private compactionCount = 0;
   private peakContextUsed = 0;
   private peakContextTs?: number;
+  private peakCacheTokens = 0;
   // REAL execution time: sum of the time of each prompt (send → result/stop).
   // It does NOT include idleness (agent stopped). turnStartTs marks the turn in flight.
   private activeMs = 0;
@@ -699,6 +701,7 @@ export class StatsAggregator {
     if (total > this.peakContextUsed) {
       this.peakContextUsed = total;
       this.peakContextTs = now;
+      this.peakCacheTokens = cw + cr;
     }
 
     // Per-model accumulation (per-model cost is always a table estimate).
@@ -815,6 +818,7 @@ export class StatsAggregator {
     this.compactionCount = p.compactionCount;
     this.peakContextUsed = p.peakContextUsed;
     this.peakContextTs = p.peakContextTs;
+    this.peakCacheTokens = p.peakCacheTokens ?? 0;
     this.activeMs = p.activeMs ?? 0;
     this.keepCacheAlive = p.keepCacheAlive ?? false;
     this.prevContextUsed = p.lastContextUsed;
@@ -856,6 +860,7 @@ export class StatsAggregator {
       reopenCount: this.reopenCount,
       peakContextUsed: this.peakContextUsed,
       peakContextTs: this.peakContextTs,
+      peakCacheTokens: this.peakCacheTokens || undefined,
       activeMs: this.activeMs + this.liveTurnMs(),
       lastContextUsed: this.prevContextUsed,
       lastCacheRead: this.prevCacheRead,
@@ -919,6 +924,7 @@ export class StatsAggregator {
       cacheRecacheCostUsd: this.cacheRecacheCostUsd || undefined,
       compactionCount: this.compactionCount,
       peakContextUsed: this.peakContextUsed || undefined,
+      peakCacheTokens: this.peakCacheTokens || undefined,
       activeMs: this.activeMs + this.liveTurnMs(),
       perModel: this.perModel.size > 0 ? [...this.perModel.values()] : undefined,
       // Cache life (1h TTL): age since the last activity and how much is left.

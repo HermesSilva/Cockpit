@@ -97,6 +97,7 @@ export interface StatsSnapshot {
   // Compaction (context condensed between turns) — S11
   compactionCount?: number;
   peakContextUsed?: number; // largest context reached in the session
+  peakCacheTokens?: number; // cache size (create+read) at the peak turn
   // REAL session execution time (sum of each prompt's time; excludes idleness)
   activeMs?: number;
   // --- Vida do cache (TTL de 1h) e keep-alive ---
@@ -538,10 +539,30 @@ type HostMsg =
   // so it becomes its own timeline item — otherwise the effect (another model answering, fast
   // mode silently off) would reach the user with no cause.
   | { kind: 'engineNotice'; id: string; text: string; topic?: string }
+  // Compaction (S11). `active` = it is happening right now (the turn is not stuck, the CLI is
+  // condensing); the boundary arrives with `active: false` and the sizes, so the webview can say
+  // in the user's language how much context was condensed. Numbers travel raw — no prose here,
+  // the host has no i18n layer of its own for the timeline.
+  | {
+      kind: 'compaction';
+      active: boolean;
+      pre?: number;
+      post?: number;
+      trigger?: string;
+      durationMs?: number;
+    }
   // The tab was handed over to an interactive Remote Control session in the terminal: the
   // composer stops being the way in (the terminal / phone is), and the timeline keeps
   // following the transcript that session writes.
-  | { kind: 'remoteState'; active: boolean }
+  // `phase` says what is KNOWN, not what was hoped for: 'connecting' while the interactive
+  // process hasn't registered itself yet, 'active' once it has, 'failed' when it never came up
+  // or died on its own. `active` stays for the composer's on/off state.
+  | {
+      kind: 'remoteState';
+      active: boolean;
+      phase?: 'connecting' | 'active' | 'failed';
+      detail?: string;
+    }
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
   | { kind: 'mcpBusy'; busy: boolean } // health-check do `claude mcp list` em curso
   | { kind: 'locale'; locale: string }
@@ -606,6 +627,7 @@ export type WebviewToHost =
     }
   | { kind: 'askResponse'; requestId: string; answers: Record<string, string> }
   | { kind: 'setModel'; model: string }
+  | { kind: 'removeModel'; model: string }
   | { kind: 'setEffort'; effort: string }
   | { kind: 'setPermissionMode'; mode: string }
   | { kind: 'setEngine'; engine: string }

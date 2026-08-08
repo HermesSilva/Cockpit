@@ -44,6 +44,7 @@ interface Props {
   onRemoteControl?: () => void; // publishes this session for remote control (phone/app)
   canRemoteControl?: boolean; // there is a live session id to publish
   remoteActive?: boolean; // a aba já está sob Remote Control (terminal conduzindo)
+  remotePhase?: 'connecting' | 'active' | 'failed'; // o que se SABE da conexão remota
 }
 
 interface PendingImage {
@@ -79,6 +80,7 @@ export function Composer({
   onRemoteControl,
   canRemoteControl,
   remoteActive,
+  remotePhase,
   selectionRef,
 }: Props) {
   const [includeSel, setIncludeSel] = useState(true);
@@ -836,16 +838,21 @@ export function Composer({
               </button>
             </Tooltip>
           )}
-          {onRemoteControl && (
-            <Tooltip text={remoteActive ? t('remote.active') : t('remote.publish')}>
+          {onRemoteControl && (() => {
+            // Falha não é "desligado": o indicador fica, e o clique é reconectar.
+            const label = remoteLabel(t, remoteActive, remotePhase);
+            return (
+            <Tooltip text={label}>
               <button
                 type="button"
-                className={`composer-side-btn remote-btn${remoteActive ? ' on' : ''}`}
+                className={`composer-side-btn remote-btn${remoteActive ? ' on' : ''}${
+                  remotePhase === 'connecting' ? ' connecting' : ''
+                }${remotePhase === 'failed' ? ' failed' : ''}`}
                 onClick={onRemoteControl}
                 // Ligado, o botão continua clicável: é o desligar (toggle).
                 disabled={!remoteActive && (disabled || !canRemoteControl)}
                 aria-pressed={remoteActive}
-                aria-label={remoteActive ? t('remote.active') : t('remote.publish')}
+                aria-label={label}
               >
                 <svg
                   width="15"
@@ -863,7 +870,8 @@ export function Composer({
                 </svg>
               </button>
             </Tooltip>
-          )}
+            );
+          })()}
           <SlashMenu t={t} commands={slashCommands} meta={slashMeta} busy={slashBusy} onPick={pickSlash} />
           <Tooltip text={allExpanded ? t('composer.collapseAll') : t('composer.expandAll')}>
             <button
@@ -902,6 +910,13 @@ export function Composer({
       )}
     </div>
   );
+}
+
+/** O que o botão diz é o que se sabe da conexão — nunca "ligado" por otimismo. */
+function remoteLabel(t: Translator, active?: boolean, phase?: 'connecting' | 'active' | 'failed'): string {
+  if (phase === 'failed') return t('remote.failed');
+  if (phase === 'connecting') return t('remote.connecting');
+  return active ? t('remote.active') : t('remote.publish');
 }
 
 function fileUriToPath(uri: string): string {

@@ -43,6 +43,8 @@ export const en = {
   'creds.open': 'Credentials vault (2FA)',
   'remote.publish': 'Make this session visible on the remote client / app',
   'remote.active': 'Under Remote Control — click to turn it off (closes the terminal)',
+  'remote.connecting': 'Connecting Remote Control — waiting for the session in the terminal',
+  'remote.failed': 'Remote Control is down — see the terminal for the reason; click to reconnect',
   'creds.title': 'Credentials vault',
   'creds.enroll.intro':
     'Protect the vault with an authenticator app (Google Authenticator, Authy…). A code is required to add and to use any credential.',
@@ -126,6 +128,8 @@ export const en = {
   'timeline.hookSkill': 'skill loaded by a hook: {0}',
   'timeline.hookContext': 'context injected by a hook',
   'timeline.engineNotice': 'engine warning',
+  'timeline.compactAuto': 'context compacted (auto)',
+  'timeline.compactManual': 'context compacted (manual)',
   'skills.hooks.title': 'hook context',
   'skills.hooks.note':
     'Text a hook injected into the context. It is not part of the skill listing, but it weighs the same.',
@@ -200,6 +204,7 @@ export const en = {
   'attach.view': 'View image',
 
   'activity.working': 'Working…',
+  'activity.compacting': 'Compacting the context…',
   'activity.sent': 'Tokens sent',
   'activity.received': 'Tokens received',
 
@@ -287,7 +292,7 @@ export const en = {
   'tip.ctx.toolAcceptance':
     'Share of tool permission requests you allowed vs. denied this session, per tool.',
   'tip.ctx.activity': 'Counters that survive reopening/resuming the context.',
-  'tip.ctx.peak': 'Largest context size reached this session (in tokens).',
+  'tip.ctx.peak': 'Largest context size reached this session (in tokens), with the cache size (create + read) at that peak.',
   'tip.ctx.compactions':
     'How many times the context was condensed between turns to free up room (detected when the total shrinks).',
   'tip.ctx.resets':
@@ -329,6 +334,7 @@ export const en = {
 
   'tool.input': 'Input',
   'tool.output': 'Output',
+  'tool.sandboxDenied': 'Blocked by the sandbox',
   'tool.command': 'Command',
   'tool.running': 'Running…',
   'tool.error': 'Error',
@@ -455,6 +461,7 @@ export const en = {
   'tip.stop.desc': 'Stop the agent now. The current turn ends and the session stays open.',
 
   'controls.model': 'Model',
+  'controls.model.remove': 'Remove model',
   'controls.context': 'Context',
   'controls.price': 'Price',
   'controls.usage': 'Usage',

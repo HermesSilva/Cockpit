@@ -50,6 +50,7 @@ interface Props {
   onInstall: () => void;
   onOpenLink: (href: string) => void;
   onModel: (model: string) => void;
+  onRemoveModel: (model: string) => void;
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
   onAllowAgents: (value: boolean) => void;
@@ -95,6 +96,7 @@ export function HubView({
   onInstall,
   onOpenLink,
   onModel,
+  onRemoveModel,
   onEffort,
   onPermission,
   onAllowAgents,
@@ -239,6 +241,7 @@ export function HubView({
                 config={config}
                 activeModel={activeModel}
                 onModel={onModel}
+                onRemoveModel={onRemoveModel}
                 onEffort={onEffort}
                 onPermission={onPermission}
                 onAllowAgents={onAllowAgents}
@@ -615,14 +618,14 @@ function ContextInfo({
               <div className="stats-section-title">{t('stats.activity')}</div>
             </Tooltip>
             <Row k={t('stats.activity.turns')} v={fmtInt(stats.turnCount ?? 0, locale)} />
-            {stats.peakContextUsed != null && stats.peakContextUsed > 0 && (
-              <Row
-                k={t('stats.activity.peak')}
-                v={`${fmtCompact(stats.peakContextUsed)} (${fmtPct(Math.min(1, stats.peakContextUsed / (stats.contextLimit || 1)))})`}
-                tip={t('tip.ctx.peak')}
-                tipMeta={meta(t, 'computed', 'high')}
-              />
-            )}
+            {stats.peakContextUsed != null && stats.peakContextUsed > 0 && (() => {
+              const peakPct = fmtPct(Math.min(1, stats.peakContextUsed / (stats.contextLimit || 1)));
+              const peakStr = `${fmtCompact(stats.peakContextUsed)} (${peakPct})`;
+              // Sessões antigas não têm peakCacheTokens persistido: usa o cache atual como fallback
+              const peakCache = stats.peakCacheTokens ?? (stats.cacheReadTokens + stats.cacheCreateTokens);
+              const v = peakCache > 0 ? `${peakStr} · cache ${fmtCompact(peakCache)}` : peakStr;
+              return <Row k={t('stats.activity.peak')} v={v} tip={t('tip.ctx.peak')} tipMeta={meta(t, 'computed', 'high')} />;
+            })()}
             {(stats.compactionCount ?? 0) > 0 && (
               <Row
                 k={t('stats.activity.compactions')}

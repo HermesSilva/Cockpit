@@ -56,6 +56,7 @@ export class Session {
   stats: StatsAggregator;
   resumeId?: string;
   busy = false;
+  private compacting = false; // the CLI is condensing the context right now (S11)
   slashCommands: string[] = [];
   sessionId?: string;
   // Latest `system/init` inventory (tools + MCP servers). The MCP panel's source:
@@ -455,7 +456,35 @@ export class Session {
 
   private setBusy(b: boolean): void {
     this.busy = b;
+    // A turn that ends without a boundary (interrupted, or an error while compacting) must not
+    // leave the indicator lit — nothing is being condensed after the turn is over.
+    if (!b) this.setCompacting(false);
     this.hooks.onBusy(b);
+  }
+
+  /** Announces (once) that the CLI is condensing the context — the `compacting` status repeats. */
+  private setCompacting(active: boolean): void {
+    if (this.compacting === active) return;
+    this.compacting = active;
+    this.emit({ kind: 'compaction', active });
+  }
+
+  /**
+   * Seals the compaction with what the CLI measured: `compact_metadata` gives the trigger, the
+   * size before and (when it knows it) after. Shape-tolerant — a version that stops sending a
+   * field just makes that number disappear from the banner.
+   */
+  private emitCompactBoundary(meta: any): void {
+    const num = (v: unknown): number | undefined =>
+      typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+    this.emit({
+      kind: 'compaction',
+      active: false,
+      pre: num(meta?.pre_tokens ?? meta?.preTokens),
+      post: num(meta?.post_tokens ?? meta?.postTokens),
+      trigger: typeof meta?.trigger === 'string' ? meta.trigger : undefined,
+      durationMs: num(meta?.duration_ms ?? meta?.durationMs),
+    });
   }
 
   /** Inserts or refines it (`task_started` arrives later and knows the real tool). */
@@ -562,6 +591,23 @@ export class Session {
             this.setBusy(true);
             this.stats.beginTurn();
           }
+          break;
+        }
+        // Compaction stopped being a silent pause: the CLI reports it while it happens
+        // (`status: compacting`, repeated every 30s) and seals it with `compact_boundary`
+        // carrying how much context was condensed. 2.1.224 started showing both to its own
+        // attached clients; here they are the S11 event and the reason the turn stalls.
+        if (s.subtype === 'status') {
+          const status = String(s.status ?? '');
+          if (status === 'compacting') this.setCompacting(true);
+          else if (s.compact_result !== undefined || s.compact_error !== undefined) {
+            this.setCompacting(false);
+          }
+          break;
+        }
+        if (s.subtype === 'compact_boundary') {
+          this.setCompacting(false);
+          this.emitCompactBoundary(s.compact_metadata ?? s.compactMetadata);
           break;
         }
         const notice = engineNotice(s);

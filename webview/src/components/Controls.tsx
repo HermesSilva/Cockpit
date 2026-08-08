@@ -10,6 +10,7 @@ interface Props {
   config?: SessionConfig;
   activeModel?: string; // the model the CLI is running (from the init event)
   onModel: (model: string) => void;
+  onRemoveModel: (model: string) => void;
   onEffort: (effort: string) => void;
   onPermission: (mode: string) => void;
   onAllowAgents: (value: boolean) => void;
@@ -21,6 +22,7 @@ export function Controls({
   config,
   activeModel,
   onModel,
+  onRemoveModel,
   onEffort,
   onPermission,
   onAllowAgents,
@@ -88,6 +90,7 @@ export function Controls({
             currentModel={config.model}
             defaultFor={config.defaultModel ?? activeModel}
             onSelect={onModelSelect}
+            onRemove={onRemoveModel}
           />
         </label>
       </Tooltip>
@@ -173,6 +176,7 @@ interface ModelSelectProps {
   currentModel: string;
   defaultFor?: string; // o que 'default' resolve (p/ rótulo)
   onSelect: (v: string) => void;
+  onRemove: (v: string) => void;
 }
 
 /** Model selector with 3 columns (model · context · price). It is a custom dropdown
@@ -186,6 +190,7 @@ function ModelSelect({
   currentModel,
   defaultFor,
   onSelect,
+  onRemove,
 }: ModelSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -204,8 +209,17 @@ function ModelSelect({
   if (!known && currentModel && currentModel !== CUSTOM) rows.push(currentModel);
   rows.push(...models);
 
-  const currentLabel =
-    value === CUSTOM ? `${t('controls.model')} …` : modelLabel(value, t, defaultFor, meta);
+  const currentLabel = (() => {
+    if (value === CUSTOM) return `${t('controls.model')} …`;
+    const base = modelLabel(value, t, defaultFor, meta);
+    const md =
+      meta?.[value] ?? (value === 'default' && defaultFor ? meta?.[defaultFor] : undefined);
+    const ctx = md?.contextTokens ? formatContext(md.contextTokens) : undefined;
+    if (!ctx) return base;
+    // Evita "… 1M · 1M" quando o label já traz o sufixo 1M
+    if (ctx === '1M' && /1M\s*$/.test(base)) return base;
+    return `${base} · ${ctx}`;
+  })();
 
   const pick = (v: string) => {
     setOpen(false);
@@ -231,23 +245,39 @@ function ModelSelect({
           </div>
           {rows.map((m) => {
             const md = meta?.[m];
+            const canRemove = m !== 'default' && m !== CUSTOM && !md?.label;
             return (
-              <button
-                key={m}
-                type="button"
-                role="option"
-                aria-selected={m === value}
-                className={`ctrl-modelsel-row${m === value ? ' sel' : ''}`}
-                onClick={() => pick(m)}
-              >
-                <span className="c-model">{modelLabel(m, t, defaultFor, meta)}</span>
-                <span className="c-ctx">
-                  {md?.contextTokens ? formatContext(md.contextTokens) : '—'}
-                </span>
-                <span className="c-price" title={priceTitle(md)}>
-                  {md?.priceMult != null ? formatMult(md.priceMult) : '—'}
-                </span>
-              </button>
+              <div key={m} className={`ctrl-modelsel-row-wrap${m === value ? ' sel' : ''}`}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={m === value}
+                  className={`ctrl-modelsel-row${m === value ? ' sel' : ''}`}
+                  onClick={() => pick(m)}
+                >
+                  <span className="c-model">{modelLabel(m, t, defaultFor, meta)}</span>
+                  <span className="c-ctx">
+                    {md?.contextTokens ? formatContext(md.contextTokens) : '—'}
+                  </span>
+                  <span className="c-price" title={priceTitle(md)}>
+                    {md?.priceMult != null ? formatMult(md.priceMult) : '—'}
+                  </span>
+                </button>
+                {canRemove && (
+                  <button
+                    type="button"
+                    className="ctrl-modelsel-remove"
+                    title={t('controls.model.remove')}
+                    aria-label={t('controls.model.remove')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(m);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             );
           })}
           <button

@@ -34,6 +34,8 @@ export interface TabState {
   // A aba foi entregue a uma sessão de Remote Control no terminal: quem conduz é o
   // terminal/celular, e o composer daqui fica fora do caminho.
   remote?: boolean;
+  remotePhase?: 'connecting' | 'active' | 'failed';
+  compacting?: boolean; // o CLI está condensando o contexto agora
   sessionId?: string; // id do transcript (casa com SessionInfo.id); vem do 'tabs'
   session?: { sessionId: string; model?: string; cwd?: string; mode?: string };
   items: TimelineItem[];
@@ -301,6 +303,27 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       };
       return { ...tab, items: [...tab.items, item] };
     }
+    // Compactação (S11): enquanto acontece é só um estado (o turno não travou); a fronteira
+    // vira faixa na linha do tempo com o tamanho antes/depois.
+    case 'compaction': {
+      if (msg.active) return { ...tab, compacting: true };
+      const base = { ...tab, compacting: false };
+      if (msg.pre === undefined && msg.post === undefined) return base;
+      const item: NoticeItem = {
+        kind: 'notice',
+        id: `compact:${msg.pre ?? '?'}:${Date.now()}`,
+        text: '',
+        topic: 'compact_boundary',
+        ts: Date.now(),
+        compaction: {
+          pre: msg.pre,
+          post: msg.post,
+          trigger: msg.trigger,
+          durationMs: msg.durationMs,
+        },
+      };
+      return { ...base, items: [...base.items, item] };
+    }
     // Texto de subagente encaminhado pelo CLI: acumula no card do Task que o lançou.
     case 'subagentText': {
       let found = false;
@@ -332,7 +355,7 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       return { ...tab, stats: msg.stats };
 
     case 'remoteState':
-      return { ...tab, remote: msg.active };
+      return { ...tab, remote: msg.active, remotePhase: msg.phase };
 
     case 'background':
       return { ...tab, bgTasks: msg.tasks, bgBusy: msg.tasks.length > 0 };

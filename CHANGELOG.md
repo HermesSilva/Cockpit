@@ -4,6 +4,63 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.246] - 2026-08-08
+
+> Alignment with **Claude Code CLI 2.1.226** (sweep of the official changelog, 2.1.224 → 2.1.226;
+> 2.1.226 is bug fixes only). Also carries the model-picker and peak-cache work done between
+> 1.0.239 and 1.0.245, versions that were only packaging bumps and were never documented.
+
+### Added
+- **Visible compaction (S11).** Compaction used to be a silent pause: the turn stalled with no
+  explanation and only the token graph, after the fact, showed that something had been condensed.
+  The CLI reports both halves and neither was rendered — `system`/`status: "compacting"` while it
+  runs (repeated every 30s) and `compact_boundary` to seal it, carrying `trigger`, `pre_tokens`,
+  `post_tokens` and `duration_ms`. `compact_boundary` was even listed in `KNOWN_SYSTEM`, but only
+  so it would not become a warning. Now the activity indicator says **"Compacting the context…"**
+  instead of looking stuck, and the boundary becomes a blue band in the timeline with
+  `before → after · −condensed · duration`. The numbers travel raw over the protocol and are
+  translated in the webview — the host has no i18n layer for the timeline. 2.1.224 started showing
+  the same two things to its own attached clients.
+- **Sandbox denials on the Bash card.** From 2.1.224 the CLI annotates the tool result with the
+  access the sandbox refused (`annotateStderrWithSandboxFailures`, keyed by `toolUseId`); before
+  that a sandboxed command just failed with no stated reason. The denials now show in an amber
+  band above the output — the cause, next to the effect. Recognised by **shape** (a line naming
+  the sandbox next to a refusal verb), because the wording differs per platform and per release;
+  a line we do not recognise stays in the output, where it always was.
+
+### Changed
+- **Remote Control says what is known, not what was hoped for.** Spawning the terminal was taken
+  as proof that the handover worked: the button went green immediately, and a failed pairing left
+  the tab claiming "connected" while the poll repainted a transcript that never moved. The state
+  is now *confirmed* against the live-session registry the CLI keeps in
+  `~/.claude/sessions/<pid>.json` (new [`SessionRegistry`](src/cli/SessionRegistry.ts), which also
+  checks the pid is really alive — a hard kill leaves the file behind). Amber and pulsing while
+  connecting, green once the process registers itself, **red and persistent** if it never appeared
+  (45s) or disappeared after being up. A failure keeps the terminal open — it holds the reason —
+  and the next click reconnects instead of toggling off. This is the same bug the official
+  extension fixed in 2.1.224, and 2.1.224/2.1.225 also replaced its 8-second toast with a
+  persistent indicator and a reconnect shortcut.
+
+### Fixed
+- **Blank bubble after `/clear`.** `message_start` always opened an assistant item, so a turn that
+  produced no output — `/clear` and the other output-less commands, or a message whose blocks were
+  all tool calls — ended as an empty bubble. It is now hidden once finished with no text and no
+  thinking; while it is still streaming the empty item is the legitimate placeholder, and a
+  cancelled one carries the "interrupted" mark, so both stay. `lastAssistId` skips them too —
+  otherwise, in `quiet`/`necessary`, the "final text" resolved to the empty item and the timeline
+  went blank. 2.1.224 fixed the same `(no content)` message for its remote and SDK clients.
+
+### Added *(work carried from 1.0.240–1.0.245)*
+- **Remove a model from the picker.** Entries observed or added by hand piled up with no way out;
+  the row now has a remove action. Discovery recreates the official ones on the next sweep, so
+  nothing real is lost.
+- **Context size in the model combo.** The closed selector shows the window of the chosen model,
+  not just its name (without repeating "1M · 1M" when the label already carries the suffix).
+- **Cache at the context peak.** `peakCacheTokens` is persisted alongside `peakContextUsed`, and
+  the Activity block shows the cache size at that turn. Sessions saved before this fall back to
+  the current cache.
+- **1M window for the `spark` and `muse-spark` models** in the context-limit derivation.
+
 ## [1.0.239] - 2026-08-06
 
 > Alignment with **Claude Code CLI 2.1.223** (sweep of the official changelog, 2.1.221 → 2.1.223,

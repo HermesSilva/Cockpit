@@ -4,6 +4,20 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.247] - 2026-08-09
+
+### Removed
+- **Permission audit is no longer shown in the Hub.** The **Tool acceptance** block and the
+  **Permission denials** log (E5) sat in the Hub's context panel, between the cost numbers and the
+  Model/Effort/Permission controls. They are per-conversation audit data on what is the entry
+  screen: a row reading `PowerShell 0% (3)` followed by three `AUTO` refusals from an earlier
+  session says nothing useful next to the "New session" button, and the `AUTO` entries are not even
+  your decisions — they are the engine's own rule refusing the call. Both blocks are gone from
+  `ContextInfo` (`webview/src/components/HubView.tsx`), along with the CSS that only they used.
+  Nothing was removed from the pipeline: `StatsAggregator` still records `toolDecisions` and
+  `denials`, `StatsStore` still persists them per session, and `toolAcceptance`/`recentDenials`
+  still travel in the `StatsSnapshot` — the data is there for whichever surface displays it next.
+
 ## [1.0.246] - 2026-08-08
 
 > Alignment with **Claude Code CLI 2.1.226** (sweep of the official changelog, 2.1.224 → 2.1.226;

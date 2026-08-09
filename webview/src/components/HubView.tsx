@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Translator } from '../i18n';
 import type { StatsSnapshot, SessionConfig, SessionInfo } from '../../../shared/protocol';
-import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort, fmtClock } from '../util/format';
+import { fmtInt, fmtPct, fmtCompact, fmtBytes, fmtDuration, fmtUsdShort } from '../util/format';
 import type { TooltipRow } from './Tooltip';
 import { Controls } from './Controls';
 import { Tooltip, type TooltipMeta } from './Tooltip';
@@ -514,9 +514,6 @@ function ContextInfo({
   const band = pct < 0.6 ? 'ok' : pct < 0.85 ? 'warn' : 'crit';
   const elapsed = stats.sessionStartTs ? now - stats.sessionStartTs : undefined;
 
-  // Tool acceptance: only shown when there were decisions in the session.
-  const toolRows = stats.toolAcceptance?.filter((d) => d.allow + d.allowAlways + d.deny > 0) ?? [];
-
   return (
     <>
       <Tooltip className="tt-block" title={t('stats.context')} text={t('tip.ctx.context')} meta={meta(t, 'server', 'high')}>
@@ -650,53 +647,9 @@ function ContextInfo({
         </div>
       )}
 
-      {/* Aceitação de ferramentas (só exibe se houve decisões) */}
-      {toolRows.length > 0 && (
-        <div className="ctx-tool-acceptance">
-          <Tooltip className="tt-block" title={t('stats.tools.acceptance')} text={t('tip.ctx.toolAcceptance')} meta={meta(t, 'local', 'high')}>
-            <div className="stats-section-title">{t('stats.tools.acceptance')}</div>
-          </Tooltip>
-          {toolRows.map((d) => {
-            const total = d.allow + d.allowAlways + d.deny;
-            const acceptPct = total > 0 ? Math.round(((d.allow + d.allowAlways) / total) * 100) : 0;
-            return (
-              <div key={d.tool} className="stat-row">
-                <span className="stat-k stat-tool-name">{d.tool}</span>
-                <span className="stat-v">
-                  <span className={`stat-accept-pct ${acceptPct >= 80 ? 'ok' : acceptPct >= 50 ? 'warn' : 'crit'}`}>
-                    {acceptPct}%
-                  </span>
-                  <span className="muted"> ({total})</span>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Log de negações de permissão (E5) — auditoria das últimas recusas. */}
-      {stats.recentDenials && stats.recentDenials.length > 0 && (
-        <div className="ctx-denials">
-          <Tooltip className="tt-block" title={t('stats.denials')} text={t('tip.ctx.denials')} meta={meta(t, 'local', 'high')}>
-            <div className="stats-section-title">{t('stats.denials')}</div>
-          </Tooltip>
-          {stats.recentDenials.slice(0, 8).map((d, i) => (
-            <div key={`${d.ts}-${i}`} className="stat-row stat-denial">
-              <span className="stat-k stat-tool-name" title={d.reason || undefined}>
-                <span className="stat-denial-x">✕</span> {d.tool}
-                {/* Negada pelo próprio CLI (regra de auto mode), não por você. */}
-                {d.source === 'engine' && (
-                  <span className="stat-denial-src" title={t('tip.ctx.denials.engine')}>
-                    {t('stats.denials.engine')}
-                  </span>
-                )}
-                {d.reason && <span className="muted stat-denial-reason"> · {d.reason}</span>}
-              </span>
-              <span className="stat-v muted">{fmtClock(d.ts)}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Aceitação de ferramentas e log de negações (E5) NÃO ficam aqui: o Hub é a
+          tela inicial, e essa auditoria é da conversa. Os dados continuam sendo
+          coletados/persistidos (StatsAggregator + StatsStore) para quem os exibir. */}
     </>
   );
 }

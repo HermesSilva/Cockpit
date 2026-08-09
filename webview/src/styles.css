@@ -4331,39 +4331,6 @@ body {
   background: var(--vscode-inputValidation-warningBackground, rgba(210, 153, 34, 0.15));
   border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
 }
-/* Log de negações de permissão (E5) */
-.ctx-denials {
-  margin-top: 10px;
-}
-.stat-denial .stat-k {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-  min-width: 0;
-  overflow: hidden;
-}
-.stat-denial-x {
-  color: var(--vscode-errorForeground, #f14c4c);
-  font-weight: 700;
-}
-.stat-denial-reason {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Chip "auto": negação decidida pelo CLI (modo auto), não pelo usuário. */
-.stat-denial-src {
-  flex: none;
-  padding: 0 4px;
-  font-size: 9.5px;
-  line-height: 14px;
-  border-radius: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--vscode-badge-foreground, #e0e0e0);
-  background: var(--vscode-badge-background, #4d4d4d);
-}
-
 /* Aviso de erro/abort do turno (banner acima do composer) */
 .turn-error {
   display: flex;

@@ -2,6 +2,11 @@
 // GET https://api.anthropic.com/api/oauth/usage — read-only, spends NO tokens.
 // Uses the OAuth accessToken from ~/.claude/.credentials.json (read-only; never writes
 // nor logs credentials). Short in-memory cache so it isn't repeated on every refresh.
+//
+// Resilience matters more than freshness here: a single timeout/5xx used to drop the whole
+// panel back to the local $ estimate, which is a much worse answer than a real % read a few
+// minutes ago. So a failed fetch retries once and then falls back to the last good reading
+// while it is still meaningful (STALE_OK_MS).
 import * as https from 'node:https';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -13,11 +18,23 @@ export interface ApiUsage {
   fiveHour?: LimitWindow; // kind:'session'
   sevenDay?: LimitWindow; // kind:'weekly_all'
   weeklyScoped?: ScopedBucket[]; // kind:'weekly_scoped' (um por modelo escopado)
+  ageMs?: number; // >0 when this is a reused reading (the live fetch failed)
 }
 
 const CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
-const TTL_MS = 30_000;
+const TTL_MS = 30_000; // positive cache
+const FAIL_TTL_MS = 5_000; // negative cache — short, so a blip doesn't stick for half a minute
+const STALE_OK_MS = 15 * 60_000; // last good reading still usable while the API is unreachable
+const RETRY_DELAY_MS = 700;
+
 let cache: { at: number; data?: ApiUsage } | undefined;
+let lastGood: { at: number; data: ApiUsage } | undefined;
+let lastError: string | undefined;
+
+/** Why the last live fetch failed, and how old the reading in hand is (Usage modal/diagnostics). */
+export function usageDiagnostics(): { lastError?: string; lastGoodAgeMs?: number } {
+  return { lastError, lastGoodAgeMs: lastGood ? Date.now() - lastGood.at : undefined };
+}
 
 /** OAuth accessToken (read-only). The server is the authority on validity. */
 function readToken(): string | undefined {
@@ -76,24 +93,13 @@ export function parseUsage(j: any): ApiUsage {
   return out;
 }
 
-/**
- * Fetches the real account usage. 30s cache (use force=true on the Usage button
- * click for fresh data). Returns undefined with no token / on failure / on 401.
- */
-export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> {
-  if (!force && cache && Date.now() - cache.at < TTL_MS) return Promise.resolve(cache.data);
+type Attempt =
+  | { ok: true; data: ApiUsage }
+  | { ok: false; reason: string; retry: boolean };
+
+/** One GET. `retry` tells whether the failure is transient (network/timeout/429/5xx). */
+function requestUsage(token: string): Promise<Attempt> {
   return new Promise((resolve) => {
-    const token = readToken();
-    if (!token) {
-      dlog('usage-api', 'no OAuth accessToken in ~/.claude/.credentials.json');
-      cache = { at: Date.now(), data: undefined };
-      resolve(undefined);
-      return;
-    }
-    const done = (data?: ApiUsage) => {
-      cache = { at: Date.now(), data };
-      resolve(data);
-    };
     const req = https.request(
       {
         hostname: 'api.anthropic.com',
@@ -111,29 +117,84 @@ export function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> 
         res.setEncoding('utf8');
         res.on('data', (c) => (body += c));
         res.on('end', () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          const code = res.statusCode ?? 0;
+          if (code >= 200 && code < 300) {
             try {
-              done(parseUsage(JSON.parse(body)));
+              resolve({ ok: true, data: parseUsage(JSON.parse(body)) });
             } catch (e) {
-              dlog('usage-api', `200 but invalid JSON: ${String(e)}`);
-              done(undefined);
+              resolve({ ok: false, reason: `bad JSON: ${String(e)}`, retry: false });
             }
-          } else {
-            dlog('usage-api', `HTTP ${res.statusCode}: ${body.slice(0, 200)}`); // 401/expired/etc. -> fallback
-            done(undefined);
+            return;
           }
+          // 401 = token expired/revoked; the CLI refreshes it — retrying now won't help.
+          resolve({
+            ok: false,
+            reason: `HTTP ${code}`,
+            retry: code === 429 || code >= 500,
+          });
         });
       },
     );
-    req.on('error', (e) => {
-      dlog('usage-api', `network error: ${String((e as Error)?.message || e)}`);
-      done(undefined);
-    });
+    req.on('error', (e) =>
+      resolve({ ok: false, reason: `network: ${String((e as Error)?.message || e)}`, retry: true }),
+    );
     req.on('timeout', () => {
-      dlog('usage-api', 'timeout (8s)');
       req.destroy();
-      done(undefined);
+      resolve({ ok: false, reason: 'timeout (8s)', retry: true });
     });
     req.end();
   });
+}
+
+/** Last successful reading, while it is recent enough to still be worth showing. */
+function staleFallback(): ApiUsage | undefined {
+  if (!lastGood) return undefined;
+  const age = Date.now() - lastGood.at;
+  if (age > STALE_OK_MS) return undefined;
+  return { ...lastGood.data, ageMs: age };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fetches the real account usage. 30s cache (use force=true on the Usage button
+ * click for fresh data). On failure retries once (transient causes only) and then reuses the
+ * last good reading; returns undefined only when there is no usable real data at all.
+ */
+export async function fetchAccountUsage(force = false): Promise<ApiUsage | undefined> {
+  if (cache && !force) {
+    const age = Date.now() - cache.at;
+    if (age < (cache.data ? TTL_MS : FAIL_TTL_MS)) return cache.data ?? staleFallback();
+  }
+  const token = readToken();
+  if (!token) {
+    lastError = 'no OAuth accessToken in ~/.claude/.credentials.json';
+    dlog('usage-api', lastError);
+    cache = { at: Date.now(), data: undefined };
+    return staleFallback();
+  }
+  let last: Attempt = { ok: false, reason: 'not attempted', retry: false };
+  for (let i = 0; i < 2; i++) {
+    if (i > 0) await sleep(RETRY_DELAY_MS);
+    last = await requestUsage(token);
+    if (last.ok || !last.retry) break;
+    dlog('usage-api', `attempt ${i + 1} failed (${last.reason})`);
+  }
+  if (last.ok) {
+    lastError = undefined;
+    lastGood = { at: Date.now(), data: last.data };
+    cache = { at: Date.now(), data: last.data };
+    return last.data;
+  }
+  lastError = last.reason;
+  dlog('usage-api', `giving up: ${last.reason}`);
+  cache = { at: Date.now(), data: undefined };
+  return staleFallback();
+}
+
+/** Test helper: drops every cached state. */
+export function resetUsageCache(): void {
+  cache = undefined;
+  lastGood = undefined;
+  lastError = undefined;
 }

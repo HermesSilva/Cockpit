@@ -62,7 +62,7 @@ import { readUsageCache } from '../cli/StatuslineCache';
 import { taskTimingsScoped, recordTaskTiming } from '../stats/TaskTimings';
 import { fetchAuthStatus } from '../cli/AuthStatus';
 import { isEnabled as usageTrackingEnabled, enableUsageTracking } from '../cli/StatuslineInstaller';
-import { fetchAccountUsage } from '../cli/UsageApi';
+import { fetchAccountUsage, usageDiagnostics } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
 import { buildSystemPrompt } from '../cli/SystemPromptTemplate';
@@ -598,9 +598,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async refreshUsage(force = false): Promise<void> {
+    const before = this.lastUsageSource;
     try {
       // 0) REAL account usage via the OAuth API (read-only, no token spend). It is the
-      // mesma fonte do /usage do CLI — bate exatamente. Melhor fonte.
+      // mesma fonte do /usage do CLI — bate exatamente. Melhor fonte. Já resiliente:
+      // retenta e reaproveita a última leitura boa antes de deixar cair na estimativa.
       const api = await fetchAccountUsage(force);
       if (api && (api.fiveHour || api.sevenDay)) {
         this.lastLimits = { fiveHour: api.fiveHour, sevenDay: api.sevenDay };
@@ -635,6 +637,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.lastLimitsSource = 'estimate';
           this.lastUsageSource = 'estimate';
         }
+      }
+      // Losing the real % is worth a line in the log — it is the difference between the panel
+      // showing the account's actual percentage and showing a local USD estimate.
+      if (before !== this.lastUsageSource) {
+        const why = usageDiagnostics().lastError;
+        log(`usage source: ${before} -> ${this.lastUsageSource}${why ? ` (${why})` : ''}`);
       }
       for (const [id, s] of this.sessions) {
         s.applyLimits(this.lastLimits, this.lastLimitsSource);
@@ -1165,6 +1173,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             weeklyScoped: scoped,
           },
           source: this.lastUsageSource,
+          // Falling back to the estimate is never silent: the modal says why the real source
+          // (OAuth API) didn't answer.
+          sourceError:
+            this.lastUsageSource === 'estimate' ? usageDiagnostics().lastError : undefined,
           trackingEnabled: usageTrackingEnabled(),
           breakdown: local.breakdown,
           attribution: local.attribution,

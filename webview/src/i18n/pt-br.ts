@@ -367,6 +367,7 @@ export const ptBR: Partial<Strings> = {
     'Estimativa local — os limites exatos da conta vêm da statusline do CLI (indisponível em modo headless). Ative o tracking ao vivo para capturá-los.',
   'usage.est.waiting':
     'Estimativa local — os limites reais aparecem depois que o Claude atualiza a statusline (use o CLI uma vez).',
+  'usage.est.reason': 'Uso real indisponível: {0}.',
   'usage.enableTracking': 'Ativar ao vivo',
   'usage.breakdown': 'Detalhamento (7 dias)',
   'usage.breakdown.byModel': 'Por modelo',

@@ -132,6 +132,10 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
               {!live && (
                 <div className="usage-est-note">
                   <span>{t(usage.trackingEnabled ? 'usage.est.waiting' : 'usage.est.note')}</span>
+                  {/* Why the real source (OAuth API) didn't answer — technical code, not prose. */}
+                  {usage.sourceError && (
+                    <span className="usage-muted">{t('usage.est.reason', usage.sourceError)}</span>
+                  )}
                   {!usage.trackingEnabled && (
                     <button type="button" className="usage-cta" onClick={onEnableTracking}>
                       {t('usage.enableTracking')}

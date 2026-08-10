@@ -988,6 +988,16 @@ Claude Code now reports these limits as a `limits[]` array — one entry per win
 with whatever the server calls it (today, Fable). The older fixed fields
 (`five_hour`, `seven_day`, `seven_day_<model>`) are still accepted as a fallback.
 
+**Order of sources, and what happens when one fails.** The meters prefer the OAuth
+`/usage` API (the account's actual percentage), then the statusline cache, and only then a
+local USD estimate computed from this machine's transcripts. A failed API call no longer
+drops straight to that estimate: transient causes (timeout, 429, 5xx, dropped connection)
+are retried once, and if the call still fails the **last good reading is reused for up to
+15 minutes** — a real percentage from a few minutes ago beats a table estimate. `401`
+is not retried, since an expired token only comes back when the CLI refreshes it. When the
+panel does fall back, the estimate note states the reason (e.g. `HTTP 401`), and the change
+of source is written to the **Tootega Cockpit** output channel.
+
 The **Enable real usage tracking** command installs a statusline *wrapper* that:
 
 1. writes `rate_limits` and `context_window` to `~/.claude/.tootega-usage.json`;

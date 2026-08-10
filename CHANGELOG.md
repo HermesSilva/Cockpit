@@ -4,6 +4,25 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [1.0.248] - 2026-08-09
+
+### Fixed
+- **The Usage panel fell back to the local estimate far too easily.** The limit meters prefer the
+  OAuth `/usage` API — the account's real percentage — but `fetchAccountUsage` treated *every*
+  failure as final: one 8s timeout, one 5xx or one dropped connection and the panel switched to the
+  price-table estimate in USD (`Current session $219.56`), discarding a real reading taken seconds
+  earlier. The negative result was then cached for 30s while the refresh timer only runs every 120s,
+  so a momentary blip kept the wrong answer on screen for minutes. `src/cli/UsageApi.ts` now
+  retries once on transient causes (timeout, 429, 5xx, network error), keeps the negative cache to
+  5s so the next cycle tries again promptly, and — when the call still fails — **reuses the last
+  good reading for up to 15 minutes** (`ageMs` carries its age). A `401` is not retried: an expired
+  token only recovers when the CLI refreshes it, and insisting would just burn time.
+- **Falling back to the estimate is no longer silent.** `usageDiagnostics()` exposes why the live
+  fetch failed; `ChatViewProvider` logs the transition (`usage source: api -> estimate (HTTP 401)`)
+  to the output channel and ships the reason in `usageData.sourceError`. The Usage modal prints it
+  under the estimate note (`usage.est.reason`, both catalogs), instead of only repeating the advice
+  about the statusline — which is not even the primary source any more.
+
 ## [1.0.247] - 2026-08-09
 
 ### Removed

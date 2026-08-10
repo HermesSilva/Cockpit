@@ -430,6 +430,7 @@ export const en = {
     'Local estimate — exact account limits come from the CLI statusline (not reachable headless). Enable live tracking to capture them.',
   'usage.est.waiting':
     'Local estimate — real account limits appear after Claude refreshes the statusline (use the CLI once).',
+  'usage.est.reason': 'Real usage unavailable: {0}.',
   'usage.enableTracking': 'Enable live tracking',
   'usage.breakdown': 'Breakdown (7 days)',
   'usage.breakdown.byModel': 'By model',

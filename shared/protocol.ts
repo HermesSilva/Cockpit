@@ -273,6 +273,9 @@ export interface UsageData {
   // weeklyScoped = per-model weekly windows (e.g. Fable), labelled by the server.
   buckets: { fiveHour?: UsageBucket; sevenDay?: UsageBucket; weeklyScoped?: ScopedBucket[] };
   source: 'api' | 'statusline' | 'stream' | 'estimate'; // origin of the %
+  // Why the real source is unavailable (HTTP 401, timeout, …). Only set when `source` fell
+  // back to 'estimate' — technical code, shown as a suffix of the estimate note.
+  sourceError?: string;
   trackingEnabled: boolean; // wrapper de statusline instalado (captura rate_limits real)
   // Detalhamento local 7d (por modelo / origem) — estimativa, sempre presente.
   breakdown?: UsageBreakdown;

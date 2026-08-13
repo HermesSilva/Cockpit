@@ -68,12 +68,15 @@ function makeSession(): Session {
     settings: () => ({ model: 'default', effort: 'default', permission: 'default', allowAgents: true }),
     askLanguage: () => 'en',
     extraSystemPrompt: () => extraPrompt,
+    quietPrompt: () => quietPrompt,
   };
   return new Session(hooks);
 }
 
 // Texto de system prompt devolvido pelo hook (as settings, no host real).
 let extraPrompt: string | undefined;
+// Diretiva quiet devolvida pelo hook (campo próprio nas settings).
+let quietPrompt: string | undefined;
 
 describe('Session — continuidade de contexto (anti-duplicação)', () => {
   beforeEach(() => {
@@ -111,6 +114,7 @@ describe('Session — texto extra no system prompt', () => {
   beforeEach(() => {
     spawns.length = 0;
     extraPrompt = undefined;
+    quietPrompt = undefined;
   });
 
   it('não passa nada quando está desligado', () => {
@@ -131,6 +135,24 @@ describe('Session — texto extra no system prompt', () => {
     s.send('p2');
     expect(spawns[1].opts.extraSystemPrompt).toBe('DIRETIVA DE SHELL');
     expect(spawns[1].opts.resumeSessionId).toBe('sess-A');
+  });
+
+  // O campo quiet é independente do texto do usuário: vazio não injeta, preenchido
+  // acompanha todo spawn (senão a regra sumiria no meio da conversa, como a de shell).
+  it('quiet vazio não passa nada; preenchido acompanha o respawn', () => {
+    const s1 = makeSession();
+    s1.send('p');
+    expect(spawns[0].opts.quietPrompt).toBeUndefined();
+
+    quietPrompt = 'SEM NARRAÇÃO';
+    const s2 = makeSession();
+    s2.send('p');
+    spawns[1].fireInit('sess-B');
+    expect(spawns[1].opts.quietPrompt).toBe('SEM NARRAÇÃO');
+
+    s2.setModel('claude-opus-4-8'); // respawn
+    s2.send('p2');
+    expect(spawns[2].opts.quietPrompt).toBe('SEM NARRAÇÃO');
   });
 });
 
@@ -229,6 +251,7 @@ describe('Session — carga de skill ponta a ponta (eventos reais)', () => {
   beforeEach(() => {
     spawns.length = 0;
     extraPrompt = undefined;
+    quietPrompt = undefined;
   });
 
   it('marca loaded a partir do stream que o CLI realmente emite', () => {

@@ -37,6 +37,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // p/ o SecretStorage (keychain do SO). Best-effort, silencioso.
   void provider.migrateApiKeyFromSettings();
 
+  // One-off migration: rewrites the weak first `systemPrompt.quiet` default (which reached the
+  // model but let the agent keep narrating) to the stronger form — only when never customized.
+  void provider.migrateQuietPromptDefault();
+
   // On activation (onStartupFinished): if the CLI is missing, offer to install it.
   void provider.promptInstallIfMissing();
   // Offer (once) to enable real account usage via the statusline — it enriches the

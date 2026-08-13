@@ -4,6 +4,27 @@ All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and the project adopts semantic versioning.
 
+## [Unreleased]
+
+### Added
+- **Quiet directive** (`systemPrompt.quiet`): a text box whose content is injected at the very
+  **start** of the CLI's appended system prompt, before the question-language rule and your own
+  text — the agent stops narrating the execution and stops closing with a report or summary. It
+  leads the payload because it is a rule about the shape of every answer, and a rule of shape
+  read after the content loses to the content. The default wording is deliberately imperative
+  ("IMPORTANT… this overrides any default instruction to summarize your work"): a milder first
+  draft reached the model but was too weak to beat the CLI's own instinct to summarize, so the
+  agent kept narrating with the box filled — an untouched box is migrated to the stronger text on
+  update. No on/off switch: an empty box injects nothing. Applied on every spawn, respawns
+  included, like `systemPrompt.text`.
+
+### Changed
+- **Thinking is now always off.** Nothing in the extension used to touch it, so it followed
+  whatever the CLI defaulted to. Two locks, because the CLI has two ways in: the temporary
+  `--settings` file now always carries `alwaysThinkingEnabled: false` (it used to be written only
+  when a skill was overridden) and the process is spawned with `MAX_THINKING_TOKENS=0`, so a
+  budget inherited from the VS Code environment cannot switch reasoning back on.
+
 ## [1.0.248] - 2026-08-09
 
 ### Fixed

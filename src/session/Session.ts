@@ -49,6 +49,8 @@ export interface SessionHooks {
   // Vale em TODO spawn (inclusive respawn com --resume): se saísse no respawn, a
   // diretiva sumiria no meio da conversa sem ninguém perceber.
   extraSystemPrompt: () => string | undefined;
+  // Diretiva "quiet" (settings): vai no início do texto injetado. Vazio = não injeta.
+  quietPrompt: () => string | undefined;
 }
 
 export class Session {
@@ -200,6 +202,7 @@ export class Session {
       resumeSessionId: this.resumeId ?? this.sessionId,
       askLanguage: this.hooks.askLanguage(),
       extraSystemPrompt: this.hooks.extraSystemPrompt(),
+      quietPrompt: this.hooks.quietPrompt(),
       // 'on' é o default do CLI: mandar não muda nada e só suja o --settings.
       skillOverrides: Object.fromEntries(
         Object.entries(this.skillOverrides).filter(([, v]) => v !== 'on'),

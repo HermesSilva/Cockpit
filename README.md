@@ -791,6 +791,12 @@ Field notes with the raw captures: [`Docs/pesquisa/skills-transparencia.md`](Doc
 
 ## Custom system prompt
 
+**Quiet directive** (`systemPrompt.quiet`, a separate multi-line box): injected at the very
+**start** of the appended payload, before the language rule and your own text — it tells the
+agent to stop narrating the execution and to stop closing with a report or summary. It has no
+on/off switch: **an empty box injects nothing**. It leads the payload because it is a rule about
+the shape of every answer, and a rule of shape read after the content loses to the content.
+
 **Settings → Tootega Cockpit → System Prompt**: a multi-line box (`systemPrompt.text`) plus an
 on/off switch (`systemPrompt.enabled`, off by default). When on, the text is appended to the
 CLI's system prompt.
@@ -894,6 +900,7 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `voiceCorrect` | boolean | `false` | After stopping dictation, run a spelling/grammar pass with the internal model (clean one-shot). Opt-in |
 | `voiceLanguage` | string | `""` | Dictation language (speech-to-text); empty follows the UI language |
 | `ffmpegPath` | string | `""` | Path to ffmpeg used for voice capture; empty = `ffmpeg` from PATH |
+| `systemPrompt.quiet` | string | quiet directive | Injected at the start of the system prompt: no narration during execution, no closing report. Empty = injects nothing |
 | `systemPrompt.enabled` | boolean | `false` | Append your text to the CLI's system prompt on every start — see [Custom system prompt](#custom-system-prompt) |
 | `systemPrompt.text` | string | shell directive | Multi-line text appended to the system prompt; supports placeholders resolved against this machine |
 

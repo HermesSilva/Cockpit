@@ -3,7 +3,7 @@
   "displayName": "Tootega Cockpit for Claude Code",
   "description": "%ext.description%",
   "icon": "media/icon.png",
-  "version": "1.0.248",
+  "version": "1.0.250",
   "publisher": "HermesSilva",
   "license": "MIT",
   "author": {
@@ -401,6 +401,12 @@
           ],
           "default": "",
           "description": "%cfg.voiceLanguage%"
+        },
+        "tootega.systemPrompt.quiet": {
+          "type": "string",
+          "editPresentation": "multilineText",
+          "default": "IMPORTANT — output discipline (this overrides any default instruction to summarize or explain your work): Work silently. Do not narrate the task while doing it: no preamble, no \"I will now…\", no play-by-play between tool calls, no \"let me…\". When the work is finished, state ONLY that it is finished — a single short sentence such as \"Done.\" Do NOT produce a closing report, a summary, a bulleted list of changes, or a restatement of what the files or edits contain. The user can see the changes; repeating them is exactly what this rule forbids. This rule governs the shape of every response. Answer direct questions normally; this is about narration and closing reports, not about replying to the user.",
+          "description": "%cfg.systemPromptQuiet%"
         },
         "tootega.systemPrompt.enabled": {
           "type": "boolean",

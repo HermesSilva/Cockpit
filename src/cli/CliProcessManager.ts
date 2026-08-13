@@ -30,6 +30,9 @@ export interface CliOptions {
   // Texto do usuário (settings) para o system prompt, já expandido. Vai no MESMO
   // --append-system-prompt do askLanguage: a flag não soma, o último vence (medido).
   extraSystemPrompt?: string;
+  // Diretiva "quiet" (settings): vai no INÍCIO do texto injetado, antes de tudo.
+  // Vazio = não injeta nada (o agente volta a narrar/relatar como de costume).
+  quietPrompt?: string;
   // Overrides de listing de skills (--settings JSON). Vale só para ESTE processo:
   // o ~/.claude/settings.json do usuário fica intocado.
   skillOverrides?: Record<string, string>;
@@ -205,7 +208,11 @@ export class CliProcessManager extends EventEmitter {
     if (this.opts.resumeSessionId) args.push('--resume', this.opts.resumeSessionId);
     // Repetir --append-system-prompt NÃO soma: o último vence (medido no CLI 2.1.217 —
     // dois valores, só o segundo chegou ao modelo). Por isso vai tudo junto.
+    //
+    // A diretiva quiet vem PRIMEIRO de propósito: é uma regra sobre a forma de TODA
+    // resposta, e uma regra de forma lida depois do conteúdo perde para ele.
     const appended = [
+      this.opts.quietPrompt ?? '',
       this.opts.askLanguage ? askLanguagePrompt(this.opts.askLanguage) : '',
       this.opts.extraSystemPrompt ?? '',
     ]
@@ -215,7 +222,8 @@ export class CliProcessManager extends EventEmitter {
       // Texto do usuário passa por ARQUIVO: com shell:true no Windows, um argumento
       // multi-linha com `|`, `$` ou crase é mastigado pelo cmd.exe e chega vazio ao
       // modelo (medido: o sentinel injetado inline sumiu; por arquivo, chegou).
-      const file = this.opts.extraSystemPrompt ? this.writeTempFile('prompt', appended) : undefined;
+      const userText = this.opts.extraSystemPrompt || this.opts.quietPrompt;
+      const file = userText ? this.writeTempFile('prompt', appended) : undefined;
       if (file) args.push('--append-system-prompt-file', file);
       else args.push('--append-system-prompt', appended);
     }
@@ -244,10 +252,12 @@ export class CliProcessManager extends EventEmitter {
     // Foundry via env (2.1.158/159). Defensive: we turn the flag on when the mode is 'auto'
     // so it behaves uniformly across providers. It does NOT bypass permissions — it only enables the
     // CLI's native mode, which still routes what it must through control_request.
-    const env =
-      this.opts.permissionMode === 'auto'
-        ? { ...process.env, CLAUDE_CODE_ENABLE_AUTO_MODE: '1' }
-        : process.env;
+    //
+    // MAX_THINKING_TOKENS=0: o thinking fica sempre desligado. É o par da setting
+    // `alwaysThinkingEnabled: false` (writeSettingsFile) — o orçamento herdado do
+    // ambiente do VS Code religaria o raciocínio mesmo com a setting em falso.
+    const env: NodeJS.ProcessEnv = { ...process.env, MAX_THINKING_TOKENS: '0' };
+    if (this.opts.permissionMode === 'auto') env.CLAUDE_CODE_ENABLE_AUTO_MODE = '1';
     const proc = spawn(shellSafe(this.opts.claudePath, useShell), args, {
       cwd: this.opts.cwd,
       env,
@@ -353,11 +363,19 @@ export class CliProcessManager extends EventEmitter {
     }
   }
 
-  /** Settings extras deste processo (só os overrides de skills). */
+  /**
+   * Settings extras deste processo: overrides de skills e o desligamento do thinking.
+   *
+   * O thinking fica SEMPRE desligado, e por isso o arquivo passou a ser escrito em todo
+   * spawn (antes só existia quando havia override de skill). São duas travas porque o CLI
+   * tem dois caminhos para ligá-lo: a setting `alwaysThinkingEnabled` e o orçamento
+   * `MAX_THINKING_TOKENS` (env, aplicado em `spawnWith`). Desligar só um deixa o outro valendo.
+   */
   private writeSettingsFile(): string | undefined {
     const overrides = this.opts.skillOverrides;
-    if (!overrides || Object.keys(overrides).length === 0) return undefined;
-    return this.writeTempFile('settings', JSON.stringify({ skillOverrides: overrides }));
+    const payload: Record<string, unknown> = { alwaysThinkingEnabled: false };
+    if (overrides && Object.keys(overrides).length > 0) payload.skillOverrides = overrides;
+    return this.writeTempFile('settings', JSON.stringify(payload));
   }
 
   /**

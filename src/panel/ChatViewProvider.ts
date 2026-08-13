@@ -383,6 +383,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }),
       askLanguage: () => this.askLanguageCode(),
       extraSystemPrompt: () => this.extraSystemPrompt(),
+      quietPrompt: () => this.quietPrompt(),
     };
   }
 
@@ -396,6 +397,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!this.cfg().get<boolean>('systemPrompt.enabled', false)) return undefined;
     const text = this.cfg().get<string>('systemPrompt.text', '');
     return buildSystemPrompt(text, this.workspaceCwd());
+  }
+
+  /**
+   * Diretiva "quiet": manda o agente parar de narrar a execução e de fechar com
+   * relatório/sumário. Campo próprio, independente de `systemPrompt.enabled` — vazio é a
+   * única condição de desligamento, e é o que a caixa vazia significa.
+   */
+  private quietPrompt(): string | undefined {
+    const text = this.cfg().get<string>('systemPrompt.quiet', '');
+    return text.trim() || undefined;
   }
 
   /** Creates a new tab and its Session; returns the id. It becomes the active tab. */
@@ -2150,6 +2161,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this.secrets) await this.secrets.delete(API_KEY_SECRET);
     void vscode.window.showInformationMessage(vscode.l10n.t('API key removed.'));
     this.refreshModels();
+  }
+
+  /**
+   * One-off migration: the first `systemPrompt.quiet` default reached the model but was too
+   * weak to override the CLI's own instinct to summarize its work, so the agent kept narrating
+   * even with the box filled. The default was rewritten to a stronger, imperative form. A user
+   * who never touched the box has the OLD text persisted, so the new default never reaches them;
+   * this rewrites it — but ONLY when the saved value is byte-for-byte the old default, so a real
+   * customization is never clobbered. Best-effort, silent.
+   */
+  async migrateQuietPromptDefault(): Promise<void> {
+    const OLD_DEFAULT =
+      'Work silently. While executing the task, do not narrate it: no commentary on what you are about to do, what you are doing, or what you have just done, and no running explanation between tool calls. When the work is finished, do not produce a report, a summary, or a list of the changes — state only that it is finished. Answer direct questions normally; this rule is about narration and closing reports, not about replying to the user.';
+    try {
+      const cfg = this.cfg();
+      const inspected = cfg.inspect<string>('systemPrompt.quiet');
+      const newDefault = inspected?.defaultValue ?? '';
+      // Rewrite only the scopes whose EXPLICIT value is the old default (an untouched user has
+      // no explicit value at all — that one already gets the new default for free).
+      const scopes: Array<[string | undefined, vscode.ConfigurationTarget]> = [
+        [inspected?.globalValue, vscode.ConfigurationTarget.Global],
+        [inspected?.workspaceValue, vscode.ConfigurationTarget.Workspace],
+        [inspected?.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder],
+      ];
+      for (const [value, target] of scopes) {
+        if (value === OLD_DEFAULT) {
+          await cfg.update('systemPrompt.quiet', newDefault, target);
+          log(`[quiet] stale default rewritten to the stronger form (scope ${target})`);
+        }
+      }
+    } catch (e) {
+      log(`[quiet] default migration failed: ${String(e)}`);
+    }
   }
 
   /**

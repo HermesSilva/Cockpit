@@ -45,6 +45,8 @@ export const en = {
   'remote.active': 'Under Remote Control — click to turn it off (closes the terminal)',
   'remote.connecting': 'Connecting Remote Control — waiting for the session in the terminal',
   'remote.failed': 'Remote Control is down — see the terminal for the reason; click to reconnect',
+  'remote.cloud': 'Running in the cloud — driven from claude.ai/code or the phone; click to take it back',
+  'remote.offline': 'Remote Control offline — the connection dropped; click to reconnect',
   'creds.title': 'Credentials vault',
   'creds.enroll.intro':
     'Protect the vault with an authenticator app (Google Authenticator, Authy…). A code is required to add and to use any credential.',
@@ -599,6 +601,8 @@ export const en = {
   'permission.planMaximize': 'Maximize',
   'permission.planRestore': 'Restore',
   'permission.planSendNotes': 'Keep planning (send my notes)',
+  'permission.planSavedNote': 'Saved to Planing/ and opened in the editor. Review it there, then approve or keep planning.',
+  'permission.planNotesPlaceholder': 'Notes for the agent (optional) — sent when you keep planning',
 
   'ask.title': 'Claude has a question',
   'ask.answered': 'Question answered',

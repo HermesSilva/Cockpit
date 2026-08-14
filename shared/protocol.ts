@@ -493,6 +493,9 @@ type HostMsg =
       input: unknown;
       suggestions?: PermissionSuggestion[];
       oldText?: string; // current content on disk (Write) for the diff
+      // Plan mode (ExitPlanMode): workspace-relative path of the plan written to Planing/ and
+      // opened in the editor. The card then shows a link to it instead of the full markdown.
+      planFile?: string;
     }
   | { kind: 'askRequest'; requestId: string; questions: AskQuestion[] }
   | { kind: 'authRequired' }
@@ -558,12 +561,15 @@ type HostMsg =
   // composer stops being the way in (the terminal / phone is), and the timeline keeps
   // following the transcript that session writes.
   // `phase` says what is KNOWN, not what was hoped for: 'connecting' while the interactive
-  // process hasn't registered itself yet, 'active' once it has, 'failed' when it never came up
-  // or died on its own. `active` stays for the composer's on/off state.
+  // process hasn't registered itself yet, 'active' once it has, 'failed' when it never came up.
+  // After it has been `active`, the handover can end two ways the CLI distinguishes since
+  // 2.1.229: 'cloud' (a cloud/phone peer is still driving the session — it keeps going without
+  // our terminal) and 'offline' (the connection dropped and nobody owns it; the transcript is
+  // intact on disk). `active` stays for the composer's on/off state.
   | {
       kind: 'remoteState';
       active: boolean;
-      phase?: 'connecting' | 'active' | 'failed';
+      phase?: 'connecting' | 'active' | 'failed' | 'cloud' | 'offline';
       detail?: string;
     }
   | { kind: 'mcpData'; data: McpData } // servidores MCP + tools (modal)
@@ -581,8 +587,17 @@ type HostMsg =
   | { kind: 'credsError'; message: string } // failure (storage unavailable, etc.)
   // Editor selection/active file to share as @file#a-b (composer toggle).
   | { kind: 'selection'; ref?: string }
-  // Autocomplete de @-mention: resultados de arquivos p/ a query digitada.
-  | { kind: 'mentionResults'; requestId: string; items: string[] };
+  // Autocomplete de @-mention: resultados p/ a query digitada. Cada item é um arquivo do
+  // workspace ou uma sessão viva (CLI 2.1.232: @nome resolve outra sessão e dispara SendMessage
+  // no envio). `label` é o que se insere após o '@'; `kind` só decide o ícone/estilo na lista.
+  | { kind: 'mentionResults'; requestId: string; items: MentionItem[] };
+
+// Um item do autocomplete de @-mention. `file` = path relativo do workspace; `session` = nome
+// de uma sessão viva do registry (~/.claude/sessions), que o CLI resolve como destino de mensagem.
+export interface MentionItem {
+  label: string;
+  kind: 'file' | 'session';
+}
 
 // Metadados de um slash command pesquisados por IA (cache global ~/.claude).
 // `category` is an enum key (session|context|config|tools|account|info|plugin|other);

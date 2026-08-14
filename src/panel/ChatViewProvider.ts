@@ -51,7 +51,7 @@ import {
 } from '../cli/VoiceDictionary';
 import { setInternalModel } from '../cli/AiClient';
 import { listPlugins, pluginAction } from '../cli/PluginManager';
-import { isSessionLive } from '../cli/SessionRegistry';
+import { locateSession, liveSessions } from '../cli/SessionRegistry';
 import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { readClaudeDefaults, oneMContextDisabled } from '../cli/ClaudeSettings';
@@ -66,7 +66,7 @@ import { fetchAccountUsage, usageDiagnostics } from '../cli/UsageApi';
 import { OtelReceiver } from '../cli/OtelReceiver';
 import { CredentialsStore } from '../secrets/CredentialsStore';
 import { buildSystemPrompt } from '../cli/SystemPromptTemplate';
-import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta, SkillOverride } from '../../shared/protocol';
+import type { LimitWindow, HostToWebview, WebviewToHost, TabInfo, UsageBucket, ScopedBucket, VoiceReplacement, ModelMeta, SkillOverride, MentionItem } from '../../shared/protocol';
 import { Session, type SessionHooks } from '../session/Session';
 import { resolveLocale } from '../i18n/host';
 import { researchCommands } from '../cli/SlashCommandResearch';
@@ -156,7 +156,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private remoteTerms = new Map<string, vscode.Terminal>();
   private remoteWatch = new Map<string, NodeJS.Timeout>();
   // What is KNOWN about each handover (see `watchRemote`) — never an assumption.
-  private remotePhase = new Map<string, 'connecting' | 'active' | 'failed'>();
+  private remotePhase = new Map<string, 'connecting' | 'active' | 'failed' | 'cloud' | 'offline'>();
   // Baseline of the active tab's dropdowns before the user touched them. If, after
   // touching them, they create a NEW context (instead of sending a prompt), the choice was
   // for the new context: the new one is born with the chosen values and the previous tab
@@ -371,6 +371,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
       fileText: (tool, input) => this.currentFileText(tool, input),
       onToolUse: (tool, input) => this.autoSaveForTool(tool, input),
+      savePlan: (plan) => this.savePlanFile(plan),
       claudePath: (engine) => this.claudePath(engine),
       cwd: () => this.workspaceCwd(),
       engine: () => currentEngine(),
@@ -947,6 +948,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   }
 
+  /**
+   * Writes a plan-mode plan to `Planing/<timestamp>-<slug>.md` at the repo root and opens it in
+   * the editor. Returns the workspace-relative path, or undefined when nothing could be written.
+   *
+   * The file is the plan's primary surface now — the permission card keeps only the approval
+   * gate. The name carries a sortable timestamp plus a short slug taken from the first heading,
+   * so the folder reads as a history rather than one overwritten file.
+   */
+  private savePlanFile(plan: string): string | undefined {
+    const root = this.workspaceCwd();
+    if (!root) return undefined;
+    try {
+      const dir = path.join(root, 'Planing');
+      fs.mkdirSync(dir, { recursive: true });
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const slug = planSlug(plan);
+      const name = slug ? `${stamp}-${slug}.md` : `${stamp}.md`;
+      const abs = path.join(dir, name);
+
+      fs.writeFileSync(abs, plan.endsWith('\n') ? plan : plan + '\n', 'utf8');
+
+      // Open it without stealing focus from the approval card the user is about to act on.
+      void vscode.window.showTextDocument(vscode.Uri.file(abs), { preview: true, preserveFocus: true });
+
+      return path.relative(root, abs).split(path.sep).join('/');
+    } catch (e) {
+      log(`plan: could not save the plan file: ${(e as Error)?.message ?? e}`);
+      return undefined;
+    }
+  }
+
   /** Path relative to the cwd when inside it; absolute otherwise. */
   private resolvePath(absPathRaw: string): string {
     const absPath = absPathRaw.normalize('NFC');
@@ -1365,29 +1400,59 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async watchRemote(tabId: string, ids: (string | undefined)[], since: number) {
     if (!this.remoteWatch.has(tabId)) return; // toggled off between ticks
-    const live = await isSessionLive(...ids);
+    const where = await locateSession(...ids);
     if (!this.remoteWatch.has(tabId)) return; // …or during the read
     const phase = this.remotePhase.get(tabId);
 
-    if (live) {
+    if (where === 'local') {
       if (phase !== 'active') {
         this.remotePhase.set(tabId, 'active');
         this.post({ kind: 'remoteState', active: true, phase: 'active' }, tabId);
       }
       return;
     }
-    // Still within the startup window and never seen up: keep waiting.
+
+    // A cloud/phone peer took the session over: it is running, just not in our terminal. This
+    // is not a failure — keep following the transcript, only relabel so the composer stops
+    // saying "active" (which implies our terminal). We keep watching: it may come back local,
+    // or later go offline.
+    if (where === 'cloud') {
+      if (phase !== 'cloud') {
+        this.remotePhase.set(tabId, 'cloud');
+        this.post({ kind: 'remoteState', active: true, phase: 'cloud' }, tabId);
+        this.post(
+          {
+            kind: 'engineNotice',
+            id: `remote-cloud:${Date.now()}`,
+            text: vscode.l10n.t(
+              'Remote Control is running in the cloud: the session left this terminal and is being driven from claude.ai/code or the phone. The timeline keeps following it.',
+            ),
+            topic: 'remote_control',
+          },
+          tabId,
+        );
+        this.replayTab(tabId, true);
+      }
+      return;
+    }
+
+    // Nobody owns it (`offline`). Still within the startup window and never seen up: keep waiting.
     if (phase === 'connecting' && Date.now() - since < ChatViewProvider.REMOTE_CONNECT_MS) return;
 
+    // A handover that was live and then went offline is the 2.1.229 `offline` state: the
+    // connection dropped rather than the session never starting. Same recovery as `failed`
+    // (terminal left open, button reconnects) but named so the user knows which happened.
+    const wasUp = phase === 'active' || phase === 'cloud';
     this.failRemoteControl(
       tabId,
-      phase === 'active'
+      wasUp
         ? vscode.l10n.t(
-            'Remote Control dropped: the interactive session in the terminal is no longer running. The conversation is intact on disk — check the terminal for the reason and click the button to reconnect.',
+            'Remote Control is offline: the session dropped its connection and no one is running it now. The conversation is intact on disk — check the terminal for the reason and click the button to reconnect.',
           )
         : vscode.l10n.t(
             'Remote Control did not connect: the interactive session never started. The terminal is still open with the reason (login, network or a CLI error) — fix it and click the button to try again.',
           ),
+      wasUp ? 'offline' : 'failed',
     );
   }
 
@@ -1395,13 +1460,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * Failure state: stops following, keeps the terminal open (it holds the reason) and leaves the
    * tab ready for another attempt — the remote button reconnects instead of toggling off.
    */
-  private failRemoteControl(tabId: string, detail: string): void {
+  private failRemoteControl(
+    tabId: string,
+    detail: string,
+    phase: 'failed' | 'offline' = 'failed',
+  ): void {
     const poll = this.remoteWatch.get(tabId);
     if (poll) clearInterval(poll);
     this.remoteWatch.delete(tabId);
     this.remoteTerms.delete(tabId); // not disposed: the error stays on screen
-    this.remotePhase.set(tabId, 'failed');
-    this.post({ kind: 'remoteState', active: false, phase: 'failed', detail }, tabId);
+    this.remotePhase.set(tabId, phase);
+    this.post({ kind: 'remoteState', active: false, phase, detail }, tabId);
     this.post(
       { kind: 'engineNotice', id: `remote-fail:${Date.now()}`, text: detail, topic: 'remote_control' },
       tabId,
@@ -1877,13 +1946,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
   }
 
-  /** Busca arquivos do workspace p/ o autocomplete de @-mention (fuzzy por path). */
+  /**
+   * Busca resultados p/ o autocomplete de @-mention: sessões vivas (por nome) + arquivos do
+   * workspace (fuzzy por path). As sessões vêm primeiro — são poucas e mais específicas que a
+   * varredura de arquivos, e é o que o CLI 2.1.232 passou a resolver como `@nome` -> SendMessage.
+   * A própria conversa é excluída: mencionar a si mesma não faz sentido.
+   */
   private async searchMentions(tabId: string, requestId: string, query: string): Promise<void> {
-    let items: string[] = [];
+    const items: MentionItem[] = [];
+    // Sessões vivas com nome, que casem a query (prefixo, case-insensitive), menos a atual.
+    try {
+      const self = this.sessions.get(tabId);
+      const selfIds = new Set([self?.sessionId, self?.resumeId].filter((i): i is string => !!i));
+      const q = query.toLowerCase();
+      for (const s of await liveSessions()) {
+        if (!s.name || selfIds.has(s.sessionId)) continue;
+        if (q && !s.name.toLowerCase().includes(q)) continue;
+        items.push({ label: s.name, kind: 'session' });
+      }
+      items.sort((a, b) => a.label.length - b.label.length);
+    } catch {
+      /* registry unavailable: fall through to files */
+    }
+    // Arquivos do workspace.
     try {
       const glob = query ? `**/*${query.replace(/[^\w./-]/g, '')}*` : '**/*';
       const uris = await vscode.workspace.findFiles(glob, '**/node_modules/**', 30);
-      items = uris.map((u) => vscode.workspace.asRelativePath(u, false)).sort((a, b) => a.length - b.length);
+      const files = uris
+        .map((u) => vscode.workspace.asRelativePath(u, false))
+        .sort((a, b) => a.length - b.length)
+        .map((label): MentionItem => ({ label, kind: 'file' }));
+      items.push(...files);
     } catch {
       /* no workspace */
     }
@@ -3097,6 +3190,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 function dedupe(arr: string[]): string[] {
   return Array.from(new Set(arr.filter(Boolean)));
+}
+
+/**
+ * A short filename slug from a plan's first meaningful line — the first heading when there is
+ * one, otherwise the first non-empty line. Lowercased, ASCII words joined by '-', capped so the
+ * path stays sane. Empty when the plan has no usable text (the caller then names by timestamp only).
+ */
+function planSlug(plan: string): string {
+  const lines = plan.split('\n').map((l) => l.trim());
+  const heading = lines.find((l) => /^#{1,6}\s+/.test(l));
+  const first = heading ? heading.replace(/^#{1,6}\s+/, '') : lines.find((l) => l.length > 0) ?? '';
+  return first
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // strip diacritics
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50)
+    .replace(/-+$/g, '');
 }
 
 // Instruction for the "Generate with AI" option: it produces an organized, coherent document

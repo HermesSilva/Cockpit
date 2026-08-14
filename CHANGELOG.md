@@ -6,7 +6,24 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.252] - 2026-08-14
+
 ### Added
+- **@-mention now reaches live sessions, not just files.** Typing `@` in the composer used to
+  offer only workspace files; it now lists the CLI's live named sessions first (read from
+  `~/.claude/sessions`, the same registry Remote Control uses), each marked with a distinct icon.
+  Picking one inserts `@name`, which the CLI 2.1.232 resolves as another session and delivers to
+  via `SendMessage` on submit. The current conversation is excluded — mentioning itself is
+  meaningless. The host↔webview `mentionResults` now carries typed items (`{label, kind}`) so a
+  session and a file can never be confused.
+- **Plan mode writes the plan to a file.** When the agent leaves plan mode (`ExitPlanMode`), the
+  plan is written to `Planing/<timestamp>-<slug>.md` at the repo root and opened in the editor —
+  one file per plan, so the folder reads as a history. The approval card keeps only the gate
+  (**Approve & run** / **Keep planning**) plus a link to the file and an optional notes box. When
+  no file can be written (no workspace, or an older CLI), the card falls back to the previous
+  inline, editable markdown. `Planing/` is git-ignored — the plans are local working artefacts.
+
+### Added (previously unreleased)
 - **Quiet directive** (`systemPrompt.quiet`): a text box whose content is injected at the very
   **start** of the CLI's appended system prompt, before the question-language rule and your own
   text — the agent stops narrating the execution and stops closing with a report or summary. It

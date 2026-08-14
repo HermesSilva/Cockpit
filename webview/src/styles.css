@@ -1735,6 +1735,18 @@ body {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
 }
+/* Ícone do item de @-mention: distingue arquivo de sessão viva (CLI 2.1.232). */
+.mention-kind {
+  display: inline-block;
+  width: 1.2em;
+  margin-right: 4px;
+  text-align: center;
+  opacity: 0.8;
+}
+.mention-kind-session {
+  color: var(--tt-accent-strong, #ff7a18);
+  opacity: 1;
+}
 /* Checklist de onboarding no hub. */
 .onboarding {
   margin: 4px 0 8px;
@@ -3634,6 +3646,55 @@ body {
   outline: none;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 12.5px;
+  line-height: 1.5;
+}
+/* Plan-as-file: link to the Planing/ file + an optional notes box, instead of the full plan. */
+.perm-plan-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.perm-plan-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 6px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.08));
+  color: var(--vscode-textLink-foreground, #3794ff);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.perm-plan-link:hover {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+.perm-plan-fileicon {
+  opacity: 0.8;
+}
+.perm-plan-filenote {
+  font-size: 11px;
+  opacity: 0.7;
+  line-height: 1.45;
+}
+.perm-plan-notes {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  outline: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
   line-height: 1.5;
 }
 .perm-hint {

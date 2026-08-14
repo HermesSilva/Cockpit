@@ -95,6 +95,7 @@ export interface PermissionRequest {
   input: unknown;
   suggestions?: PermissionSuggestion[];
   oldText?: string;
+  planFile?: string; // ExitPlanMode: relative path of the plan saved under Planing/
 }
 
 export interface AskOption {

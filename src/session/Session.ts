@@ -35,6 +35,10 @@ export interface SessionHooks {
   fileText: (tool: string, input: unknown) => string | undefined;
   // Each tool_use (before execution): enables autosaving read/write files.
   onToolUse?: (tool: string, input: unknown) => void;
+  // Plan mode (ExitPlanMode): persist the proposed plan as a markdown file under Planing/ at the
+  // repo root and open it in the editor. Returns the workspace-relative path written, or undefined
+  // when nothing could be saved (no workspace, write error). The approval gate stays in the UI.
+  savePlan?: (plan: string) => string | undefined;
   /** Executable for an engine. Without an argument: the window's default. */
   claudePath: (engine?: EngineId) => string;
   cwd: () => string;
@@ -697,6 +701,13 @@ export class Session {
             const questions = ((input as any)?.questions ?? []) as any[];
             this.emit({ kind: 'askRequest', requestId: reqId, questions });
           } else {
+            // Plan mode: persist the plan to Planing/ and open it in the editor. The file is the
+            // primary surface now; the permission card keeps only the approval gate.
+            let planFile: string | undefined;
+            if (tool === 'ExitPlanMode') {
+              const plan = typeof (input as any)?.plan === 'string' ? (input as any).plan : '';
+              if (plan) planFile = this.hooks.savePlan?.(plan);
+            }
             this.emit({
               kind: 'permissionRequest',
               requestId: reqId,
@@ -706,6 +717,7 @@ export class Session {
               input,
               suggestions: suggestions as any,
               oldText: this.hooks.fileText(tool, input),
+              planFile,
             });
           }
         }

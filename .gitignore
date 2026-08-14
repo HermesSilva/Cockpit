@@ -8,3 +8,6 @@ out/
 
 # Chat/context exports dropped in the repo root by tooling
 context-*.md
+
+# Plan-mode plans written by the extension (ExitPlanMode), one file per plan
+Planing/

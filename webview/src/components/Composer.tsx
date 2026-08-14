@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
 import type { Translator } from '../i18n';
-import type { ImageAttachment, SlashCmdMeta } from '../../../shared/protocol';
+import type { ImageAttachment, SlashCmdMeta, MentionItem } from '../../../shared/protocol';
 import { send, saveState, readState } from '../vscodeApi';
 import { richHighlight } from '../util/highlight';
 import {
@@ -44,7 +44,7 @@ interface Props {
   onRemoteControl?: () => void; // publishes this session for remote control (phone/app)
   canRemoteControl?: boolean; // there is a live session id to publish
   remoteActive?: boolean; // a aba já está sob Remote Control (terminal conduzindo)
-  remotePhase?: 'connecting' | 'active' | 'failed'; // o que se SABE da conexão remota
+  remotePhase?: 'connecting' | 'active' | 'failed' | 'cloud' | 'offline'; // o que se SABE da conexão remota
 }
 
 interface PendingImage {
@@ -91,7 +91,7 @@ export function Composer({
   const [slashDismissed, setSlashDismissed] = useState(false);
   // @-mention: the token being typed + the host's results + the selected index.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
-  const [mentionItems, setMentionItems] = useState<string[]>([]);
+  const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
   const [mentionIdx, setMentionIdx] = useState(0);
   const mentionReq = useRef('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -581,13 +581,16 @@ export function Composer({
     }, 150);
   };
 
-  const pickMention = (relPath: string) => {
+  // Both files and sessions insert as `@label`: the CLI resolves an @name that matches a live
+  // session (2.1.232) and fires SendMessage on submit; a file stays a plain @path reference.
+  const pickMention = (item: MentionItem) => {
     if (!mention) return;
     const el = ref.current;
+    const label = item.label;
     setText((prev) => {
       const end = mention.start + 1 + mention.query.length;
-      const next = `${prev.slice(0, mention.start)}@${relPath} ${prev.slice(end)}`;
-      const pos = mention.start + 1 + relPath.length + 1;
+      const next = `${prev.slice(0, mention.start)}@${label} ${prev.slice(end)}`;
+      const pos = mention.start + 1 + label.length + 1;
       requestAnimationFrame(() => {
         if (el) {
           el.focus();
@@ -648,14 +651,17 @@ export function Composer({
           {mentionItems.map((it, i) => (
             <button
               type="button"
-              key={it}
+              key={`${it.kind}:${it.label}`}
               className={`slash-item ${i === mentionIdx ? 'active' : ''}`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 pickMention(it);
               }}
             >
-              @{it}
+              <span className={`mention-kind mention-kind-${it.kind}`} aria-hidden>
+                {it.kind === 'session' ? '◆' : '📄'}
+              </span>
+              @{it.label}
             </button>
           ))}
         </div>
@@ -847,7 +853,9 @@ export function Composer({
                 type="button"
                 className={`composer-side-btn remote-btn${remoteActive ? ' on' : ''}${
                   remotePhase === 'connecting' ? ' connecting' : ''
-                }${remotePhase === 'failed' ? ' failed' : ''}`}
+                }${remotePhase === 'failed' || remotePhase === 'offline' ? ' failed' : ''}${
+                  remotePhase === 'cloud' ? ' cloud' : ''
+                }`}
                 onClick={onRemoteControl}
                 // Ligado, o botão continua clicável: é o desligar (toggle).
                 disabled={!remoteActive && (disabled || !canRemoteControl)}
@@ -913,8 +921,14 @@ export function Composer({
 }
 
 /** O que o botão diz é o que se sabe da conexão — nunca "ligado" por otimismo. */
-function remoteLabel(t: Translator, active?: boolean, phase?: 'connecting' | 'active' | 'failed'): string {
+function remoteLabel(
+  t: Translator,
+  active?: boolean,
+  phase?: 'connecting' | 'active' | 'failed' | 'cloud' | 'offline',
+): string {
   if (phase === 'failed') return t('remote.failed');
+  if (phase === 'offline') return t('remote.offline');
+  if (phase === 'cloud') return t('remote.cloud');
   if (phase === 'connecting') return t('remote.connecting');
   return active ? t('remote.active') : t('remote.publish');
 }

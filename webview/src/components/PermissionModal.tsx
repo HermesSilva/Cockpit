@@ -207,15 +207,27 @@ function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '\n…' : s;
 }
 
-// Editable plan mode: view the plan (markdown) or edit it; "Approve" executes, "Keep
-// planning" declines by sending the edited plan / notes as feedback to the agent.
+// Plan mode. The plan itself now lives in a file under Planing/ (the host wrote it and opened it
+// in the editor); this card keeps only the approval gate and a link to that file, plus an
+// optional notes box for "Keep planning". When the host could not write the file — an older CLI,
+// or no workspace — it falls back to showing the plan inline, editable, as before.
 function PlanModal({ t, req, onDecision }: Props) {
   const plan = String((req.input as Record<string, unknown>)?.plan ?? '');
+  const planFile = req.planFile;
   const [editing, setEditing] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [draft, setDraft] = useState(plan);
+  const [notes, setNotes] = useState('');
+
+  // With a file, "Keep planning" carries the notes box; inline, it carries the edited plan.
   const edited = draft.trim() !== plan.trim();
-  const keepPlanning = () => onDecision('deny', edited ? draft : undefined);
+  const keepPlanning = () =>
+    planFile
+      ? onDecision('deny', notes.trim() || undefined)
+      : onDecision('deny', edited ? draft : undefined);
+
+  const openPlan = () => planFile && send({ kind: 'openLink', href: planFile });
+
   return (
     <Portal>
       <div className="modal-overlay" onClick={keepPlanning}>
@@ -229,27 +241,46 @@ function PlanModal({ t, req, onDecision }: Props) {
               <div className="modal-title">{t('permission.planTitle')}</div>
               <div className="perm-tool">{t('permission.planSubtitle')}</div>
             </div>
-            <button
-              type="button"
-              className="btn perm-plan-edit"
-              onClick={() => setEditing((v) => !v)}
-            >
-              {editing ? t('permission.planPreview') : t('permission.planEdit')}
-            </button>
-            {/* A long plan is unreadable in a 540px card — the toggle gives it the panel. */}
-            <button
-              type="button"
-              className="btn perm-plan-max"
-              title={maximized ? t('permission.planRestore') : t('permission.planMaximize')}
-              aria-label={maximized ? t('permission.planRestore') : t('permission.planMaximize')}
-              aria-pressed={maximized}
-              onClick={() => setMaximized((v) => !v)}
-            >
-              {maximized ? '❐' : '⛶'}
-            </button>
+            {/* The edit/maximize toggles only make sense for the inline fallback. */}
+            {!planFile && (
+              <>
+                <button
+                  type="button"
+                  className="btn perm-plan-edit"
+                  onClick={() => setEditing((v) => !v)}
+                >
+                  {editing ? t('permission.planPreview') : t('permission.planEdit')}
+                </button>
+                {/* A long plan is unreadable in a 540px card — the toggle gives it the panel. */}
+                <button
+                  type="button"
+                  className="btn perm-plan-max"
+                  title={maximized ? t('permission.planRestore') : t('permission.planMaximize')}
+                  aria-label={maximized ? t('permission.planRestore') : t('permission.planMaximize')}
+                  aria-pressed={maximized}
+                  onClick={() => setMaximized((v) => !v)}
+                >
+                  {maximized ? '❐' : '⛶'}
+                </button>
+              </>
+            )}
           </div>
           <div className="perm-plan-body">
-            {editing ? (
+            {planFile ? (
+              <div className="perm-plan-file">
+                <button type="button" className="perm-plan-link" onClick={openPlan} title={planFile}>
+                  <span className="perm-plan-fileicon" aria-hidden>📄</span>
+                  {planFile}
+                </button>
+                <div className="perm-plan-filenote">{t('permission.planSavedNote')}</div>
+                <textarea
+                  className="perm-plan-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder={t('permission.planNotesPlaceholder')}
+                />
+              </div>
+            ) : editing ? (
               <textarea
                 className="perm-plan-textarea"
                 value={draft}
@@ -262,7 +293,9 @@ function PlanModal({ t, req, onDecision }: Props) {
           </div>
           <div className="modal-actions perm-actions">
             <button type="button" className="btn deny" onClick={keepPlanning}>
-              {edited ? t('permission.planSendNotes') : t('permission.keepPlanning')}
+              {(planFile ? notes.trim() : edited)
+                ? t('permission.planSendNotes')
+                : t('permission.keepPlanning')}
             </button>
             <button type="button" className="btn send" onClick={() => onDecision('allow')}>
               {t('permission.approvePlan')}

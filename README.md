@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.239` |
+| **Extension version** | `1.0.252` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.223`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.232`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---

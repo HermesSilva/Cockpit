@@ -47,6 +47,8 @@ export const ptBR: Partial<Strings> = {
   'remote.active': 'Sob Controle remoto — clique para desligar (encerra o terminal)',
   'remote.connecting': 'Conectando o Controle remoto — aguardando a sessão no terminal',
   'remote.failed': 'Controle remoto caiu — veja o motivo no terminal; clique para reconectar',
+  'remote.cloud': 'Rodando na nuvem — controlado pelo claude.ai/code ou pelo app; clique para retomar',
+  'remote.offline': 'Controle remoto offline — a conexão caiu; clique para reconectar',
   'creds.title': 'Cofre de credenciais',
   'creds.enroll.intro':
     'Proteja o cofre com um app autenticador (Google Authenticator, Authy…). Um código é exigido para adicionar e para usar qualquer credencial.',
@@ -536,6 +538,8 @@ export const ptBR: Partial<Strings> = {
   'permission.planMaximize': 'Maximizar',
   'permission.planRestore': 'Restaurar',
   'permission.planSendNotes': 'Continuar planejando (enviar minhas notas)',
+  'permission.planSavedNote': 'Salvo em Planing/ e aberto no editor. Revise por lá e então aprove ou continue planejando.',
+  'permission.planNotesPlaceholder': 'Notas para o agente (opcional) — enviadas ao continuar planejando',
 
   'ask.title': 'O Claude tem uma pergunta',
   'ask.answered': 'Pergunta respondida',

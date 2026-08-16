@@ -6,6 +6,22 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.253] - 2026-08-16
+
+### Fixed
+- **Ask questions recover flattened Unicode.** The model occasionally emits a tool_use input with
+  the escape flattened (`u00f3` instead of `ó`) — valid JSON, so `JSON.parse` cannot fix it, and
+  an `AskUserQuestion` header/option rendered as `su00f3` for `só`. The Ask card and modal now
+  repair it on display via `decodeFlattenedUnicode` (`webview/src/util/decodeText.ts`), restricted
+  to an orphan `uXXXX` in the Latin-1/Latin-Extended and common-punctuation ranges the model
+  actually flattens. A real `\uXXXX` (already resolved by `JSON.parse`) and tokens like `u0000` or
+  an out-of-range hex id are left untouched. Covered by `test/DecodeText.test.ts`.
+
+### Changed
+- **Sending from the local composer takes back Remote Control.** Typing and sending in the desktop
+  composer while a remote device drives the conversation now turns Remote Control off first, so the
+  wheel returns to the desktop instead of the local and remote inputs contending.
+
 ## [1.0.252] - 2026-08-14
 
 ### Added

@@ -447,6 +447,9 @@ export function Composer({
     if (correcting) setCorrecting(false); // cancels the correction in progress, sends what it has
     const v = text.trim();
     if ((!v && images.length === 0) || disabled) return;
+    // Under Remote Control, sending from the local composer takes the wheel back: turn the
+    // remote off (onRemoteControl is a toggle, off when it's on) and then send the text.
+    if (remoteActive) onRemoteControl?.();
     onSend(
       v,
       images.map((i) => ({ mediaType: i.mediaType, data: i.data })),

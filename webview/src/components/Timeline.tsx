@@ -14,6 +14,7 @@ import type {
 } from '../types';
 import { isTodoToolName } from '../store';
 import { splitAnswerNote } from '../askAnswer';
+import { decodeFlattenedUnicode as dec } from '../util/decodeText';
 import { Markdown } from './Markdown';
 import { CodeBlock } from './CodeBlock';
 import { DiffView } from './DiffView';
@@ -1003,10 +1004,10 @@ function AskCard({
         return (
           <div className="ask-card-q" key={i}>
             <div className="ask-card-qhead">
-              {q.header && <span className="ask-card-chip">{q.header}</span>}
+              {q.header && <span className="ask-card-chip">{dec(q.header)}</span>}
               {q.multiSelect && <span className="ask-card-multi">{t('ask.multiHint')}</span>}
             </div>
-            <div className="ask-question">{q.question}</div>
+            <div className="ask-question">{dec(q.question)}</div>
             <div className="ask-options ask-options-static">
               {q.options.map((opt, oi) => {
                 const active = picked.has(opt.label);
@@ -1014,8 +1015,8 @@ function AskCard({
                   <div key={oi} className={`ask-option ${active ? 'active' : 'dim'}`}>
                     <span className={`ask-ctrl ${q.multiSelect ? 'check' : 'radio'} ${active ? 'on' : ''}`} />
                     <span className="ask-opt-text">
-                      <span className="ask-opt-label">{opt.label}</span>
-                      {opt.description && <span className="ask-opt-desc">{opt.description}</span>}
+                      <span className="ask-opt-label">{dec(opt.label)}</span>
+                      {opt.description && <span className="ask-opt-desc">{dec(opt.description)}</span>}
                     </span>
                   </div>
                 );

@@ -243,7 +243,10 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
     send({
       kind: 'exportMd',
-      markdown: buildConversationMd(items, t, title, state.config?.userName),
+      markdown: buildConversationMd(items, t, title, state.config?.userName, {
+        showThinking: allExpanded ?? state.config?.showThinking,
+        expandTools: allExpanded ?? state.config?.expandToolCards === true,
+      }),
       fileName: suggestedFileName(title),
       mode,
     });

@@ -24,9 +24,9 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.253` |
+| **Extension version** | `1.0.255` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
-| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.232`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
+| **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.265`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
 | **Languages** | pt-BR and international English (runtime switching) |
 
 ---
@@ -88,8 +88,13 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | **Local cost estimate** (per turn/session) | ✅ | 🟡 | official shows plan-usage; Cockpit adds a price-table estimate labelled "estimated" |
 | Session / weekly subscription limits (% + reset) | ✅ | ✅ | Cockpit reads the real OAuth `/usage`, including the per-model weekly window labelled by the server |
 | Usage attribution (long context / subagents / cache / MCP) | ✅ | ✅ | Cockpit estimates it from local transcripts; official reads it from the CLI `/usage` dialog |
-| **Cache keep-alive meter (1h TTL)** | ✅ | ❌ | shows time-to-expiry of the prompt cache |
+| **Cache keep-alive (1h TTL): meter *and* refresh** | ✅ | ❌ | not just a countdown — opt-in **Keep cache alive** re-arms the TTL before it lapses, so an idle session doesn't pay a full cache re-write |
+| **Estimated cache savings (USD)** | ✅ | ❌ | prices the cache-read tokens against the full input rate |
 | Turn timing by (model, effort, type) | ✅ | ❌ | atomic cross-process merge |
+| **Session activity**: duration, turns, peak context | ✅ | ❌ | high-water mark of context with its cache figure |
+| **Context injected per tool** (calls + tokens) | ✅ | 🟡 | ranks Bash/Read/Edit/MCP by the context each pushed in; MCP servers grouped |
+| **7-day spend breakdown by model** | ✅ | 🟡 | from this machine's transcripts, as equivalent API price |
+| **All-time global token counter** ([`DailyTokens`](src/stats/DailyTokens.ts)) | ✅ | ❌ | sent / received / total across **every project on the machine**, plus a per-day history — read from `~/.claude/projects/**/*.jsonl` with an incremental rollup, not just the open session |
 | Context breakdown via `/context` | ⏳ | ✅ | Cockpit UI ready, data source pending |
 
 **Sessions, panels & recovery**
@@ -195,9 +200,12 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Scroll-to-bottom + at-bottom autoscroll | ✅ | ✅ | floating button when scrolled up |
 | Keyboard-first (send/stop/new/find) | ✅ | ✅ | — |
 
-> **Where Cockpit leads:** consumption transparency (cache panel, cost estimate, keep-alive,
-> turn timing), bilingual runtime i18n, in-conversation find, an inline PT/EN spell-checker
-> (marks only, click to fix), voice dictation, Markdown export, and resilient render recovery.
+> **Where Cockpit leads:** consumption transparency — the cache panel with its **savings
+> estimate** and an **active** keep-alive that re-arms the 1 h TTL, **session activity**
+> (duration, turns, peak context), **context injected per tool**, and an **all-time global
+> token counter** spanning every project on the machine — plus bilingual runtime i18n,
+> in-conversation find, an inline PT/EN spell-checker (marks only, click to fix), voice
+> dictation, Markdown export, and resilient render recovery.
 > **Where the official GUI leads:** native-editor diff with edit-before-accept, editable plan
 > mode, @-mentions, file-restoring checkpoints, sign-in/onboarding, the built-in IDE MCP
 > server (diagnostics/Jupyter), Chrome automation, worktrees, cloud-session resume, and
@@ -543,11 +551,16 @@ automatically resumes the most recent session for that directory.
 | **Context window** meter (used / remaining / limit) | ✅ | Bar at the top, with color bands; 200K or 1M limit. `CLAUDE_CODE_DISABLE_1M_CONTEXT` (environment or the `env` block of user/project settings) caps it at 200K, where the CLI auto-compacts | Limit auto-derived from the active model when the engine doesn't report its own |
 | **Engine warnings** (fast-mode credits, restricted subagent model) | ✅ | ⚠ banner in the timeline, once per session | Recognised by shape from `system` events — a warning the CLI stops emitting simply stops appearing |
 | **Cache**: hit-rate, read, write | ✅ | **Cache** block in the panel | — |
+| **Cache life** countdown + **keep-alive** ([`CacheKeeper`](src/cli/CacheKeeper.ts)) | ✅ | Bar showing how much of the prompt cache's 1 h TTL is left. Ticking **Keep cache alive** re-arms it before expiry with a headless one-shot, so a session you step away from doesn't pay a full cache re-write on the next turn | The refresh costs one minimal turn; the TTL is the CLI's, not ours |
+| **Estimated cache savings** | ✅ | **Est. savings** in the Cache block: what the cache-read tokens would have cost billed at the full input rate | Estimate, same caveat as Cost |
 | **Cost** per turn and session | 🟡 | Cost block ("estimated" label) | Estimate, not the official invoice |
 | Tokens in / out / cache-create / cache-read | ✅/🟡 | **Tokens** block | Full breakdown partial |
 | **Subscription limits** (current session, weekly, per-model weekly) | ✅ | Meters in the panel, fed by the real OAuth `/usage` API (same source as `/usage`) | Statusline complements it during low usage — see [statusline](#real-account-usage-statusline) |
 | **Usage attribution** (long context, subagents, cache hit-rate, context per tool/MCP) | ✅ | "Where your tokens went" section in the Usage dialog | Estimated from local transcripts; `tool_result` tokens approximated at ~4 chars/token |
+| **Global token counter** (all-time + per day) | ✅ | **Tokens (global)** block in the Usage dialog: sent, received and total across every project on this machine, with a day-by-day bar history | Machine-local only (this device's transcripts); does not include other devices |
+| **7-day spend by model** | ✅ | **Breakdown** in the Usage dialog, with new vs. cache-read tokens per model | Equivalent API price — on a subscription you are not charged this |
 | **Turn timing** segmented by (model, effort, type) | ✅ | Sample counts per segment; debounced flush with a cross-process lock (atomic merge) | — |
+| **Session duration**, **turn count**, **peak context** | ✅ | **Session activity** block: wall-clock duration, turns completed, and the high-water mark of context (with the cache figure at that moment) | — |
 | Context-near-limit alert | ✅ | Automatic warning above ~85% | — |
 | **Visible compaction** (S11) | ✅ | While it happens the indicator says *"Compacting the context…"* instead of looking stuck; the `compact_boundary` closes it with a blue band in the timeline: `before → after · −condensed · duration` | The sizes are the CLI's own (`compact_metadata`); a field it stops sending just disappears from the band |
 | Context **breakdown** via `/context` | ⏳ | — | UI ready, data source pending |
@@ -557,6 +570,44 @@ automatically resumes the most recent session for that directory.
 **Detailed session statistics (tooltip/hint):**
 
 ![Session hint](images/Session%20Hint%20View.png)
+
+#### What you can see here and nowhere else
+
+The CLI knows all of this — it just never shows most of it, and neither does the official
+GUI. Four of these come from doing work the CLI does not do for you:
+
+**1. The prompt cache as a resource you manage, not just observe.**
+Every GUI can show a cache hit rate after the fact. The Cockpit prices it — **Est. savings**
+is what those cache-read tokens would have cost at the full input rate — and, more usefully,
+lets you *keep* it: the **Cache life** bar counts down the 1 h TTL, and ticking **Keep cache
+alive** re-arms it with a minimal headless turn before it lapses. Walking away from a large
+session normally means the next prompt re-writes the whole cache; this is the difference
+between paying cache-read and paying cache-write on a 500 K-token context.
+
+**2. Where the context actually went.**
+**Context injected per tool** ranks Bash, Read, Edit, Grep and MCP by the tokens each pushed
+into the window, with call counts. When a session fills up faster than expected, this names
+the culprit instead of leaving you to guess — usually one chatty tool. MCP servers are
+grouped so a noisy server stands out as one row.
+
+**3. A token counter that outlives the session.**
+**Tokens (global)** is all-time and machine-wide: sent, received and total across *every*
+project in `~/.claude/projects`, with a per-day history. The CLI's own `/usage` answers "how
+much of my plan is left this week"; this answers "how much have I actually run through this
+tool, ever, and on which days". It is built from an incremental rollup of the transcripts,
+so it is cheap to recompute and survives every session you have ever run.
+
+**4. Peak context, not just current context.**
+A context meter that only shows *now* hides the spike that triggered compaction.
+**Session activity** keeps the high-water mark — with the cache figure at that moment —
+alongside duration and turn count.
+
+> **Honest about the numbers:** the USD figures are the *equivalent API price*, computed
+> locally from a price table — on a subscription you are not charged them, and they are
+> labelled as estimates throughout. `tool_result` tokens are approximated at ~4 chars/token.
+> Everything derived from transcripts covers **this machine only**. The one set of figures
+> that is not an estimate is the subscription limits, which come from the same OAuth
+> `/usage` API the CLI itself uses.
 
 ### Extensibility (surfacing what the CLI exposes)
 
@@ -616,6 +667,8 @@ context, and **never** write or log credentials.
 | ⏪ **Prompt rewind** | Rewind to an earlier prompt: truncates the transcript and re-arms `--resume` | Local |
 | ✏️ **Rename context** | Rename a saved session from its card; updates the open webview title | Local |
 | ⏱️ **Per-turn elapsed time** | Live on the gauge and again at the end of each turn | Local |
+| 🔋 **Prompt-cache keep-alive** ([`CacheKeeper`](src/cli/CacheKeeper.ts)) | Opt-in per session: re-arms the cache's 1 h TTL before it lapses so an idle session doesn't pay a full cache re-write on the next prompt | Headless one-shot resume (minimal turn) |
+| 🔢 **All-time global token counter** ([`DailyTokens`](src/stats/DailyTokens.ts)) | Sent / received / total across every project on this machine, with a per-day history; incremental rollup over `~/.claude/projects/**/*.jsonl` | Local (reads transcripts) |
 | 📊 **Real account usage** | Session / weekly / per-model meters fed by the real OAuth `/usage` API (no manual budgets) | OAuth `/usage`; **no** token spend |
 | 🪟 **Statusline real-usage wrapper** | Reversible wrapper that caches `rate_limits` / `context_window` and re-invokes your original statusline — see [statusline](#real-account-usage-statusline) | Local (Windows) |
 

@@ -45,9 +45,10 @@ interface Cache {
 
 // Built-ins already covered by the webview's static catalog — they don't spend AI.
 const BUILTIN = new Set([
-  'clear', 'compact', 'context', 'memory', 'resume', 'model', 'config', 'permissions',
-  'review', 'code-review', 'init', 'mcp', 'agents', 'hooks', 'login', 'logout', 'cost', 'usage',
-  'status', 'help', 'doctor',
+  'clear', 'compact', 'context', 'memory', 'resume', 'fork', 'model', 'config', 'permissions',
+  'theme', 'cd', 'review', 'code-review', 'init', 'mcp', 'agents', 'hooks', 'goal', 'loop',
+  'workflows', 'diff', 'advisor', 'reload-plugins', 'login', 'logout', 'web-setup', 'cost',
+  'usage', 'status', 'stats', 'insights', 'tasks', 'skill-doctor', 'help', 'doctor',
 ]);
 
 const CACHE_FILE = path.join(os.homedir(), '.claude', 'tootega', 'slash-commands.json');

@@ -34,6 +34,9 @@ export const SLASH_CATALOG: Record<string, CmdMeta> = {
   goal: { cat: 'cmdcat.tools', desc: 'cmd.goal' },
   loop: { cat: 'cmdcat.tools', desc: 'cmd.loop' },
   workflows: { cat: 'cmdcat.tools', desc: 'cmd.workflows' },
+  diff: { cat: 'cmdcat.tools', desc: 'cmd.diff' },
+  advisor: { cat: 'cmdcat.tools', desc: 'cmd.advisor' },
+  'reload-plugins': { cat: 'cmdcat.tools', desc: 'cmd.reloadPlugins' },
   // Account
   login: { cat: 'cmdcat.account', desc: 'cmd.login' },
   logout: { cat: 'cmdcat.account', desc: 'cmd.logout' },
@@ -45,6 +48,7 @@ export const SLASH_CATALOG: Record<string, CmdMeta> = {
   stats: { cat: 'cmdcat.info', desc: 'cmd.stats' },
   insights: { cat: 'cmdcat.info', desc: 'cmd.insights' },
   tasks: { cat: 'cmdcat.info', desc: 'cmd.tasks' },
+  'skill-doctor': { cat: 'cmdcat.info', desc: 'cmd.skillDoctor' },
   help: { cat: 'cmdcat.info', desc: 'cmd.help' },
   doctor: { cat: 'cmdcat.info', desc: 'cmd.doctor' },
 };

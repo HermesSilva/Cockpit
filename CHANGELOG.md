@@ -6,6 +6,35 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.256] - 2026-09-08
+
+### Added
+- **Curated hints for the slash commands the CLI added through 2.1.265.** `slashCatalog.ts`
+  gained `/diff` (2.1.260), `/advisor` (2.1.260), `/reload-plugins` (2.1.260) and
+  `/skill-doctor` (2.1.261), with categories and bilingual descriptions. These already
+  worked — uncatalogued commands fall through to "Other" and get an AI-researched
+  description — so this only replaces that fallback with a curated label.
+
+### Fixed
+- **The slash-research built-in list had drifted from the catalog.**
+  `SlashCommandResearch`'s `BUILTIN` set exists so commands the webview already documents
+  don't spend an AI round-trip on a description. It had not been updated when the catalog
+  grew in 1.0.254, so `/fork`, `/theme`, `/cd`, `/goal`, `/loop`, `/workflows`,
+  `/web-setup`, `/stats`, `/insights` and `/tasks` were each researched once despite the
+  hint already being on hand. Now synced with the catalog, including the four new commands.
+
+### Documentation
+- **The statistics surface is documented.** The consumption metrics were built but largely
+  absent from the README: cache life and the opt-in keep-alive, estimated cache savings,
+  session activity (duration, turns, peak context), context injected per tool, the 7-day
+  per-model breakdown, and the all-time global token counter. Adds a section explaining
+  what those figures show that other front-ends don't, and states the estimate caveats
+  (equivalent API price, ~4 chars/token for `tool_result`, this machine only) in one place.
+- **Screenshots are referenced by absolute URL.** `images/` is now the single image folder
+  for both extensions, so the references have to resolve from outside this repository too;
+  `Cockpit4VS` keeps no copy of its own.
+- Header metadata refreshed: engine aligned with CLI `2.1.265`.
+
 ## [1.0.254] - 2026-08-26
 
 ### Fixed

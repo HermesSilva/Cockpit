@@ -5,13 +5,44 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SessionInfo, HistoryItem } from '../../shared/protocol';
 
-/** Encodes the cwd in Claude Code's folder format (':' '\\' '/' -> '-'). */
+/**
+ * Encodes the cwd in Claude Code's folder format: EVERY non-alphanumeric
+ * character becomes '-' (so spaces, parentheses, dots, accents — anything
+ * Windows allows in a path — each collapse to a single '-', not merged). The
+ * casing of the rest of the path is PRESERVED, matching the real folders the CLI
+ * creates (e.g. `d:\Tootega\Source\Cockpit` -> `d--Tootega-Source-Cockpit`).
+ *
+ * The earlier version only handled ':' '\\' '/', so a path with a space
+ * (e.g. `F:\Estudo Cobol`) pointed at a folder that never existed — sessions
+ * listed empty and every live tab showed "0 msgs".
+ *
+ * Windows drive-letter case is ambiguous (VS Code hands the cwd as `F:\` or
+ * `f:\` interchangeably), and the CLI keeps whatever case it first saw. We do
+ * NOT lowercase — that would break `CrediSIS`/`Cockpit` etc. Instead the caller
+ * (projectsDir) tolerates the drive-letter case when resolving the folder.
+ */
 export function encodeCwd(cwd: string): string {
-  return cwd.replace(/[:\\/]/g, '-');
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 function projectsDir(cwd: string): string {
-  return path.join(os.homedir(), '.claude', 'projects', encodeCwd(cwd));
+  const base = path.join(os.homedir(), '.claude', 'projects');
+  const encoded = encodeCwd(cwd);
+  const direct = path.join(base, encoded);
+  // Fast path: the exact folder exists (case matched, incl. drive letter).
+  if (fs.existsSync(direct)) return direct;
+  // The drive letter's case is ambiguous (`F:\` vs `f:\`): the CLI may have
+  // created the folder with the other case. Fall back to a case-insensitive
+  // match against what is actually on disk before giving up.
+  try {
+    const hit = fs
+      .readdirSync(base)
+      .find((name) => name.toLowerCase() === encoded.toLowerCase());
+    if (hit) return path.join(base, hit);
+  } catch {
+    /* base dir missing: fall through to the encoded path */
+  }
+  return direct;
 }
 
 /** Removes BOM/zero-width and normalizes spaces (clean titles). */

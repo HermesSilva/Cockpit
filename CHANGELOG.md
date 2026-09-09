@@ -6,6 +6,22 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.257] - 2026-09-08
+
+### Fixed
+- **Sessions were invisible for any project whose path contains a space or an accent.**
+  `encodeCwd` replaced only `:` `\` and `/`, but the CLI replaces *every* non-alphanumeric
+  character when it names the folders under `~/.claude/projects`. A cwd like
+  `F:\Estudo Cobol` was therefore encoded to a folder that never existed, so `listSessions`
+  came back empty and every live tab showed "0 msgs" — it looked like the project had no
+  history rather than like the extension was reading the wrong folder. Every non-alphanumeric
+  character now collapses to a single `-`, never merged, matching the real folder names.
+- **Session lookup tolerates the drive letter's case.** VS Code hands the cwd as `F:\` or
+  `f:\` interchangeably and the CLI keeps whichever case it saw first, so an exact-match
+  lookup could still miss. Resolution now falls back to a case-insensitive scan. The path's
+  own casing is deliberately preserved — lowercasing it would have been the shorter fix but
+  breaks `CrediSIS` and `Cockpit`.
+
 ## [1.0.256] - 2026-09-08
 
 ### Added

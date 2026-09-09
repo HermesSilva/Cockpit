@@ -24,7 +24,7 @@
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.256` |
+| **Extension version** | `1.0.257` |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.265`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
 | **Languages** | pt-BR and international English (runtime switching) |
@@ -1170,6 +1170,7 @@ encoded by mapping `:` `\` `/` → `-`).
 | Chat does not respond / auth error | CLI not authenticated | Run **Sign in** or `claude` in a terminal and log in |
 | Model selector shows only aliases | Subscription account (no API key) | Expected — use an alias, the active model, or **Custom…** |
 | Limit meters empty | No real usage source | Enable **Real usage tracking** and run a `claude` session |
+| Session list empty / every tab shows "0 msgs" | Extension older than `1.0.257` and a project path containing a space or an accent | Update the extension — `encodeCwd` was looking in a folder that never existed |
 | Stop button does nothing | CLI older than `2.1.162` | Run `claude update` — older versions drop the interrupt in `stream-json` sessions |
 | Statusline does not update | `settings.json` has comments | Edit `~/.claude/settings.json` manually |
 | New events do not render | The CLI version changed the contract | The parser ignores unknown ones; open an issue with the CLI version |

@@ -672,9 +672,10 @@ export type WebviewToHost =
   | { kind: 'mentionSearch'; requestId: string; query: string } // @-mention: busca arquivos
   | { kind: 'openDiff'; tool: string; input: unknown } // abre o diff proposto no editor nativo
   | { kind: 'draftChanged'; text: string } // espelha o rascunho/ditado no host (anti-perda)
-  // Exports the conversation to a .md at the project root. mode 'direct' = mechanical (the
-  // markdown is already built); 'ai' = rewritten via the CLI (same model/effort, spends tokens).
-  | { kind: 'exportMd'; markdown: string; fileName?: string; mode: 'direct' | 'ai' }
+  // Exports the conversation to the project root. mode 'direct' = a self-contained .html
+  // snapshot of the timeline as rendered (`html`, built in the webview from the live DOM);
+  // 'ai' = a .md rewritten via the CLI (same model/effort, spends tokens) from `markdown`.
+  | { kind: 'exportMd'; markdown?: string; html?: string; fileName?: string; mode: 'direct' | 'ai' }
   | { kind: 'voiceDictGet' } // modal: loads the account's dictation dictionary
   | { kind: 'voiceDictSave'; data: VoiceDictData } // modal: saves the dictation dictionary
   | { kind: 'setKeepCacheAlive'; value: boolean } // liga/desliga o keep-alive do cache desta aba

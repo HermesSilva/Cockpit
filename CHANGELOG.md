@@ -6,6 +6,29 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.258] - 2026-09-13
+
+### Changed
+- **The direct export writes an HTML snapshot of the timeline instead of Markdown.** The
+  Markdown build was a second, parallel implementation of the rendering: it re-derived the
+  conversation from the timeline items, so anything the components drew that it did not know
+  about — tool cards, activity rows, attached images, the theme — simply did not exist in the
+  exported file. The export is now captured from the live DOM, together with the stylesheet
+  rules and the host's theme variables, so what lands on disk is the conversation as it looks
+  on screen, down to which cards are expanded. Because it is a capture and not a
+  re-rendering, it cannot drift from the components as they change.
+- **The exported file is self-contained.** Images are inlined as base64 — attachments
+  (already data URLs) and the activity icon served by the host — so a single `.html` opens
+  offline with no companion folder. The text stays selectable and searchable, which a
+  screenshot would not.
+- Interactive affordances are neutralised in the snapshot: buttons become spans (keeping
+  their classes, since many of them *are* the card headers), inputs are dropped and inline
+  handlers are stripped. A read-only document should not offer controls that do nothing.
+- **"Generate document with AI" still produces Markdown.** There the CLI rewrites the
+  conversation into prose, and the source has to be text rather than markup. When the
+  snapshot cannot be captured the export fails instead of silently falling back to Markdown:
+  handing over a different format than the one requested is worse than an error.
+
 ## [1.0.257] - 2026-09-08
 
 ### Fixed

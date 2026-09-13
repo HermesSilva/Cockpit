@@ -1714,21 +1714,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Exporta a conversa p/ um .md na RAIZ do projeto. mode 'direct' grava o
-   * mechanical markdown; 'ai' rewrites it via the CLI (same model/effort as the tab, spends
-   * tokens). Unique name (avoids overwriting); opens the file at the end.
+   * Exporta a conversa p/ a RAIZ do projeto. mode 'direct' grava o snapshot .html que o
+   * webview montou a partir do DOM vivo — a timeline como está na tela, com CSS e imagens
+   * embutidos; 'ai' rewrites the markdown via the CLI (same model/effort as the tab, spends
+   * tokens) into a .md. Unique name (avoids overwriting); opens the file at the end.
    */
   private async exportConversation(
     tabId: string,
-    markdown: string,
+    markdown: string | undefined,
+    html: string | undefined,
     fileName: string | undefined,
     mode: 'direct' | 'ai',
   ): Promise<void> {
     const pt = resolveLocale().startsWith('pt');
     try {
-      let content = markdown;
+      let content: string;
       if (mode === 'ai') {
-        const gen = await this.generateDocAI(tabId, markdown);
+        const gen = markdown ? await this.generateDocAI(tabId, markdown) : undefined;
         if (!gen) {
           void vscode.window.showErrorMessage(
             pt ? 'Falha ao gerar o documento com IA.' : 'Failed to generate the document with AI.',
@@ -1736,8 +1738,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return;
         }
         content = gen;
+      } else {
+        // The snapshot is built in the webview (only there is the rendered DOM); without it
+        // there is nothing to write — never fall back to the markdown, which would silently
+        // hand the user a different format than the one requested.
+        if (!html) {
+          void vscode.window.showErrorMessage(
+            pt ? 'Falha ao capturar a timeline.' : 'Failed to capture the timeline.',
+          );
+          return;
+        }
+        content = html;
       }
-      const target = uniqueFilePath(path.join(this.workspaceCwd(), fileName || 'conversa.md'));
+      const fallback = mode === 'ai' ? 'conversa.md' : 'conversa.html';
+      const target = uniqueFilePath(path.join(this.workspaceCwd(), fileName || fallback));
       await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(content, 'utf8'));
       await vscode.window.showTextDocument(vscode.Uri.file(target), { preview: false });
     } catch (e) {
@@ -2755,7 +2769,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.correctVoice(srcTab, m.text);
         break;
       case 'exportMd':
-        void this.exportConversation(srcTab, m.markdown, m.fileName, m.mode);
+        void this.exportConversation(srcTab, m.markdown, m.html, m.fileName, m.mode);
         break;
       case 'voiceDictGet':
         this.sendVoiceDict(srcTab);

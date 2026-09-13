@@ -36,6 +36,7 @@ import { ScrollMarkers } from './components/ScrollMarkers';
 import { SearchBar } from './components/SearchBar';
 import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
 import { buildConversationMd, suggestedFileName } from './util/exportMd';
+import { buildTimelineHtml, suggestedHtmlName } from './util/exportHtml';
 import { resetSpell } from './spell/spell';
 
 export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: string }) {
@@ -239,17 +240,30 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     const sid = tab?.sessionId ?? tab?.session?.sessionId;
     if (sid) send({ kind: 'remoteControl', sessionId: sid });
   };
+  // 'direct' exports a self-contained .html snapshot of the timeline exactly as rendered
+  // (captured from the live DOM, so it needs no second implementation of the rendering).
+  // 'ai' still goes out as Markdown: there the CLI rewrites the conversation into a
+  // document, and the source has to be prose, not markup.
   const onExportMd = (mode: 'direct' | 'ai') => {
     const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
-    send({
-      kind: 'exportMd',
-      markdown: buildConversationMd(items, t, title, state.config?.userName, {
-        showThinking: allExpanded ?? state.config?.showThinking,
-        expandTools: allExpanded ?? state.config?.expandToolCards === true,
-      }),
-      fileName: suggestedFileName(title),
-      mode,
-    });
+    if (mode === 'ai') {
+      send({
+        kind: 'exportMd',
+        markdown: buildConversationMd(items, t, title, state.config?.userName, {
+          showThinking: allExpanded ?? state.config?.showThinking,
+          expandTools: allExpanded ?? state.config?.expandToolCards === true,
+        }),
+        fileName: suggestedFileName(title),
+        mode,
+      });
+      return;
+    }
+    const docTitle = title?.trim() || t('export.docTitle');
+    void buildTimelineHtml(docTitle, t('export.generatedAt', new Date().toLocaleString())).then(
+      (html) => {
+        if (html) send({ kind: 'exportMd', html, fileName: suggestedHtmlName(title), mode });
+      },
+    );
   };
   const onEnableTracking = () => {
     setUsage(null); // shows loading; the host installs the wrapper and re-sends usageData

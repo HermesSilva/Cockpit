@@ -51,7 +51,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Tool-call timeline (per-tool cards) | ✅ | ✅ | Cockpit: emoji per tool, Bash split, Read gutter |
 | Markdown + syntax highlight | ✅ | ✅ | highlight.js + line-number gutter |
 | **Find in conversation (Ctrl+F)** | ✅ | ❌ | scope **Timeline** vs **Prompts only**, 250 ms debounce, highlight + jump |
-| **Export conversation to Markdown** | ✅ | ❌ | direct or AI-polished; keeps speaker names |
+| **Export conversation** | ✅ | ❌ | self-contained HTML snapshot of the timeline as rendered, or AI-polished Markdown |
 | Timeline verbosity filter (verbose→quiet) | ✅ | ❌ | display-only, doesn't change the agent |
 | Scroll-marker rail (one per prompt) | ✅ | 🟡 | Cockpit minimap rail with numbered hover |
 
@@ -195,7 +195,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | **Reopen closed session** | ✅ | ✅ | `Ctrl+Shift+T` |
 | **Remote control from phone** | ✅ | ✅ | 📱 on the session card |
 | Onboarding checklist (dismissible) | ✅ | ✅ | first-run steps in the hub |
-| One-click export to Markdown | ✅ | ❌ | direct or AI-polished |
+| One-click export (HTML snapshot / Markdown) | ✅ | ❌ | the timeline as seen, or AI-polished |
 | Elegant confirm dialogs (delete/effort) | ✅ | 🟡 | Esc/overlay, danger styling |
 | Scroll-to-bottom + at-bottom autoscroll | ✅ | ✅ | floating button when scrolled up |
 | Keyboard-first (send/stop/new/find) | ✅ | ✅ | — |
@@ -205,7 +205,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 > (duration, turns, peak context), **context injected per tool**, and an **all-time global
 > token counter** spanning every project on the machine — plus bilingual runtime i18n,
 > in-conversation find, an inline PT/EN spell-checker (marks only, click to fix), voice
-> dictation, Markdown export, and resilient render recovery.
+> dictation, HTML/Markdown export, and resilient render recovery.
 > **Where the official GUI leads:** native-editor diff with edit-before-accept, editable plan
 > mode, @-mentions, file-restoring checkpoints, sign-in/onboarding, the built-in IDE MCP
 > server (diagnostics/Jupyter), Chrome automation, worktrees, cloud-session resume, and

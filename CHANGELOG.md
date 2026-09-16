@@ -6,6 +6,18 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.260] - 2026-09-16
+
+### Fixed
+- **The 1.0.259 fix did not actually reach the file: every tool card still exported empty.**
+  Expanding the cards before the capture was right, but waiting two animation frames for it to
+  take effect was not. Each card re-syncs its own open state in an effect that React runs after
+  the commit, and mounting the bodies costs a further render, so two frames land in the middle
+  of the sequence — measured in Chromium, a timeline of 81 cards had 0 bodies in the DOM after
+  two frames and all 81 after three. The export now waits for the result instead of for a
+  delay: it polls until the number of mounted bodies stops growing, with a ceiling so an
+  unexpected state cannot hang the export.
+
 ## [1.0.259] - 2026-09-16
 
 ### Fixed

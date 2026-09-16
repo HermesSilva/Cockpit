@@ -265,16 +265,35 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     // view back; the exporter turns each card into a <details> that the reader reopens at will.
     const previous = allExpanded;
     setAllExpanded(true);
-    // Two frames: one for React to commit the expansion, one for the browser to lay it out.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        void buildTimelineHtml(docTitle, t('export.generatedAt', new Date().toLocaleString()))
-          .then((html) => {
-            if (html) send({ kind: 'exportMd', html, fileName: suggestedHtmlName(title), mode });
-          })
-          .finally(() => setAllExpanded(previous));
-      });
-    });
+    // Waiting a fixed number of frames does not work — it is what the first version of this
+    // did, and it shipped an export with all 81 cards closed. Each card re-syncs its own open
+    // state in a useEffect, which React runs after the commit, and mounting the bodies then
+    // costs a further render; two frames land in the middle of that (measured in Chromium:
+    // 0 of 81 bodies after two frames, all 81 after three). So wait for the result rather than
+    // for a delay, with a ceiling so a surprise can never hang the export.
+    void (async () => {
+      try {
+        // Not every card can have a body (AskUserQuestion renders its own, EndConversation may
+        // have none), so "all cards have one" is not a condition that always comes true. Wait
+        // for the count to stop growing instead: once a frame adds nothing, React has finished
+        // mounting what it was going to mount.
+        const hasCards = document.querySelector('.timeline .tool-card') !== null;
+        const mounted = () => document.querySelectorAll('.timeline .tool-body').length;
+        for (let i = 0, last = -1; hasCards && i < 120; i++) {
+          const now = mounted();
+          if (now > 0 && now === last) break;
+          last = now;
+          await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+        }
+        const html = await buildTimelineHtml(
+          docTitle,
+          t('export.generatedAt', new Date().toLocaleString()),
+        );
+        if (html) send({ kind: 'exportMd', html, fileName: suggestedHtmlName(title), mode });
+      } finally {
+        setAllExpanded(previous);
+      }
+    })();
   };
   const onEnableTracking = () => {
     setUsage(null); // shows loading; the host installs the wrapper and re-sends usageData

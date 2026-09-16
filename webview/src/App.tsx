@@ -259,11 +259,22 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       return;
     }
     const docTitle = title?.trim() || t('export.docTitle');
-    void buildTimelineHtml(docTitle, t('export.generatedAt', new Date().toLocaleString())).then(
-      (html) => {
-        if (html) send({ kind: 'exportMd', html, fileName: suggestedHtmlName(title), mode });
-      },
-    );
+    // A collapsed tool card has no body in the DOM — React only mounts it while the card is
+    // open — so capturing the panel as-is would export a Read/Grep/Write whose content simply
+    // is not there. Expand everything for the duration of the capture, then put the user's own
+    // view back; the exporter turns each card into a <details> that the reader reopens at will.
+    const previous = allExpanded;
+    setAllExpanded(true);
+    // Two frames: one for React to commit the expansion, one for the browser to lay it out.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void buildTimelineHtml(docTitle, t('export.generatedAt', new Date().toLocaleString()))
+          .then((html) => {
+            if (html) send({ kind: 'exportMd', html, fileName: suggestedHtmlName(title), mode });
+          })
+          .finally(() => setAllExpanded(previous));
+      });
+    });
   };
   const onEnableTracking = () => {
     setUsage(null); // shows loading; the host installs the wrapper and re-sends usageData

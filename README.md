@@ -51,7 +51,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Tool-call timeline (per-tool cards) | ✅ | ✅ | Cockpit: emoji per tool, Bash split, Read gutter |
 | Markdown + syntax highlight | ✅ | ✅ | highlight.js + line-number gutter |
 | **Find in conversation (Ctrl+F)** | ✅ | ❌ | scope **Timeline** vs **Prompts only**, 250 ms debounce, highlight + jump |
-| **Export conversation** | ✅ | ❌ | self-contained HTML snapshot of the timeline as rendered, or AI-polished Markdown |
+| **Export conversation** | ✅ | ❌ | self-contained HTML snapshot with expandable tool cards, or AI-polished Markdown |
 | Timeline verbosity filter (verbose→quiet) | ✅ | ❌ | display-only, doesn't change the agent |
 | Scroll-marker rail (one per prompt) | ✅ | 🟡 | Cockpit minimap rail with numbered hover |
 
@@ -195,7 +195,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | **Reopen closed session** | ✅ | ✅ | `Ctrl+Shift+T` |
 | **Remote control from phone** | ✅ | ✅ | 📱 on the session card |
 | Onboarding checklist (dismissible) | ✅ | ✅ | first-run steps in the hub |
-| One-click export (HTML snapshot / Markdown) | ✅ | ❌ | the timeline as seen, or AI-polished |
+| One-click export (HTML snapshot / Markdown) | ✅ | ❌ | tool cards reopen in the browser, or AI-polished |
 | Elegant confirm dialogs (delete/effort) | ✅ | 🟡 | Esc/overlay, danger styling |
 | Scroll-to-bottom + at-bottom autoscroll | ✅ | ✅ | floating button when scrolled up |
 | Keyboard-first (send/stop/new/find) | ✅ | ✅ | — |

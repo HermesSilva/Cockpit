@@ -92,6 +92,48 @@ async function inlineImages(root: HTMLElement): Promise<void> {
 }
 
 /**
+ * Makes the tool cards (Read, Grep, Write, Bash, …) expandable again in the exported file.
+ *
+ * In the panel a card is a <button> header plus a body that React only mounts while the card
+ * is open, and the open/closed state lives in a hook that no snapshot can carry. So the
+ * export re-homes each card into a native <details>/<summary>: the header becomes the
+ * summary, the body becomes the details' content, and the browser does the toggling with no
+ * JavaScript. The caller expands every card before the capture (see App.tsx) so that a body
+ * exists to be carried; the card is then written out CLOSED, because a document that opens
+ * with every tool call unrolled is unreadable.
+ *
+ * The same treatment applies to the thinking blocks, whose body is mounted under the same
+ * condition. Cards without a body (a tool still running, an empty result) are left alone —
+ * a <details> with nothing inside would offer a chevron that reveals nothing.
+ */
+function makeCollapsible(root: HTMLElement): void {
+  const doc = root.ownerDocument;
+  const convert = (card: HTMLElement, head: HTMLElement | null, body: HTMLElement | null) => {
+    if (!head || !body) return;
+    const details = doc.createElement('details');
+    details.className = card.className;
+    const summary = doc.createElement('summary');
+    summary.className = head.className;
+    summary.innerHTML = head.innerHTML;
+    // The live chevron is a character frozen at render time ("▾", because the card was
+    // expanded for the capture); the <details> marker replaces it and follows the real state.
+    for (const ch of Array.from(summary.querySelectorAll('.chevron'))) ch.remove();
+    head.remove();
+    details.appendChild(summary);
+    // Everything else the card carried (the EndConversation banner, the body) keeps its order.
+    while (card.firstChild) details.appendChild(card.firstChild);
+    card.replaceWith(details);
+  };
+
+  for (const card of Array.from(root.querySelectorAll<HTMLElement>('.tool-card'))) {
+    convert(card, card.querySelector('.tool-head'), card.querySelector('.tool-body'));
+  }
+  for (const block of Array.from(root.querySelectorAll<HTMLElement>('.thinking'))) {
+    convert(block, block.querySelector('.link-btn'), block.querySelector('.thinking-body'));
+  }
+}
+
+/**
  * Strips what only makes sense in a live panel. The snapshot is read-only, so interactive
  * affordances would be lies: buttons that do nothing and inputs the reader can type into.
  * Buttons are unwrapped into spans (keeping label and classes, so the layout is unchanged)
@@ -143,6 +185,7 @@ export async function buildTimelineHtml(
   const css = collectCss();
   const vars = collectThemeVars();
   const clone = root.cloneNode(true) as HTMLElement;
+  makeCollapsible(clone); // before neutralize: it needs the headers still as <button>
   neutralizeInteractive(clone);
   await inlineImages(clone);
 
@@ -167,6 +210,19 @@ body { padding: 16px 20px 40px; }
 .export-header { margin: 0 0 20px; padding-bottom: 12px; border-bottom: 1px solid var(--vscode-panel-border, #353537); }
 .export-header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .export-header .export-when { font-size: 12px; opacity: 0.7; }
+/* Snapshot-only: the tool cards and thinking blocks became <details>/<summary> so they can
+   still be opened in a plain browser. The head is display:flex, which suppresses the native
+   marker in every engine, so the chevron is drawn back as a pseudo-element that follows the
+   open state — the same two glyphs the panel uses. */
+summary { list-style: none; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+summary.tool-head::after { content: '\\25B8'; margin-left: auto; opacity: 0.6; }
+details[open] > summary.tool-head::after { content: '\\25BE'; }
+summary.link-btn::after { content: ' \\25B8'; opacity: 0.6; }
+details[open] > summary.link-btn::after { content: ' \\25BE'; }
+/* A document is not a fixed-height panel: let the bodies run to their full length instead
+   of opening an inner scrollbar the reader has to find. */
+.tool-body { max-height: none; overflow: visible; }
 </style>
 </head>
 <body class="${esc(document.body.className)}">

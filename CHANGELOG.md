@@ -6,7 +6,7 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
-## [1.0.260] - 2026-09-16
+## [1.0.261] - 2026-09-16
 
 ### Fixed
 - **The 1.0.259 fix did not actually reach the file: every tool card still exported empty.**

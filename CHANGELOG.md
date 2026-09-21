@@ -6,6 +6,22 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.264] - 2026-09-21
+
+### Fixed
+- **Second half of the 1.0.263 typing fix: the prompt marks beside the scrollbar were still
+  re-measuring the whole transcript whenever the composer changed height.** Growing the input
+  by a line shrinks the scroll viewport, which fires the `ResizeObserver` on the marker rail;
+  that handler did a `querySelector` plus a `getBoundingClientRect` for every prompt in the
+  conversation — O(n) with a forced layout, on the typing path.
+
+  The pass is now split in two. Measuring (where each prompt sits inside the content) only
+  runs when the prompts themselves change; projecting those offsets onto the rail is pure
+  arithmetic and is all a resize needs, because growing the composer moves the thumb but not
+  the prompts. The `ResizeObserver` is also no longer torn down and rebuilt on every stream
+  delta, its rAF throttle now actually coalesces to one pass per frame, and an unchanged
+  projection reuses the previous array so the markers stop re-rendering for nothing.
+
 ## [1.0.263] - 2026-09-21
 
 ### Fixed

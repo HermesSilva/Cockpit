@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { memo, useState, useEffect, useRef, type ReactNode } from 'react';
 import type { Translator } from '../i18n';
 import type { StatsSnapshot } from '../../../shared/protocol';
 import { send } from '../vscodeApi';
@@ -124,7 +124,12 @@ function CopyButton({ text, t }: { text: string; t: Translator }) {
   );
 }
 
-export function Timeline({
+// Memoised: every stream-json delta dispatches into the reducer and re-renders App. Without
+// this, each delta re-ran groupItems() plus a Markdown parse and a highlight.js pass for the
+// WHOLE transcript — the work that made typing stall while the agent was running. The props
+// are primitives or reducer-preserved references, so a delta that only touches `items`
+// (or nothing at all) now stops here.
+export const Timeline = memo(function Timeline({
   items,
   t,
   emptyHint,
@@ -205,7 +210,7 @@ export function Timeline({
       )}
     </div>
   );
-}
+});
 
 // Progress gauge (asymptotic). It only appears after GAUGE_DELAY of waiting —
 // short tasks (< 2s) show no gauge, avoiding flicker. When it appears it already starts

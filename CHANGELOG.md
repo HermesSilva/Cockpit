@@ -6,6 +6,26 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.263] - 2026-09-21
+
+### Fixed
+- **Typing in the prompt editor got slower as the conversation grew, to the point of being
+  unusable — and worst while the agent was running.** Three separate costs were paid on every
+  keystroke, each of them proportional to the size of the transcript.
+
+  The auto-resize of the input wrote `height:'auto'` and then read `scrollHeight`. That pair
+  forces a synchronous reflow of the whole document, and the composer is a flex sibling of the
+  timeline, so the browser re-measured the entire conversation twice per character. The height
+  now comes from the highlight mirror — same text, same font and padding, already laid out —
+  and is only written when it actually changes, so an ordinary keystroke touches no style at all.
+
+  Nothing was memoised, so every stream-json delta re-rendered the full component tree: a fresh
+  `groupItems()` plus a Markdown parse and a highlight.js pass over every message in the
+  transcript, and the composer along with it. `Timeline` and `Composer` are now `memo`-wrapped,
+  and the handlers and empty-list props they receive were made referentially stable so the memo
+  actually holds while a turn streams. That is why the slowdown was at its worst with the agent
+  running: the stream and the keyboard were competing for the same main thread.
+
 ## [1.0.261] - 2026-09-16
 
 ### Fixed

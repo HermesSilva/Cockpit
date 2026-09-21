@@ -1,4 +1,12 @@
-import { useState, useRef, useEffect, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
+import {
+  memo,
+  useState,
+  useRef,
+  useEffect,
+  type KeyboardEvent,
+  type ClipboardEvent,
+  type DragEvent,
+} from 'react';
 import type { Translator } from '../i18n';
 import type { ImageAttachment, SlashCmdMeta, MentionItem } from '../../../shared/protocol';
 import { send, saveState, readState } from '../vscodeApi';
@@ -57,7 +65,10 @@ interface PendingImage {
 let seq = 0;
 const rid = () => `c_${Date.now()}_${seq++}`;
 
-export function Composer({
+// Memoised for the same reason as Timeline: the composer holds the draft in local state, so
+// a stream delta has nothing new to tell it, yet every delta used to re-render it — and with
+// it the highlight.js pass over the draft. Its handlers are useCallback-stable in App.
+export const Composer = memo(function Composer({
   t,
   locale,
   correctEnabled,
@@ -126,18 +137,33 @@ export function Composer({
   }, []);
 
   // Auto-expands the height (up to 4x) and updates the highlight mirror.
+  //
+  // This used to write height:'auto' and then read scrollHeight. That pair forces a
+  // SYNCHRONOUS full-document reflow on EVERY keystroke, and the composer is a flex sibling
+  // of the timeline, so the cost grew with the transcript until typing became unusable in
+  // long sessions. Two changes fix it without changing the behaviour:
+  //
+  //  - We measure the mirror <pre> instead. It carries the same text under the same font,
+  //    padding and wrapping rules (both share one CSS rule) and is overflow:hidden, so its
+  //    scrollHeight IS the natural content height — no need to un-set our own height first.
+  //  - The result is memoised, so the common keystroke (same line count) writes no style at
+  //    all and never dirties layout.
+  const lastH = useRef(-1);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (!baseH.current) baseH.current = el.clientHeight; // 2 lines, before any inline height
-    el.style.height = 'auto';
-    const max = baseH.current * 4;
-    el.style.height = `${Math.max(Math.min(el.scrollHeight, max), baseH.current)}px`;
-    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
     const hl = hlRef.current;
     // The trailing \n guarantees the last line (and trailing breaks) have height in the mirror.
     // spell=true marks wrong words (after the dictionaries load; spellTick).
     if (hl) hl.innerHTML = `${richHighlight(text, spellCheck && spellReady())}\n`;
+    if (!baseH.current) baseH.current = el.clientHeight; // 2 lines, before any inline height
+    const max = baseH.current * 4;
+    const natural = hl ? hl.scrollHeight : el.scrollHeight;
+    const next = Math.max(Math.min(natural, max), baseH.current);
+    if (next === lastH.current) return; // same height: don't touch style, don't invalidate layout
+    lastH.current = next;
+    el.style.height = `${next}px`;
+    el.style.overflowY = natural > max ? 'auto' : 'hidden';
   }, [text, spellTick, spellCheck]);
 
   // Focus lost when coming back from another app: when the VSCode window is reactivated, the
@@ -921,7 +947,7 @@ export function Composer({
       )}
     </div>
   );
-}
+});
 
 /** O que o botão diz é o que se sabe da conexão — nunca "ligado" por otimismo. */
 function remoteLabel(

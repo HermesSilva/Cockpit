@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useReducer,
@@ -38,6 +39,11 @@ import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
 import { buildConversationMd, suggestedFileName } from './util/exportMd';
 import { buildTimelineHtml, suggestedHtmlName } from './util/exportHtml';
 import { resetSpell } from './spell/spell';
+
+// Stable empty list for the memoised Timeline: `?? []` would mint a new array on every
+// render and defeat the memo exactly while a turn is streaming.
+const NO_TODOS: never[] = [];
+const NO_SLASH: never[] = [];
 
 export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: string }) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -184,10 +190,16 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // Optimistic send (local bubble + send to the host). The effort gate is decided IN THE
   // HOST (it reads the folder's CLAUDE.md): when it blocks, it sends 'effortGate' and doesn't run;
   // on confirmation, we re-send the last one with force=true.
-  const onSend = (text: string, images: ImageAttachment[], selection?: string) => {
+  // The memoised Composer only pays off if its handlers keep their identity across the
+  // stream's re-renders. These read the live tab through a ref instead of closing over it,
+  // so they can be useCallback([])-stable even though `tab` changes on every delta.
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+
+  const onSend = useCallback((text: string, images: ImageAttachment[], selection?: string) => {
     // Aba sob Remote Control: quem conduz é o terminal/celular. O host recusa e explica —
     // não criamos a bolha local, que ficaria órfã.
-    if (tab?.remote) {
+    if (tabRef.current?.remote) {
       send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
       return;
     }
@@ -196,11 +208,15 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
     dispatch({ type: 'clearError' }); // new send: clears the previous error/abort warning
     send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
-  };
-  const onStop = () => {
+  }, []);
+  const onStop = useCallback(() => {
     send({ kind: 'interrupt' });
     dispatch({ type: 'interruptUi' });
-  };
+  }, []);
+  const onRewind = useCallback((idx: number) => setConfirmRewind(idx), []);
+  const onDraftInjected = useCallback(() => setDraftRestore(null), []);
+  const onTextInjected = useCallback(() => setInjectText(null), []);
+  const onToggleExpandAll = useCallback(() => setAllExpanded((a) => !(a ?? false)), []);
   const onSettings = () => send({ kind: 'openSettings' });
   const onUsage = () => {
     setUsage(null); // cleared to show loading; always fetches fresh (hot data)
@@ -221,25 +237,26 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     setShowSkills(true);
     send({ kind: 'skillsRefresh' }); // relê o get_context_usage ao abrir
   };
-  const onVoiceDict = () => {
+  const onVoiceDict = useCallback(() => {
     setVoiceDict(null); // shows loading until the host answers
     setShowVoiceDict(true);
     send({ kind: 'voiceDictGet' });
-  };
-  const onCredentials = () => {
+  }, []);
+  const onCredentials = useCallback(() => {
     setCredsData(null); // loading until the host answers
     setCredsSetup(null);
     setCredsResult(null);
     setCredsError(undefined);
     setShowCreds(true);
     send({ kind: 'credsLoad' });
-  };
+  }, []);
   // Publishes THIS session for remote control (phone app / remote client). Same action as
   // the Hub card's "remote" button, exposed as a composer button. Needs a live session id.
-  const onRemoteControl = () => {
-    const sid = tab?.sessionId ?? tab?.session?.sessionId;
+  const onRemoteControl = useCallback(() => {
+    const cur = tabRef.current;
+    const sid = cur?.sessionId ?? cur?.session?.sessionId;
     if (sid) send({ kind: 'remoteControl', sessionId: sid });
-  };
+  }, []);
   // 'direct' exports a self-contained .html snapshot of the timeline exactly as rendered
   // (captured from the live DOM, so it needs no second implementation of the rendering).
   // 'ai' still goes out as Markdown: there the CLI rewrites the conversation into a
@@ -555,11 +572,11 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
             showThinking={allExpanded ?? state.config?.showThinking}
             expandTools={allExpanded ?? state.config?.expandToolCards === true}
             userName={state.config?.userName}
-            todos={tab?.todos ?? []}
+            todos={tab?.todos ?? NO_TODOS}
             answers={tab?.answers}
             busy={tab?.status === 'busy' || tab?.bgBusy === true}
             stats={tab?.stats}
-            onRewind={tab?.status === 'busy' ? undefined : (idx) => setConfirmRewind(idx)}
+            onRewind={tab?.status === 'busy' ? undefined : onRewind}
             verbosity={state.config?.verbosity}
             compacting={tab?.compacting === true}
           />
@@ -663,15 +680,15 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         spellCheck={state.config?.spellCheck === true}
         busy={tab?.status === 'busy'}
         disabled={cliMissing}
-        slashCommands={tab?.slashCommands ?? []}
+        slashCommands={tab?.slashCommands ?? NO_SLASH}
         slashMeta={state.slashMeta}
         slashBusy={state.slashResearching}
         allExpanded={allExpanded ?? false}
         injectDraft={draftRestore}
-        onDraftInjected={() => setDraftRestore(null)}
+        onDraftInjected={onDraftInjected}
         injectText={injectText}
-        onTextInjected={() => setInjectText(null)}
-        onToggleExpandAll={() => setAllExpanded((a) => !(a ?? false))}
+        onTextInjected={onTextInjected}
+        onToggleExpandAll={onToggleExpandAll}
         onSend={onSend}
         selectionRef={state.selectionRef}
         onStop={onStop}

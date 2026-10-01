@@ -191,6 +191,7 @@ export const ptBR: Partial<Strings> = {
   'cmd.config': 'Abre as configurações.',
   'cmd.permissions': 'Gerencia permissões de tools e regras allow/deny.',
   'cmd.theme': 'Troca o tema de cores.',
+  'cmd.outputStyle': 'Lista os estilos de saída ou troca para um deles.',
   'cmd.cd': 'Muda o diretório de trabalho da sessão.',
   'cmd.review': 'Revisa um pull request ou o diff pendente.',
   'cmd.codeReview': 'Revisa um pull request ou o branch atual (use "ultra" para revisão na nuvem).',

@@ -3,6 +3,7 @@ import {
   StatsAggregator,
   normalizeModel,
   deriveContextLimit,
+  estimateCost,
   setOneMContextDisabled,
 } from '../src/stats/StatsAggregator';
 
@@ -42,6 +43,27 @@ describe('StatsAggregator — consolidação de turno', () => {
     expect(s.cacheAlive).toBe(true);
     expect(s.cacheExpiresAt).toBeGreaterThan(Date.now());
     expect(s.cacheLifeMs).toBe(60 * 60_000);
+  });
+});
+
+describe('StatsAggregator — tabela de preços', () => {
+  const million = { input_tokens: 1_000_000, output_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000 };
+
+  it('Opus 5.5 e Sonnet 5.5 têm preço próprio, não o da família (CLI 2.1.280/2.1.284)', () => {
+    // opus-5-5: 4 + 20 + 5 + 0.2; sonnet-5-5: 2 + 10 + 2.5 + 0.2.
+    expect(estimateCost(million, 'claude-opus-5-5')).toBeCloseTo(29.2, 6);
+    expect(estimateCost(million, 'claude-opus-5-5[1m]')).toBeCloseTo(29.2, 6);
+    expect(estimateCost(million, 'claude-sonnet-5-5')).toBeCloseTo(14.7, 6);
+  });
+
+  it('as outras versões continuam no preço da família', () => {
+    expect(estimateCost(million, 'claude-opus-5')).toBeCloseTo(36.75, 6);
+    expect(estimateCost(million, 'claude-sonnet-5')).toBeCloseTo(22.05, 6);
+  });
+
+  it('Opus 5.5 e Sonnet 5.5 são 1M nativos sem o sufixo', () => {
+    expect(deriveContextLimit('claude-opus-5-5')).toBe(1_000_000);
+    expect(deriveContextLimit('claude-sonnet-5-5')).toBe(1_000_000);
   });
 });
 

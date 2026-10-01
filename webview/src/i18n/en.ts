@@ -252,6 +252,7 @@ export const en = {
   'cmd.config': 'Open settings / configuration.',
   'cmd.permissions': 'Manage tool permissions and allow/deny rules.',
   'cmd.theme': 'Switch the color theme.',
+  'cmd.outputStyle': 'List the output styles or switch to one.',
   'cmd.cd': 'Change the working directory for the session.',
   'cmd.review': 'Review a pull request or the pending diff.',
   'cmd.codeReview': 'Review a pull request or the current branch (add "ultra" for a cloud review).',

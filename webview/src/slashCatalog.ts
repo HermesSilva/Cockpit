@@ -21,6 +21,8 @@ export const SLASH_CATALOG: Record<string, CmdMeta> = {
   config: { cat: 'cmdcat.config', desc: 'cmd.config' },
   permissions: { cat: 'cmdcat.config', desc: 'cmd.permissions' },
   theme: { cat: 'cmdcat.config', desc: 'cmd.theme' },
+  // 2.1.269: lists or switches output styles, and works in headless sessions too.
+  'output-style': { cat: 'cmdcat.config', desc: 'cmd.outputStyle' },
   cd: { cat: 'cmdcat.config', desc: 'cmd.cd' },
   // Tools
   // 2.1.223 renamed /review to /code-review (PR support + the `ultra` cloud review).

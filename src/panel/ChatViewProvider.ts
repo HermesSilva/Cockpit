@@ -381,6 +381,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         effort: this.cfg().get<string>('effort', 'default') || 'default',
         permission: this.cfg().get<string>('permissionMode', 'default') || 'default',
         allowAgents: this.cfg().get<boolean>('allowAgents', false),
+        enableTodoTools: this.cfg().get<boolean>('enableTodoTools', false),
       }),
       askLanguage: () => this.askLanguageCode(),
       extraSystemPrompt: () => this.extraSystemPrompt(),
@@ -2358,6 +2359,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.reportCliStatus();
     this.reportAuth();
     this.pushConfig();
+  }
+
+  /**
+   * `tootega.enableTodoTools` changed. It is an env var of the engine process, so it only
+   * reaches a live tab through a respawn: stopping is enough, the next message resumes the
+   * same conversation with the new environment (same path as a model switch).
+   */
+  applyTodoToolsChange(): void {
+    for (const s of this.sessions.values()) s.stop();
   }
 
   /**

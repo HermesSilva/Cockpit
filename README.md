@@ -322,7 +322,7 @@ claude -p \
   --include-partial-messages \
   --permission-prompt-tool stdio \
   --verbose \
-  [--model <id>] [--effort <level>] [--permission-mode <mode>] [--resume <session_id>]
+  --permission-mode <mode> [--model <id>] [--effort <level>] [--resume <session_id>]
 ```
 
 - `--output-format stream-json`: the CLI emits **one JSON object per line** (messages,
@@ -333,7 +333,7 @@ claude -p \
 - `--permission-prompt-tool stdio`: routes permission decisions through the control
   protocol; without it, headless mode silently denies tools. This is also how
   **AskUserQuestion** reaches the UI.
-- Resumable sessions via `--resume <session_id>`.
+- `--permission-mode` is **always** sent, `default` included: since CLI 2.1.285 a `-p`
 
 The stream parser ([`src/cli/StreamParser.ts`](src/cli/StreamParser.ts)) is
 **version-tolerant**: unknown events are ignored without breaking the UI.
@@ -942,7 +942,7 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `model` | enum | `default` | Default model for new sessions; reflected in the panel dropdown |
 | `effort` | enum | `default` | Default effort (`low`…`max`); `default` uses the CLI's `effortLevel` |
 | `autoResumeLastSession` | boolean | `true` | On opening the folder, resume the most recent session for that directory |
-| `permissionMode` | enum | `default` | Permission mode forwarded to the CLI; reflected in the dropdown |
+| `permissionMode` | enum | `default` | Permission mode forwarded to the CLI (always sent, `default` included); reflected in the dropdown |
 | `notifyOnComplete` | boolean | `true` | Notify when the agent finishes and the panel is not visible |
 | `showThinking` | boolean | `false` | Expand *thinking* blocks by default |
 | `verbosity` | enum | `verbose` | Timeline display level — `verbose` / `necessary` / `dialogo` / `quiet` (display only; see [Timeline verbosity](#timeline-verbosity)) |
@@ -959,7 +959,7 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 
 > The limit meters now read **real** account usage via the OAuth `/usage` API
 > (same source as the CLI's `/usage`), so no manual budgets are needed. The context
-> meter limit is auto-derived from the active model (1M for `[1m]` variants, else 200K).
+> meter limit is auto-derived from the active model (1M for `[1m]` variants and the natively-1M
 
 ![Settings](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Settings%20View.png)
 

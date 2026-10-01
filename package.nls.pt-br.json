@@ -28,6 +28,7 @@
   "cfg.language": "Idioma da UI. 'auto' segue o idioma do VS Code; cai para inglês.",
   "cfg.permissionMode": "Modo de permissão default passado ao CLI. Reflete (pré-seleciona) no combo Permission do painel; mude lá para sobrepor só a sessão atual.",
   "cfg.allowAgents": "Libera o agente a criar subagentes (Task) e workflows (Workflow). Desligado por padrão — eles rodam agentes paralelos extras e podem gastar muitos tokens, então por padrão o CLI sobe com --disallowedTools Task,Workflow. Ligue para permitir. Reflete no checkbox 'Agentes e workflows' do painel; alterne lá para sobrepor só a sessão atual.",
+  "cfg.enableTodoTools": "Oferece as ferramentas de tarefas (TodoWrite, TaskCreate/Update/List) em todos os modelos. Desde o CLI 2.1.268 elas só existem até o Opus 4.7 / Sonnet 4.6, então nos modelos novos (Opus 5.5…) o painel de Tarefas fica vazio. Ligado, o CLI sobe com CLAUDE_CODE_ENABLE_TODO_TOOLS=1; abas abertas passam a usar na próxima mensagem.",
   "cfg.notifyOnComplete": "Mostra uma notificação quando o Claude termina um turno e o painel do Cockpit não está visível.",
   "cfg.showThinking": "Expande os blocos de raciocínio do Claude por padrão no chat.",
   "cfg.spellCheck": "Verifica a ortografia enquanto você digita no compositor, sublinhando as palavras erradas. Nunca corrige sozinho — clique numa palavra sublinhada para ver as sugestões. Desligado por padrão.",

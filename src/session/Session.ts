@@ -46,7 +46,13 @@ export interface SessionHooks {
   engine?: () => EngineId;
   engineServer?: () => string | undefined;
   // Defaults coming from the settings (what 'default' resolves to when there is no override).
-  settings: () => { model: string; effort: string; permission: string; allowAgents: boolean };
+  settings: () => {
+    model: string;
+    effort: string;
+    permission: string;
+    allowAgents: boolean;
+    enableTodoTools?: boolean;
+  };
   // Language (short code: pt, en…) for the agent's questions (AskUserQuestion).
   askLanguage: () => string;
   // Texto do usuário para o system prompt, já expandido (vazio = não injeta).
@@ -200,6 +206,7 @@ export class Session {
       disallowedTools: this.allowAgents() ? undefined : ['Task', 'Workflow'],
       // Com agentes liberados, encaminha o texto dos subagentes p/ mostrá-lo no card do Task.
       forwardSubagentText: this.allowAgents(),
+      enableTodoTools: this.hooks.settings().enableTodoTools,
       // resumeId ?? sessionId: a defense against any path that knows the
       // sessionId but hasn't pinned the resumeId — avoids a spawn without --resume
       // (which would duplicate the context). clearConversation() clears both for a new conversation.

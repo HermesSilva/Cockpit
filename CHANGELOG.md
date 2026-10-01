@@ -6,6 +6,33 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+Reviewed against Claude Code CLI 2.1.266 → 2.1.286. Almost everything in that window
+(sandbox, MCP, plugins, gateway, Remote Control, artifacts, terminal UI) arrives with the
+`claude` binary; what follows is the part that touches this extension's surface.
+
+### Fixed
+- **The "default" permission mode is now sent to the CLI instead of being left out.** Since
+  CLI 2.1.285, a `-p` session with no mode configured starts in **auto** on third-party
+  providers (Bedrock, Vertex, Foundry, gateways) or with telemetry off. The extension omitted
+  `--permission-mode` when the dropdown said "default", so in those setups the panel showed
+  "default" while the CLI was running its auto-mode classifier. Every mode is now passed
+  explicitly. (The CLI's own help now calls it `manual`; `default` is still accepted, and it
+  is the only name older CLIs know.)
+- **Cost estimate for Claude Opus 5.5 and Sonnet 5.5.** Both were priced as their family
+  (Opus $5/$25, Sonnet $3/$15). Opus 5.5 (CLI 2.1.280, now the default Opus) is $4/$20 and
+  Sonnet 5.5 (2.1.284) is $2/$10, both with a flat $0.20/MTok cache read — so the estimate
+  ran 25–50% high. Both are natively 1M, which the context meter already handled.
+
+### Added
+- **`tootega.enableTodoTools`** (off by default). Since CLI 2.1.268 the task tools
+  (TodoWrite, TaskCreate/Update/List) are only offered up to Opus 4.7 / Sonnet 4.6, so on the
+  newer models the Tasks panel stays empty. On, the CLI is started with
+  `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`; changing it restarts the tabs' processes, and each
+  resumes its conversation on the next message.
+- **`/output-style`** in the slash-command catalog (CLI 2.1.269 — lists or switches output
+  styles, and works in headless sessions).
+- **Claude Sonnet 5.5** in the `tootega.internalModel` list.
+
 ## [1.0.264] - 2026-09-21
 
 ### Fixed

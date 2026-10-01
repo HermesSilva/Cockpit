@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
 import { CliProcessManager } from '../src/cli/CliProcessManager';
 
 // The argument list IS the contract with the engine binary. A typo here does
@@ -59,5 +60,29 @@ describe('argumentos do Tootega Code CLI', () => {
     expect(a).not.toContain('--model');
     expect(a).not.toContain('--effort');
     expect(a).not.toContain('--resume');
+  });
+});
+
+type Internals = { claudeArgs: () => string[]; engineEnv: () => NodeJS.ProcessEnv; tempFiles: string[] };
+
+function claudeOf(opts: Partial<Parameters<typeof CliProcessManager>[0]> = {}): Internals {
+  return new CliProcessManager({ claudePath: 'x', cwd: 'D:/proj', ...opts } as never) as unknown as Internals;
+}
+
+describe('argumentos do Claude CLI', () => {
+  it('manda o modo de permissao sempre, inclusive default (CLI 2.1.285)', () => {
+    // Sem a flag, um `-p` sem modo configurado sobe em AUTO em provedor de terceiros ou
+    // com telemetria desligada — o combo diria "default" e o CLI rodaria o classificador.
+    for (const mode of ['default', 'plan', 'bypassPermissions']) {
+      const cli = claudeOf({ permissionMode: mode });
+      const a = cli.claudeArgs();
+      expect(a[a.indexOf('--permission-mode') + 1]).toBe(mode);
+      for (const f of cli.tempFiles) fs.rmSync(f, { force: true });
+    }
+  });
+
+  it('so liga as ferramentas de tarefas quando pedido (CLI 2.1.268)', () => {
+    expect(claudeOf().engineEnv().CLAUDE_CODE_ENABLE_TODO_TOOLS).toBeUndefined();
+    expect(claudeOf({ enableTodoTools: true }).engineEnv().CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1');
   });
 });

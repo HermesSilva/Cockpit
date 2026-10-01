@@ -50,7 +50,12 @@ interface Price {
   cacheWrite: number; // ~1.25x input
   cacheRead: number; // ~0.1x input
 }
+// First match wins, so a versioned row must sit above its family's catch-all. The 5.5 pair
+// (CLI 2.1.280/2.1.284) broke the family pricing: cheaper per token, and the cache read is a
+// flat $0.20 rather than 0.1x input.
 const PRICES: { match: RegExp; price: Price }[] = [
+  { match: /opus-5-5/i, price: { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 } },
+  { match: /sonnet-5-5/i, price: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 } },
   { match: /opus/i, price: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 } },
   { match: /sonnet/i, price: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 } },
   { match: /haiku/i, price: { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 } },

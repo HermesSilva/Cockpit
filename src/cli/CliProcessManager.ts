@@ -40,6 +40,8 @@ export interface CliOptions {
   // faz sentido quando os agentes estão liberados. Cada evento chega marcado com
   // `parent_tool_use_id`, roteado para o card do Task que o lançou (não polui a bolha principal).
   forwardSubagentText?: boolean;
+  // Liga TodoWrite/Task* nos modelos em que o CLI os tirou (2.1.268) — ver engineEnv().
+  enableTodoTools?: boolean;
 }
 
 // Short BCP47 code -> language name for the prompt instruction.
@@ -181,10 +183,14 @@ export class CliProcessManager extends EventEmitter {
   /** Starts the process. Idempotent: does nothing when already running. */
   start(): void {
     if (this.proc) return;
-    if (this.opts.engine === 'tootega') {
-      this.spawnWith(this.tootegaArgs());
-      return;
-    }
+    this.spawnWith(this.opts.engine === 'tootega' ? this.tootegaArgs() : this.claudeArgs());
+  }
+
+  /**
+   * Arguments for the Claude CLI. Writes the temp files (prompt, settings) it points at, so
+   * it runs once per spawn.
+   */
+  private claudeArgs(): string[] {
     const args = [
       '-p',
       '--output-format', 'stream-json',
@@ -198,7 +204,11 @@ export class CliProcessManager extends EventEmitter {
     ];
     if (this.opts.model) args.push('--model', this.opts.model);
     if (this.opts.effort) args.push('--effort', this.opts.effort);
-    if (this.opts.permissionMode && this.opts.permissionMode !== 'default') {
+    // Always explicit, `default` included. Since CLI 2.1.285 a `-p` session with no mode
+    // configured starts in AUTO on third-party providers or with telemetry off, so leaving
+    // the flag out let the dropdown say "default" while the CLI ran its classifier. The CLI
+    // now lists the mode as `manual`; `default` is still accepted and older CLIs only know it.
+    if (this.opts.permissionMode) {
       args.push('--permission-mode', this.opts.permissionMode);
     }
     if (this.opts.disallowedTools?.length) {
@@ -232,8 +242,30 @@ export class CliProcessManager extends EventEmitter {
     // mastigadas por cmd.exe e o CLI sobe sem os overrides). Gravamos um arquivo temporário.
     const settingsFile = this.writeSettingsFile();
     if (settingsFile) args.push('--settings', settingsFile);
+    return args;
+  }
 
-    this.spawnWith(args);
+  /**
+   * The engine's environment.
+   *
+   * Auto mode (the CLI classifier decides allow/deny) is opt-in on Bedrock/Vertex/
+   * Foundry via env (2.1.158/159). Defensive: we turn the flag on when the mode is 'auto'
+   * so it behaves uniformly across providers. It does NOT bypass permissions — it only enables the
+   * CLI's native mode, which still routes what it must through control_request.
+   *
+   * MAX_THINKING_TOKENS=0: o thinking fica sempre desligado. É o par da setting
+   * `alwaysThinkingEnabled: false` (writeSettingsFile) — o orçamento herdado do
+   * ambiente do VS Code religaria o raciocínio mesmo com a setting em falso.
+   *
+   * CLAUDE_CODE_ENABLE_TODO_TOOLS: since CLI 2.1.268 TodoWrite/Task* are only offered up to
+   * Opus 4.7 / Sonnet 4.6, so on Opus 5.5 the Tasks panel has nothing to show. Opt-in
+   * (`tootega.enableTodoTools`): the CLI dropped them on purpose for the newer models.
+   */
+  private engineEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, MAX_THINKING_TOKENS: '0' };
+    if (this.opts.permissionMode === 'auto') env.CLAUDE_CODE_ENABLE_AUTO_MODE = '1';
+    if (this.opts.enableTodoTools) env.CLAUDE_CODE_ENABLE_TODO_TOOLS = '1';
+    return env;
   }
 
   /** Spawns the engine binary and wires the streams. Shared by both engines. */
@@ -248,16 +280,7 @@ export class CliProcessManager extends EventEmitter {
     log(`spawn [${this.opts.engine ?? 'claude'}] ${this.opts.claudePath} ${args.join(' ')}`);
     log(`  cwd=${this.opts.cwd}`);
     this.lastStderr = [];
-    // Auto mode (the CLI classifier decides allow/deny) is opt-in on Bedrock/Vertex/
-    // Foundry via env (2.1.158/159). Defensive: we turn the flag on when the mode is 'auto'
-    // so it behaves uniformly across providers. It does NOT bypass permissions — it only enables the
-    // CLI's native mode, which still routes what it must through control_request.
-    //
-    // MAX_THINKING_TOKENS=0: o thinking fica sempre desligado. É o par da setting
-    // `alwaysThinkingEnabled: false` (writeSettingsFile) — o orçamento herdado do
-    // ambiente do VS Code religaria o raciocínio mesmo com a setting em falso.
-    const env: NodeJS.ProcessEnv = { ...process.env, MAX_THINKING_TOKENS: '0' };
-    if (this.opts.permissionMode === 'auto') env.CLAUDE_CODE_ENABLE_AUTO_MODE = '1';
+    const env = this.engineEnv();
     const proc = spawn(shellSafe(this.opts.claudePath, useShell), args, {
       cwd: this.opts.cwd,
       env,

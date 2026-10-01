@@ -293,6 +293,11 @@
           "default": false,
           "description": "%cfg.allowAgents%"
         },
+        "tootega.enableTodoTools": {
+          "type": "boolean",
+          "default": false,
+          "description": "%cfg.enableTodoTools%"
+        },
         "tootega.notifyOnComplete": {
           "type": "boolean",
           "default": true,
@@ -345,6 +350,7 @@
           "default": "claude-haiku-4-5",
           "enum": [
             "claude-haiku-4-5",
+            "claude-sonnet-5-5",
             "claude-sonnet-4-6",
             "claude-sonnet-4-5",
             "claude-opus-4-6",
@@ -352,6 +358,7 @@
           ],
           "enumDescriptions": [
             "Claude Haiku 4.5 (fast, cheap — recommended)",
+            "Claude Sonnet 5.5",
             "Claude Sonnet 4.6",
             "Claude Sonnet 4.5",
             "Claude Opus 4.6",

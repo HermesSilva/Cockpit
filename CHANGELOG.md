@@ -18,6 +18,13 @@ Reviewed against Claude Code CLI 2.1.266 → 2.1.286. Almost everything in that 
   "default" while the CLI was running its auto-mode classifier. Every mode is now passed
   explicitly. (The CLI's own help now calls it `manual`; `default` is still accepted, and it
   is the only name older CLIs know.)
+- **Bypass no longer shows permission cards.** Some CLI checks reach the host even under
+  `--permission-mode bypassPermissions` — `blockReadsOutsideWorkingDirectories` (CLI
+  2.1.271+) and any Bash line the checker cannot fully analyse (`find -exec`, wildcards,
+  chained `cd`) — and arrived as an ordinary approval card, breaking the dropdown's promise.
+  With the tab on Bypass the extension now answers those itself. `AskUserQuestion` is exempt
+  (it is a question to you, not a permission), and `ExitPlanMode` still saves the plan file
+  before it is approved.
 - **Cost estimate for Claude Opus 5.5 and Sonnet 5.5.** Both were priced as their family
   (Opus $5/$25, Sonnet $3/$15). Opus 5.5 (CLI 2.1.280, now the default Opus) is $4/$20 and
   Sonnet 5.5 (2.1.284) is $2/$10, both with a flat $0.20/MTok cache read — so the estimate

@@ -704,6 +704,24 @@ export class Session {
           const suggestions = r.request.permission_suggestions as unknown[] | undefined;
           this.pendingPerm.set(reqId, { tool, input, suggestions });
           this.hooks.onInteraction();
+          // Bypass means "stop asking", but some CLI checks reach the host anyway:
+          // `blockReadsOutsideWorkingDirectories` (CLI 2.1.271+) prompts even under
+          // --permission-mode bypassPermissions, and so does any Bash line the checker
+          // cannot fully analyse (`find -exec`, wildcards, chained `cd`). Those arrive
+          // here as a normal can_use_tool, so the dropdown only keeps its promise if we
+          // answer them ourselves. AskUserQuestion is exempt: it rides the same request
+          // but is a question to the user, and auto-answering it sends empty answers.
+          if (this.permission() === 'bypassPermissions' && tool !== 'AskUserQuestion') {
+            // ExitPlanMode still saves the plan before it is approved — the file in
+            // Planing/ is the record, and losing it to the auto-allow would be a
+            // silent regression.
+            if (tool === 'ExitPlanMode') {
+              const plan = typeof (input as any)?.plan === 'string' ? (input as any).plan : '';
+              if (plan) this.hooks.savePlan?.(plan);
+            }
+            this.decide(reqId, 'allow');
+            break;
+          }
           if (tool === 'AskUserQuestion') {
             const questions = ((input as any)?.questions ?? []) as any[];
             this.emit({ kind: 'askRequest', requestId: reqId, questions });

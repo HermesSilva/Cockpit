@@ -1,18 +1,17 @@
 // REAL account usage via the Claude OAuth endpoint (the same source as the CLI's /usage).
 // GET https://api.anthropic.com/api/oauth/usage — read-only, spends NO tokens.
-// Uses the OAuth accessToken from ~/.claude/.credentials.json (read-only; never writes
-// nor logs credentials). Short in-memory cache so it isn't repeated on every refresh.
+// Uses the shared OAuth bearer (Credentials.ts) so every login type resolves — including the
+// long-lived `claude setup-token`, whose token is an env var, not a file (read-only; never
+// writes nor logs credentials). Short in-memory cache so it isn't repeated on every refresh.
 //
 // Resilience matters more than freshness here: a single timeout/5xx used to drop the whole
 // panel back to the local $ estimate, which is a much worse answer than a real % read a few
 // minutes ago. So a failed fetch retries once and then falls back to the last good reading
 // while it is still meaningful (STALE_OK_MS).
 import * as https from 'node:https';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import type { LimitWindow, ScopedBucket } from '../../shared/protocol';
 import { dlog } from '../util/logger';
+import { readOauthToken } from './Credentials';
 
 export interface ApiUsage {
   fiveHour?: LimitWindow; // kind:'session'
@@ -21,7 +20,6 @@ export interface ApiUsage {
   ageMs?: number; // >0 when this is a reused reading (the live fetch failed)
 }
 
-const CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
 const TTL_MS = 30_000; // positive cache
 const FAIL_TTL_MS = 5_000; // negative cache — short, so a blip doesn't stick for half a minute
 const STALE_OK_MS = 15 * 60_000; // last good reading still usable while the API is unreachable
@@ -36,15 +34,9 @@ export function usageDiagnostics(): { lastError?: string; lastGoodAgeMs?: number
   return { lastError, lastGoodAgeMs: lastGood ? Date.now() - lastGood.at : undefined };
 }
 
-/** OAuth accessToken (read-only). The server is the authority on validity. */
+/** OAuth bearer (read-only), from the shared chain. The server is the authority on validity. */
 function readToken(): string | undefined {
-  try {
-    const o = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
-    const tok = o?.claudeAiOauth?.accessToken;
-    return typeof tok === 'string' && tok ? tok : undefined;
-  } catch {
-    return undefined;
-  }
+  return readOauthToken();
 }
 
 /** API window ({utilization|percent:0..100, resets_at}) -> LimitWindow (usedPct 0..1). */
@@ -168,7 +160,7 @@ export async function fetchAccountUsage(force = false): Promise<ApiUsage | undef
   }
   const token = readToken();
   if (!token) {
-    lastError = 'no OAuth accessToken in ~/.claude/.credentials.json';
+    lastError = 'no OAuth token resolvable (env token or ~/.claude/.credentials.json)';
     dlog('usage-api', lastError);
     cache = { at: Date.now(), data: undefined };
     return staleFallback();

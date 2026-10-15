@@ -380,6 +380,10 @@ first.
    claude            # starts an interactive session; log in when prompted
    # or, inside the Cockpit: the "Tootega: Sign in to Claude (CLI)" command
    ```
+   Any login the CLI accepts also drives the Cockpit's own reads (model list, usage,
+   voice) — a subscription `/login`, an `ANTHROPIC_API_KEY`, or a long-lived
+   `claude setup-token` exported as `CLAUDE_CODE_OAUTH_TOKEN`. `CLAUDE_CONFIG_DIR` is
+   honored too.
 4. *(Optional)* Adjust CLI defaults in `~/.claude/settings.json` — for example
    `effortLevel`. The Cockpit honors these defaults when you leave the selector on
    *"CLI default"*.

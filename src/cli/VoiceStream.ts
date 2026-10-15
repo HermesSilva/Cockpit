@@ -3,27 +3,19 @@
 // CLAUDE.md. Endpoint/protocol discovered from the CLI binary (see the
 // voice-stt-endpoint memory). Audio: linear16 PCM, 16 kHz, mono, binary chunks.
 //
-// IMPORTANT: credentials are read only (~/.claude/.credentials.json); the token is never
-// written or logged.
+// IMPORTANT: credentials are read only, via the shared chain (Credentials.ts) so every login
+// type resolves — including the long-lived `claude setup-token`, whose token is an env var,
+// not a file. The token is never written or logged.
 import WebSocket from 'ws';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { log } from '../util/logger';
+import { readOauthToken } from './Credentials';
 
-const CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
 const DEFAULT_BASE = 'wss://api.anthropic.com';
 const PATH = '/api/ws/speech_to_text/voice_stream';
 const KEEPALIVE_MS = 10_000;
 
 function readToken(): string | undefined {
-  try {
-    const o = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
-    const tok = o?.claudeAiOauth?.accessToken;
-    return typeof tok === 'string' && tok ? tok : undefined;
-  } catch {
-    return undefined;
-  }
+  return readOauthToken();
 }
 
 export interface VoiceCallbacks {

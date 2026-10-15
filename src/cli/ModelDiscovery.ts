@@ -1,11 +1,11 @@
 // Optional model discovery via the /v1/models API.
-// Works with an API credential (key/bearer via env) OR with the subscription's
-// OAuth token (~/.claude/.credentials.json) — so subscription accounts also
-// see new models as soon as the account gets them, without depending on the static list.
-// GET /v1/models spends NO tokens: it fits the "clean utility" exception in CLAUDE.md
-// (same pattern as the usage endpoint). Token is READ-only; never written/logged.
+// Works with an API credential (key/bearer via env) OR with any OAuth login the CLI accepts —
+// a subscription `/login`, a long-lived `claude setup-token`, or an env bearer — so every
+// login type sees new models as soon as the account gets them, without depending on the
+// static list. GET /v1/models spends NO tokens: it fits the "clean utility" exception in
+// CLAUDE.md (same pattern as the usage endpoint). Token is READ-only; never written/logged.
 import * as https from 'node:https';
-import { readOauthToken } from './AiClient';
+import { readOauthToken } from './Credentials';
 
 export interface DiscoveryCreds {
   apiKey?: string; // x-api-key
@@ -13,11 +13,13 @@ export interface DiscoveryCreds {
 }
 
 export function resolveCreds(settingApiKey?: string): DiscoveryCreds | undefined {
+  // An explicit API key (setting or env) is an x-api-key credential and wins, matching the
+  // CLI treating ANTHROPIC_API_KEY as its own method.
   const apiKey = (settingApiKey && settingApiKey.trim()) || process.env.ANTHROPIC_API_KEY;
-  const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
   if (apiKey) return { apiKey };
-  if (authToken) return { authToken };
-  // Subscription without an API key: uses the CLI's OAuth token (same auth, clean call).
+  // Everything else is a bearer token, resolved by the shared chain: ANTHROPIC_AUTH_TOKEN,
+  // then the long-lived CLAUDE_CODE_OAUTH_TOKEN, then the on-disk subscription login. This is
+  // what makes discovery work under a `claude setup-token` login, not just a `/login` one.
   const oauth = readOauthToken();
   if (oauth) return { authToken: oauth };
   return undefined;

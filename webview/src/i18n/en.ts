@@ -511,6 +511,7 @@ export const en = {
   'tip.tasks.desc': "Show or hide the agent's live task list. Drag it anywhere over the chat.",
   'scroll.bottom': 'Scroll to bottom',
   'export.link': '⬇ Export conversation',
+  'export.timeline': '💾 Save timeline to .cockpit/TimeLine',
   'export.direct': 'Direct export (timeline as HTML)',
   'export.ai': '✨ Generate document with AI',
   'export.ai.note': '⚠ Spends subscription tokens · uses the context model {0} and effort {1}',

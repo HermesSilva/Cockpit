@@ -448,6 +448,7 @@ export const ptBR: Partial<Strings> = {
   'tip.tasks.desc': 'Mostra ou oculta a lista viva de tarefas do agente. Arraste-a sobre o chat.',
   'scroll.bottom': 'Ir para o fim',
   'export.link': '⬇ Exportar conversa',
+  'export.timeline': '💾 Salvar timeline em .cockpit/TimeLine',
   'export.direct': 'Exportação direta (timeline em HTML)',
   'export.ai': '✨ Gerar documento com IA',
   'export.ai.note': '⚠ Consome tokens da assinatura · usa o modelo {0} e effort {1} do contexto',

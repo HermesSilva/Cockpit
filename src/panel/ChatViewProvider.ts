@@ -1725,7 +1725,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     markdown: string | undefined,
     html: string | undefined,
     fileName: string | undefined,
-    mode: 'direct' | 'ai',
+    mode: 'direct' | 'ai' | 'timeline',
   ): Promise<void> {
     const pt = resolveLocale().startsWith('pt');
     try {
@@ -1744,12 +1744,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // there is nothing to write — never fall back to the markdown, which would silently
         // hand the user a different format than the one requested.
         if (!html) {
-          void vscode.window.showErrorMessage(
-            pt ? 'Falha ao capturar a timeline.' : 'Failed to capture the timeline.',
-          );
+          // 'timeline' is fired automatically at the end of every turn; a failed capture there
+          // is not something to interrupt the user about — the next turn will try again.
+          if (mode !== 'timeline') {
+            void vscode.window.showErrorMessage(
+              pt ? 'Falha ao capturar a timeline.' : 'Failed to capture the timeline.',
+            );
+          }
           return;
         }
         content = html;
+      }
+      // 'timeline' goes to a dedicated, stable location and is NOT opened in the editor: it is
+      // the auto-saved snapshot, overwritten each turn under one name (the tab title), so the
+      // folder holds one file per conversation rather than a growing pile. 'direct'/'ai' keep
+      // the old behaviour — a uniquely-named file at the project root, opened for the user.
+      if (mode === 'timeline') {
+        const dir = path.join(this.workspaceCwd(), '.cockpit', 'TimeLine');
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
+        const target = path.join(dir, fileName || 'conversa.html');
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(content, 'utf8'));
+        return;
       }
       const fallback = mode === 'ai' ? 'conversa.md' : 'conversa.html';
       const target = uniqueFilePath(path.join(this.workspaceCwd(), fileName || fallback));
@@ -1757,7 +1772,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       await vscode.window.showTextDocument(vscode.Uri.file(target), { preview: false });
     } catch (e) {
       log(`exportConversation: ${String(e)}`);
-      void vscode.window.showErrorMessage(pt ? 'Falha ao exportar a conversa.' : 'Failed to export the conversation.');
+      if (mode !== 'timeline') {
+        void vscode.window.showErrorMessage(pt ? 'Falha ao exportar a conversa.' : 'Failed to export the conversation.');
+      }
     }
   }
 

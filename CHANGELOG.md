@@ -6,6 +6,15 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+### Added
+- **The timeline is auto-saved as HTML at the end of every turn.** When a prompt finishes,
+  the panel writes a self-contained snapshot to `.cockpit/TimeLine/<tab title>.html` under
+  the workspace, overwriting the same file each turn — one up-to-date file per conversation,
+  named after the tab. The capture reuses the existing direct-export path (the live DOM, with
+  expandable tool cards), so nothing is re-rendered; the file is not opened in the editor, to
+  avoid stealing focus every prompt. A **Save timeline** button at the end of the timeline
+  triggers the same save on demand.
+
 ## [1.0.265] - 2026-09-30
 
 Reviewed against Claude Code CLI 2.1.266 → 2.1.286. Almost everything in that window

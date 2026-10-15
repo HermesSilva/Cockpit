@@ -237,6 +237,23 @@ details[open] > summary.link-btn::after { content: ' \\25BE'; }
 </html>`;
 }
 
+/**
+ * File name for the auto-saved timeline. Unlike `suggestedHtmlName`, this keeps the tab's
+ * own title as the name (that is what the user sees on the tab) rather than a slug+date —
+ * the file is overwritten each turn, so one stable, recognisable name per conversation is
+ * the point. Only characters a file system cannot hold are stripped; spaces and case stay.
+ */
+export function timelineFileName(title?: string): string {
+  const clean = (title || 'Conversa')
+    // Windows forbids \ / : * ? " < > | and trailing dots/spaces; strip them and collapse runs.
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+    .slice(0, 80)
+    .trim();
+  return `${clean || 'Conversa'}.html`;
+}
+
 /** Suggested file name (title slug + short date), mirroring the Markdown export's shape. */
 export function suggestedHtmlName(title?: string, ts = Date.now()): string {
   const slug =

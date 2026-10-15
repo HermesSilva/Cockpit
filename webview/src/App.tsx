@@ -37,7 +37,7 @@ import { ScrollMarkers } from './components/ScrollMarkers';
 import { SearchBar } from './components/SearchBar';
 import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
 import { buildConversationMd, suggestedFileName } from './util/exportMd';
-import { buildTimelineHtml, suggestedHtmlName } from './util/exportHtml';
+import { buildTimelineHtml, suggestedHtmlName, timelineFileName } from './util/exportHtml';
 import { resetSpell } from './spell/spell';
 
 // Stable empty list for the memoised Timeline: `?? []` would mint a new array on every
@@ -261,7 +261,10 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   // (captured from the live DOM, so it needs no second implementation of the rendering).
   // 'ai' still goes out as Markdown: there the CLI rewrites the conversation into a
   // document, and the source has to be prose, not markup.
-  const onExportMd = (mode: 'direct' | 'ai') => {
+  // 'timeline' is the auto-save: same HTML snapshot as 'direct', but the host writes it to
+  // .cockpit/TimeLine/<title>.html and does not open it. Fired both by the manual button and
+  // automatically when a turn finishes (see the effect below).
+  const onExportMd = (mode: 'direct' | 'ai' | 'timeline') => {
     const title = state.tabs.find((x) => x.id === state.activeTab)?.title;
     if (mode === 'ai') {
       send({
@@ -306,12 +309,33 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           docTitle,
           t('export.generatedAt', new Date().toLocaleString()),
         );
-        if (html) send({ kind: 'exportMd', html, fileName: suggestedHtmlName(title), mode });
+        // 'direct' is a user-named file at the project root; 'timeline' is the stable
+        // auto-saved snapshot named after the tab, overwritten each turn by the host.
+        const fileName = mode === 'timeline' ? timelineFileName(title) : suggestedHtmlName(title);
+        if (html) send({ kind: 'exportMd', html, fileName, mode });
       } finally {
         setAllExpanded(previous);
       }
     })();
   };
+  // Auto-save the timeline when a turn ends. The host cannot do this itself — only the webview
+  // has the rendered DOM the snapshot is captured from — so the trigger lives here: when a tab
+  // leaves 'busy' (a prompt finished and all its tool calls are done) and it has content, fire
+  // the same 'timeline' export the button does. Kept in a ref so re-renders inside a turn do
+  // not re-run it; the effect depends only on the status edge and the tab id.
+  const onExportMdRef = useRef(onExportMd);
+  onExportMdRef.current = onExportMd;
+  const prevStatusRef = useRef<string | undefined>(tab?.status);
+  useEffect(() => {
+    if (view === 'hub') return;
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = tab?.status;
+    // Only on the busy -> idle edge, and only with something on screen to capture.
+    if (prev === 'busy' && tab?.status !== 'busy' && items.length > 0) {
+      onExportMdRef.current('timeline');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab?.status, tab?.id, view]);
   const onEnableTracking = () => {
     setUsage(null); // shows loading; the host installs the wrapper and re-sends usageData
     send({ kind: 'enableUsageTracking' });
@@ -590,6 +614,16 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
                 </button>
               ) : (
                 <div className="export-menu">
+                  <button
+                    type="button"
+                    className="timeline-export-link"
+                    onClick={() => {
+                      onExportMd('timeline');
+                      setExportMenu(false);
+                    }}
+                  >
+                    {t('export.timeline')}
+                  </button>
                   <button
                     type="button"
                     className="timeline-export-link"

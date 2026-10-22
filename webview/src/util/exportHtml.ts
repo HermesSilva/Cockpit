@@ -102,8 +102,8 @@ async function inlineImages(root: HTMLElement): Promise<void> {
  * exists to be carried; the card is then written out CLOSED, because a document that opens
  * with every tool call unrolled is unreadable.
  *
- * The same treatment applies to the thinking blocks, whose body is mounted under the same
- * condition. Cards without a body (a tool still running, an empty result) are left alone —
+ * The thinking blocks are cards of the same shape and need nothing extra. Cards without a
+ * body (a tool still running, an empty result) are left alone —
  * a <details> with nothing inside would offer a chevron that reveals nothing.
  */
 function makeCollapsible(root: HTMLElement): void {
@@ -127,9 +127,6 @@ function makeCollapsible(root: HTMLElement): void {
 
   for (const card of Array.from(root.querySelectorAll<HTMLElement>('.tool-card'))) {
     convert(card, card.querySelector('.tool-head'), card.querySelector('.tool-body'));
-  }
-  for (const block of Array.from(root.querySelectorAll<HTMLElement>('.thinking'))) {
-    convert(block, block.querySelector('.link-btn'), block.querySelector('.thinking-body'));
   }
 }
 
@@ -210,7 +207,7 @@ body { padding: 16px 20px 40px; }
 .export-header { margin: 0 0 20px; padding-bottom: 12px; border-bottom: 1px solid var(--vscode-panel-border, #353537); }
 .export-header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .export-header .export-when { font-size: 12px; opacity: 0.7; }
-/* Snapshot-only: the tool cards and thinking blocks became <details>/<summary> so they can
+/* Snapshot-only: the tool and thinking cards became <details>/<summary> so they can
    still be opened in a plain browser. The head is display:flex, which suppresses the native
    marker in every engine, so the chevron is drawn back as a pseudo-element that follows the
    open state — the same two glyphs the panel uses. */
@@ -218,8 +215,6 @@ summary { list-style: none; cursor: pointer; }
 summary::-webkit-details-marker { display: none; }
 summary.tool-head::after { content: '\\25B8'; margin-left: auto; opacity: 0.6; }
 details[open] > summary.tool-head::after { content: '\\25BE'; }
-summary.link-btn::after { content: ' \\25B8'; opacity: 0.6; }
-details[open] > summary.link-btn::after { content: ' \\25BE'; }
 /* A document is not a fixed-height panel: let the bodies run to their full length instead
    of opening an inner scrollbar the reader has to find. */
 .tool-body { max-height: none; overflow: visible; }

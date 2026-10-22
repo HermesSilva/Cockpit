@@ -1083,8 +1083,11 @@ body {
     opacity: 0;
   }
 }
-.thinking {
-  margin-bottom: 4px;
+.thinking-size {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #8a8a8a);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .thinking-body {
   background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));

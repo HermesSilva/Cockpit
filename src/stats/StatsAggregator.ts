@@ -49,13 +49,24 @@ interface Price {
   output: number;
   cacheWrite: number; // ~1.25x input
   cacheRead: number; // ~0.1x input
+  /** A second tier for the whole request once its prompt passes `above` tokens. */
+  longPrompt?: { above: number; price: Price };
 }
-// First match wins, so a versioned row must sit above its family's catch-all. The 5.5 pair
-// (CLI 2.1.280/2.1.284) broke the family pricing: cheaper per token, and the cache read is a
-// flat $0.20 rather than 0.1x input.
+// First match wins, so a versioned row must sit above its family's catch-all. The 5.x rows
+// broke the family pricing: the 5.5 pair is cheaper per token (CLI 2.1.280/2.1.284), and the
+// cache reads of Sonnet 5.5 ($0.10, 2.1.296), Opus 5.5 ($0.20) and Fable 5.1 ($0.25) are flat
+// rather than 0.1x input. Haiku 5.5 (2.1.293) is the first row with a long-prompt tier.
 const PRICES: { match: RegExp; price: Price }[] = [
   { match: /opus-5-5/i, price: { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 } },
-  { match: /sonnet-5-5/i, price: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 } },
+  { match: /sonnet-5-5/i, price: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1 } },
+  {
+    match: /haiku-5-5/i,
+    price: {
+      input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01,
+      longPrompt: { above: 100_000, price: { input: 0.5, output: 2.5, cacheWrite: 0.625, cacheRead: 0.05 } },
+    },
+  },
+  { match: /(?:fable|mythos)-5-1/i, price: { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 } },
   { match: /opus/i, price: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 } },
   { match: /sonnet/i, price: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 } },
   { match: /haiku/i, price: { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 } },
@@ -63,18 +74,25 @@ const PRICES: { match: RegExp; price: Price }[] = [
 ];
 const DEFAULT_PRICE: Price = { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 };
 
-function priceFor(model?: string): Price {
+/**
+ * The model's price, at the tier a request of `promptTokens` (input + cache write + cache
+ * read) is billed at. The CLI applies a long-prompt tier to the WHOLE request, output
+ * included, once the prompt passes the threshold — so the caller passes the request's own
+ * prompt size, never a session total.
+ */
+function priceFor(model?: string, promptTokens = 0): Price {
   if (!model) return DEFAULT_PRICE;
-  return PRICES.find((p) => p.match.test(model))?.price ?? DEFAULT_PRICE;
+  const p = PRICES.find((row) => row.match.test(model))?.price ?? DEFAULT_PRICE;
+  return p.longPrompt && promptTokens > p.longPrompt.above ? p.longPrompt.price : p;
 }
 
 /** Estimated cost (USD) of a usage block, from the model's price table. */
 export function estimateCost(u: Usage, model?: string): number {
-  const p = priceFor(model);
   const inp = u.input_tokens ?? 0;
   const cw = u.cache_creation_input_tokens ?? 0;
   const cr = u.cache_read_input_tokens ?? 0;
   const out = u.output_tokens ?? 0;
+  const p = priceFor(model, inp + cw + cr);
   return (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
 }
 
@@ -639,7 +657,7 @@ export class StatsAggregator {
       this.outputTokens += out;
       this.curInput = this.curCreate = this.curRead = this.curOutput = 0;
 
-      const p = priceFor(this.model);
+      const p = priceFor(this.model, this.contextUsed);
       const turnCost =
         (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
       if (this.costIsEstimate) {

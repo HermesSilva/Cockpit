@@ -393,6 +393,13 @@ export class CliProcessManager extends EventEmitter {
    * spawn (antes só existia quando havia override de skill). São duas travas porque o CLI
    * tem dois caminhos para ligá-lo: a setting `alwaysThinkingEnabled` e o orçamento
    * `MAX_THINKING_TOKENS` (env, aplicado em `spawnWith`). Desligar só um deixa o outro valendo.
+   *
+   * Nenhuma das duas alcança os modelos que sempre pensam — Opus 5.5, Sonnet 5.5, Haiku 5.5 e
+   * Fable 5.x têm `rejects_disabled_thinking` na tabela de modelos do CLI (já na 2.1.286), então
+   * o CLI nunca manda thinking:disabled para eles e fica no adaptive; em effort max aparece até
+   * numa resposta de uma linha (medido na 2.1.300). Opus 5 e Sonnet 5 ainda respeitam as duas
+   * travas. Nenhuma flag muda isso — `--thinking disabled` incluída —, então não "conserte"
+   * aqui: baixe o effort ou escolha um modelo que aceite.
    */
   private writeSettingsFile(): string | undefined {
     const overrides = this.opts.skillOverrides;

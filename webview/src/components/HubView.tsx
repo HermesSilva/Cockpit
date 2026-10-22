@@ -40,10 +40,8 @@ interface Props {
   onOpenFolder: (path: string) => void;
   onSettings: () => void;
   onUsage: () => void;
-  onPlugins: () => void;
   onMcp: () => void;
   onSkills: () => void;
-  onCredentials: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onUpdate: () => void;
@@ -86,10 +84,8 @@ export function HubView({
   onOpenFolder,
   onSettings,
   onUsage,
-  onPlugins,
   onMcp,
   onSkills,
-  onCredentials,
   onLogin,
   onLogout,
   onUpdate,
@@ -191,11 +187,6 @@ export function HubView({
             </button>
           </Tooltip>
         )}
-        <Tooltip title={t('plugins.title')} text={t('plugins.desc')}>
-          <button type="button" className="ctx-link" onClick={onPlugins}>
-            🧩 {t('plugins.title')}
-          </button>
-        </Tooltip>
         <Tooltip title={t('mcp.title')} text={t('mcp.desc')}>
           <button type="button" className="ctx-link" onClick={onMcp}>
             🔌 {t('mcp.title')}
@@ -204,11 +195,6 @@ export function HubView({
         <Tooltip title={t('skills.title')} text={t('skills.desc')}>
           <button type="button" className="ctx-link" onClick={onSkills}>
             🎯 {t('skills.title')}
-          </button>
-        </Tooltip>
-        <Tooltip title={t('creds.title')} text={t('creds.open')}>
-          <button type="button" className="ctx-link" onClick={onCredentials}>
-            🔐 {t('creds.title')}
           </button>
         </Tooltip>
         <Tooltip

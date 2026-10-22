@@ -283,8 +283,9 @@ export const ptBR: Partial<Strings> = {
   'turn.canceled': 'Cancelado',
   'role.system': 'Sistema',
 
-  'thinking.show': 'Mostrar raciocínio',
-  'thinking.hide': 'Ocultar raciocínio',
+  'thinking.title': 'Raciocínio',
+  'thinking.size': '{0} caracteres',
+  'thinking.running': 'Pensando…',
 
   'tool.input': 'Entrada',
   'tool.output': 'Saída',

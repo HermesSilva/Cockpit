@@ -50,10 +50,30 @@ describe('StatsAggregator — tabela de preços', () => {
   const million = { input_tokens: 1_000_000, output_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000 };
 
   it('Opus 5.5 e Sonnet 5.5 têm preço próprio, não o da família (CLI 2.1.280/2.1.284)', () => {
-    // opus-5-5: 4 + 20 + 5 + 0.2; sonnet-5-5: 2 + 10 + 2.5 + 0.2.
+    // opus-5-5: 4 + 20 + 5 + 0.2; sonnet-5-5: 2 + 10 + 2.5 + 0.1 (cache read $0.10, 2.1.296).
     expect(estimateCost(million, 'claude-opus-5-5')).toBeCloseTo(29.2, 6);
     expect(estimateCost(million, 'claude-opus-5-5[1m]')).toBeCloseTo(29.2, 6);
-    expect(estimateCost(million, 'claude-sonnet-5-5')).toBeCloseTo(14.7, 6);
+    expect(estimateCost(million, 'claude-sonnet-5-5')).toBeCloseTo(14.6, 6);
+  });
+
+  it('Fable 5.1 tem cache read de $0.25, não o $1 da família', () => {
+    // 10 + 50 + 12.5 + 0.25; Fable 5 continua no da família.
+    expect(estimateCost(million, 'claude-fable-5-1')).toBeCloseTo(72.75, 6);
+    expect(estimateCost(million, 'claude-fable-5')).toBeCloseTo(73.5, 6);
+  });
+
+  it('Haiku 5.5 cobra a requisição inteira na faixa longa acima de 100K de prompt (CLI 2.1.293)', () => {
+    // Prompt de 100K exatos fica na faixa curta: 0.1 * 0.1 + 1M * 0.5 / 1M.
+    expect(estimateCost({ input_tokens: 100_000, output_tokens: 1_000_000 }, 'claude-haiku-5-5'))
+      .toBeCloseTo(0.51, 6);
+    // Um token a mais e a saída também sobe de faixa: 100_001 * 0.5 / 1M + 2.5.
+    expect(estimateCost({ input_tokens: 100_001, output_tokens: 1_000_000 }, 'claude-haiku-5-5'))
+      .toBeCloseTo(2.5500005, 6);
+    // O limiar soma cache read e cache write ao input.
+    expect(estimateCost({ input_tokens: 1, cache_read_input_tokens: 100_000 }, 'claude-haiku-5-5'))
+      .toBeCloseTo((0.5 + 100_000 * 0.05) / 1_000_000, 9);
+    // Haiku 4.5 segue no preço da família, sem faixa longa.
+    expect(estimateCost({ input_tokens: 200_000 }, 'claude-haiku-4-5')).toBeCloseTo(0.2, 6);
   });
 
   it('as outras versões continuam no preço da família', () => {
@@ -64,6 +84,7 @@ describe('StatsAggregator — tabela de preços', () => {
   it('Opus 5.5 e Sonnet 5.5 são 1M nativos sem o sufixo', () => {
     expect(deriveContextLimit('claude-opus-5-5')).toBe(1_000_000);
     expect(deriveContextLimit('claude-sonnet-5-5')).toBe(1_000_000);
+    expect(deriveContextLimit('claude-haiku-5-5')).toBe(1_000_000);
   });
 });
 

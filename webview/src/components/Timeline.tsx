@@ -757,14 +757,25 @@ function AssistantContent({
   // The global default (setting) changed: re-syncs the already mounted blocks.
   useEffect(() => setShowThinking(defaultShowThinking), [defaultShowThinking]);
   if (!item.text && !item.thinking) return null;
+  // Still reasoning: the message is open and no answer text has started yet.
+  const thinkingLive = !item.done && !item.text;
   return (
     <div className="assistant-msg">
+      {/* Thinking is a card like the tool cards: one header line, body only when opened. */}
       {item.thinking && (
-        <div className="thinking">
-          <button type="button" className="link-btn" onClick={() => setShowThinking((s) => !s)}>
-            {showThinking ? t('thinking.hide') : t('thinking.show')}
+        <div className={`tool-card thinking-card ${thinkingLive ? 'busy' : 'ok'}`}>
+          <button type="button" className="tool-head" onClick={() => setShowThinking((s) => !s)}>
+            <span className="tool-icon">💭</span>
+            <span className="tool-name">{t('thinking.title')}</span>
+            <span className="thinking-size">{t('thinking.size', fmtCompact(item.thinking.length))}</span>
+            <span className="tool-status">{thinkingLive ? t('thinking.running') : ''}</span>
+            <span className="chevron">{showThinking ? '▾' : '▸'}</span>
           </button>
-          {showThinking && <pre className="thinking-body">{item.thinking}</pre>}
+          {showThinking && (
+            <div className="tool-body">
+              <pre className="thinking-body">{item.thinking}</pre>
+            </div>
+          )}
         </div>
       )}
       {item.text && (

@@ -224,10 +224,6 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
     send({ kind: 'fetchUsage' });
   };
   const onManageUsage = () => send({ kind: 'openLink', href: 'https://claude.ai/settings/usage' });
-  const onPlugins = () => {
-    setShowPlugins(true);
-    send({ kind: 'pluginsRefresh' }); // loads on open
-  };
   const onMcp = () => {
     setMcp(null); // hot state: re-checks the servers' health on every open
     setShowMcp(true);
@@ -458,10 +454,8 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
           onOpenFolder={(path) => send({ kind: 'openFolder', path })}
           onSettings={onSettings}
           onUsage={onUsage}
-          onPlugins={onPlugins}
           onMcp={onMcp}
           onSkills={onSkills}
-          onCredentials={onCredentials}
           onLogin={() => send({ kind: 'loginCli' })}
           onLogout={() => send({ kind: 'logoutCli' })}
           onUpdate={() => send({ kind: 'updateCli' })}

@@ -47,7 +47,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Feature | Cockpit | Official GUI | Notes |
 |---|:--:|:--:|---|
 | Token-by-token streaming chat | ✅ | ✅ | partial-messages + fallback |
-| Thinking blocks (toggle / expand-all) | ✅ | ✅ | official adds `Ctrl+O` expand-all |
+| Thinking blocks (toggle / expand-all) | ✅ | ✅ | Cockpit: collapsible card with size; official adds `Ctrl+O` expand-all |
 | Tool-call timeline (per-tool cards) | ✅ | ✅ | Cockpit: emoji per tool, Bash split, Read gutter |
 | Markdown + syntax highlight | ✅ | ✅ | highlight.js + line-number gutter |
 | **Find in conversation (Ctrl+F)** | ✅ | ❌ | scope **Timeline** vs **Prompts only**, 250 ms debounce, highlight + jump |
@@ -118,7 +118,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Feature | Cockpit | Official GUI | Notes |
 |---|:--:|:--:|---|
 | Slash commands with autocomplete | ✅ | ✅ | Cockpit curates descriptions; official `/` menu |
-| Plugins manager + marketplaces | ✅ | ✅ | browse/install/enable/disable/update |
+| Plugins manager + marketplaces | 🟡 | ✅ | built, but no entry point since the Hub button was removed (1.0.268) |
 | MCP servers manage (`/mcp`) | 🟡 | ✅ | both forward to the CLI |
 | Built-in IDE MCP server (getDiagnostics, Jupyter execute) | ❌ | ✅ | official runs a local `ide` MCP |
 | **Skills: cost per skill + what is loaded** | ✅ | ❌ | Cockpit reads `get_context_usage` (no turn, no tokens); see [Skills](#skills) |
@@ -500,7 +500,7 @@ automatically resumes the most recent session for that directory.
 | Feature | Status | How to use | Limitations |
 |---|---|---|---|
 | Token-by-token streaming chat | ✅ | Type and send; the answer appears incrementally | — |
-| *Thinking* blocks with toggle | ✅ | Expand in the chat; default controlled by `tootega.showThinking` | Only appears if the model/effort emits thinking |
+| *Thinking* card | ✅ | A collapsible 💭 card with its size, like a tool card; open or closed by default per `tootega.showThinking` | Only appears if the model/effort emits thinking |
 | Tool-call timeline (expandable cards) | ✅ | Click a card for input/output; default via `tootega.expandToolCards` | Inline diff in the editor not yet (rendered in the webview) |
 | **Sandbox denials on the Bash card** | ✅ | An access the sandbox refused shows in an amber band above the output — the cause of the failure, not just its effect | The CLI only annotates the result with them from 2.1.224; recognised by shape, so a line we don't recognise stays in the output where it always was |
 | Interrupt the agent (Stop) | ✅ | **Stop** button or **Ctrl+Alt+.** | Stops by ending the CLI process; it respawns on the next send |
@@ -618,7 +618,7 @@ alongside duration and turn count.
 | Feature | Status | Note |
 |---|---|---|
 | Slash commands (built-in + custom) with autocomplete | ✅/🟡 | Curated catalog (context, session, config, tools, account, info); the CLI exposes only names via `sessionInit`, descriptions are curated |
-| **Plugins manager** (browse / install / remove / enable / disable / update + marketplaces) | ✅ | 🧩 **Plugins** in the Hub — see [Plugins](#plugins) |
+| **Plugins manager** (browse / install / remove / enable / disable / update + marketplaces) | 🟡 | Built, but without an entry point since 1.0.268 (the Hub button was removed) — see [Plugins](#plugins) |
 | **Skills: listing cost, loaded state, per-skill listing control** | ✅ | 🎯 **Skills** in the Hub — see [Skills](#skills) |
 | Custom subagents: list / select | ⏳ | — |
 | **MCP servers: health / tools / pending approval** | ✅ | 🔌 **MCP** in the Hub: a card per server with its live status and the tools it exposes; `⏸ Pending approval` (unapproved `.mcp.json`) is surfaced. Connecting/approving is still done in the CLI (`/mcp`) |
@@ -759,9 +759,13 @@ disables it), and the local process must stay alive while the remote session is 
 ## Plugins
 
 A full **plugins manager** ([`src/cli/PluginManager.ts`](src/cli/PluginManager.ts),
-[`PluginsModal`](webview/src/components/PluginsModal.tsx)), opened from the 🧩 **Plugins**
-entry in the Hub. Everything goes through the official CLI (`claude plugin …`) — the Cockpit
-only surfaces it:
+[`PluginsModal`](webview/src/components/PluginsModal.tsx)). Everything goes through the
+official CLI (`claude plugin …`) — the Cockpit only surfaces it.
+
+> Since 1.0.268 the Hub no longer has a 🧩 **Plugins** button, so the panel below has no
+> entry point; manage plugins with `claude plugin …` in a terminal. The code is kept intact.
+
+What the panel does:
 
 - **List** installed + available plugins (across configured marketplaces) and filter by
   **All / Installed / Available**; search by name; sort exposes install counts.
@@ -948,7 +952,7 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `autoResumeLastSession` | boolean | `true` | On opening the folder, resume the most recent session for that directory |
 | `permissionMode` | enum | `default` | Permission mode forwarded to the CLI (always sent, `default` included); reflected in the dropdown |
 | `notifyOnComplete` | boolean | `true` | Notify when the agent finishes and the panel is not visible |
-| `showThinking` | boolean | `false` | Expand *thinking* blocks by default |
+| `showThinking` | boolean | `false` | Open the *thinking* cards by default |
 | `verbosity` | enum | `verbose` | Timeline display level — `verbose` / `necessary` / `dialogo` / `quiet` (display only; see [Timeline verbosity](#timeline-verbosity)) |
 | `expandToolCards` | boolean | `false` | Expand tool cards by default in the timeline |
 | `spellCheck` | boolean | `false` | Inline PT-BR + EN spell-checker in the composer — **marks only, never auto-corrects**; click an underlined word for suggestions |

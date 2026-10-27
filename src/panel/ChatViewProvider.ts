@@ -54,6 +54,7 @@ import { listPlugins, pluginAction } from '../cli/PluginManager';
 import { locateSession, liveSessions } from '../cli/SessionRegistry';
 import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
+import { saveDroppedFiles } from '../cli/DroppedFiles';
 import { readClaudeDefaults, oneMContextDisabled } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
 import { computeDailyTokens } from '../stats/DailyTokens';
@@ -141,9 +142,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private activeTab = '';
   // Last session whose panel the user closed (for "reopen closed").
   private lastClosed?: { tabId: string; sessionId?: string };
-  // Ref of the editor's active selection (@file#a-b) to share via the composer.
-  private lastSelRef?: string;
-  private selListener?: vscode.Disposable;
   private termListener?: vscode.Disposable;
   private tabSeq = 0;
 
@@ -234,8 +232,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Account-bound extras only exist for the Claude engine; running them
     // against the local agent would spawn it just to fail.
     if (engineCaps().account) void resolveAccountKey(this.claudePath());
-    // Editor's active selection → shareable @file#a-b ref in the composer.
-    this.selListener = vscode.window.onDidChangeTextEditorSelection((e) => this.onSelectionChanged(e));
     // Closing the Remote Control terminal ends the remote session: the tab goes back to being
     // driven from the Cockpit.
     this.termListener = vscode.window.onDidCloseTerminal((t) => {
@@ -274,27 +270,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this.watchdog) clearInterval(this.watchdog);
     this.windowStateSub?.dispose();
     this.reloadBar?.dispose();
-    this.selListener?.dispose();
     this.termListener?.dispose();
     for (const poll of this.remoteWatch.values()) clearInterval(poll);
     this.remoteWatch.clear();
     this.remoteTerms.clear();
     this.remotePhase.clear();
     this.diffProviderReg?.dispose();
-  }
-
-  /** Updates the selection ref (@rel#a-b) and notifies the composer. Empty = no selection. */
-  private onSelectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
-    const ed = e.textEditor;
-    const sel = ed.selection;
-    let ref: string | undefined;
-    if (ed.document.uri.scheme === 'file' && !sel.isEmpty) {
-      const rel = vscode.workspace.asRelativePath(ed.document.uri, false);
-      ref = `@${rel}#${sel.start.line + 1}-${sel.end.line + 1}`;
-    }
-    if (ref === this.lastSelRef) return;
-    this.lastSelRef = ref;
-    this.post({ kind: 'selection', ref });
   }
 
   /** Shows the reload button while at least one Cockpit panel is open. */
@@ -2558,10 +2539,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.pendingRestart = false;
           this.sendConfig();
         }
-        // Shares the editor selection as context, when the composer asked for it.
-        const sel = m.selection ? `${m.selection}\n` : '';
-        const text = `${sel}${body}`;
-        s.send(text, m.images);
+        s.send(body, m.images);
         this.draftByTab.delete(srcTab); // enviado: descarta o rascunho espelhado
         break;
       }
@@ -2579,6 +2557,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           requestId: m.requestId,
           text: paths.map((p) => this.quoteResolved(p)).join(' '),
         });
+        break;
+      }
+      case 'dropFiles': {
+        // Dropped from the OS's explorer: the webview never sees the path, so a copy is pointed at.
+        let paths: string[] = [];
+        try {
+          paths = saveDroppedFiles(m.files);
+        } catch (e) {
+          log(`[drop] could not save the dropped files: ${String(e)}`);
+        }
+        this.post({ kind: 'resolvedPath', requestId: m.requestId, text: paths.map((p) => this.quoteResolved(p)).join(' ') });
         break;
       }
       case 'interrupt':

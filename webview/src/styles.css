@@ -1799,32 +1799,6 @@ body {
   color: var(--tt-accent-strong, #ff7a18);
   width: 12px;
 }
-/* Chip da seleção ativa do editor (compartilhar com o Claude). */
-.composer-selchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  margin: 0 0 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-  border: 1px solid var(--vscode-input-border, #555);
-  background: color-mix(in srgb, var(--tt-accent-strong, #ff7a18) 14%, transparent);
-  color: var(--vscode-foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-selchip.off {
-  opacity: 0.5;
-  background: transparent;
-}
-.composer-selchip-eye {
-  color: var(--tt-accent-strong, #ff7a18);
-}
 /* Palavra com erro ortográfico no overlay: underline ondulado + cor de erro. */
 .spell-error {
   text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
@@ -5663,4 +5637,42 @@ body {
 .creds-modal .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Context menu for text selected in the conversation (SelectionCopy). */
+.sel-menu {
+  position: fixed;
+  z-index: 1300;
+  min-width: 120px;
+  padding: 4px 0;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, #252526));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, #454545));
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+.sel-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 4px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sel-menu-item:hover,
+.sel-menu-item:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #04395e));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, #fff));
+  outline: none;
+}
+.sel-menu-key {
+  opacity: 0.6;
+  font-size: 11px;
 }

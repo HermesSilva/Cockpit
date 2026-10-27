@@ -8,7 +8,7 @@ import {
   type DragEvent,
 } from 'react';
 import type { Translator } from '../i18n';
-import type { ImageAttachment, SlashCmdMeta, MentionItem } from '../../../shared/protocol';
+import type { ImageAttachment, SlashCmdMeta, MentionItem, DroppedFile } from '../../../shared/protocol';
 import { send, saveState, readState } from '../vscodeApi';
 import { richHighlight } from '../util/highlight';
 import {
@@ -44,8 +44,7 @@ interface Props {
   injectText?: { text: string } | null;
   onTextInjected?: () => void;
   onToggleExpandAll: () => void;
-  onSend: (text: string, images: ImageAttachment[], selection?: string) => void;
-  selectionRef?: string; // @file#a-b of the editor's active selection
+  onSend: (text: string, images: ImageAttachment[]) => void;
   onStop: () => void;
   onVoiceDict?: () => void; // opens the dictation dictionary modal
   onCredentials?: () => void; // abre o cofre de credenciais (TOTP 2FA)
@@ -92,9 +91,7 @@ export const Composer = memo(function Composer({
   canRemoteControl,
   remoteActive,
   remotePhase,
-  selectionRef,
 }: Props) {
-  const [includeSel, setIncludeSel] = useState(true);
   const [text, setText] = useState('');
   const [images, setImages] = useState<PendingImage[]>([]);
   const openImage = useImageViewer();
@@ -341,29 +338,31 @@ export const Composer = memo(function Composer({
     send({ kind: 'resolvePaths', requestId, absPaths });
   };
 
-  // Drag-to-attach: solta arquivos no composer. Usa o path do arquivo (ou o
-  // uri-list) to attach; images without a path come in as bitmaps.
-  const onDrop = (e: DragEvent<HTMLTextAreaElement>) => {
-    const dt = e.dataTransfer;
-    if (!dt) return;
-    const files = Array.from(dt.files || []);
-    const directPaths: string[] = [];
-    const bitmaps: File[] = [];
-    for (const f of files) {
-      const p = (f as unknown as { path?: string }).path;
-      if (p) directPaths.push(p);
-      else if (f.type.startsWith('image/')) bitmaps.push(f);
-    }
-    if (directPaths.length === 0) {
-      const uri = dt.getData('text/uri-list');
-      for (const line of uri.split('\n').map((s) => s.trim())) {
-        if (line.startsWith('file:')) directPaths.push(fileUriToPath(line));
-      }
-    }
-    if (!directPaths.length && !bitmaps.length) return; // nada de arquivo: deixa o default (texto)
+  // Drag-and-drop of files does what pasting files copied in the file manager does: their
+  // paths go into the prompt. The editor's own explorer hands the paths over in the drag; a
+  // file from the OS's explorer arrives as content only, so it goes to the host, which recovers
+  // the real path where the host allows it and otherwise saves a copy to point at.
+  const onDragOver = (e: DragEvent<HTMLElement>) => {
+    if (!isFileDrag(e.dataTransfer)) return;
     e.preventDefault();
-    if (directPaths.length) requestPaths(directPaths);
-    bitmaps.forEach(attachImage);
+    e.dataTransfer.dropEffect = 'copy';
+  };
+  const onDrop = (e: DragEvent<HTMLElement>) => {
+    const dt = e.dataTransfer;
+    if (!dt || !isFileDrag(dt)) return; // dragged text: the textarea's default
+    e.preventDefault();
+    if (disabled || correcting) return;
+    const paths = droppedPaths(dt);
+    if (paths.length) {
+      requestPaths(paths);
+      return;
+    }
+    const files = Array.from(dt.files || []);
+    if (!files.length) return;
+    const requestId = rid();
+    // Nothing comes back for an image the host could not place: it is attached instead.
+    pending.current.set(requestId, { bitmaps: files.filter((f) => f.type.startsWith('image/')), directPaths: [] });
+    void Promise.all(files.map(readDropped)).then((dropped) => send({ kind: 'dropFiles', requestId, files: dropped }));
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -479,7 +478,6 @@ export const Composer = memo(function Composer({
     onSend(
       v,
       images.map((i) => ({ mediaType: i.mediaType, data: i.data })),
-      includeSel && selectionRef ? selectionRef : undefined,
     );
     setText('');
     setImages([]);
@@ -712,20 +710,11 @@ export const Composer = memo(function Composer({
           ))}
         </div>
       )}
-      {selectionRef && (
-        <button
-          type="button"
-          className={`composer-selchip ${includeSel ? 'on' : 'off'}`}
-          title={includeSel ? t('selection.included') : t('selection.excluded')}
-          onClick={() => setIncludeSel((v) => !v)}
-        >
-          <span className="composer-selchip-eye">{includeSel ? '◉' : '◌'}</span>
-          ⧉ {selectionRef}
-        </button>
-      )}
       <div className="composer-row">
         <div
           className="composer-input-wrap"
+          onDragOver={onDragOver}
+          onDrop={onDrop}
           onMouseDown={(e) => {
             // Click on the empty area (below the text): keeps the focus in the textarea.
             if (e.target !== ref.current && !correcting) {
@@ -769,8 +758,6 @@ export const Composer = memo(function Composer({
             onClick={(e) => openSpellAt(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={onKey}
             onPaste={onPaste}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={onDrop}
             onScroll={() => {
               syncScroll();
               if (spellMenu) setSpellMenu(null);
@@ -970,4 +957,57 @@ function fileUriToPath(uri: string): string {
   } catch {
     return uri;
   }
+}
+
+// The drag carries files (from the OS or the editor's explorer), not dragged text.
+function isFileDrag(dt: DataTransfer | null): dt is DataTransfer {
+  if (!dt) return false;
+  const types = Array.from(dt.types || []);
+  return types.some((t) => /^(files|text\/uri-list|application\/vnd\.code\.uri-list|codefiles|resourceurls)$/i.test(t));
+}
+
+// The paths a drag exposes by itself: Electron's File.path, VS Code's explorer lists, uri-lists.
+function droppedPaths(dt: DataTransfer): string[] {
+  const out: string[] = [];
+  for (const f of Array.from(dt.files || [])) {
+    const p = (f as unknown as { path?: string }).path;
+    if (p) out.push(p);
+  }
+  if (out.length) return out;
+  const json = (type: string): string[] => {
+    try {
+      const v = JSON.parse(dt.getData(type) || '[]');
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
+  out.push(...json('codefiles'));
+  if (out.length) return out;
+  const uris = [
+    ...dt.getData('application/vnd.code.uri-list').split('\n'),
+    ...dt.getData('text/uri-list').split('\n'),
+    ...json('resourceurls'),
+  ];
+  for (const line of uris.map((s) => s.trim())) {
+    if (line.startsWith('file:') && !out.includes(fileUriToPath(line))) out.push(fileUriToPath(line));
+  }
+  return out;
+}
+
+// A dropped file's content for the host to save, when the drag hid its path. Over the limit
+// only the name goes: a host that can recover the path still can, and none copies it.
+const DROP_MAX_BYTES = 50 * 1024 * 1024;
+function readDropped(f: File): Promise<DroppedFile> {
+  if (f.size > DROP_MAX_BYTES) return Promise.resolve({ name: f.name });
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      const comma = url.indexOf(',');
+      resolve({ name: f.name, data: comma >= 0 ? url.slice(comma + 1) : '' });
+    };
+    reader.onerror = () => resolve({ name: f.name });
+    reader.readAsDataURL(f);
+  });
 }

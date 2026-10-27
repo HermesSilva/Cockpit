@@ -35,6 +35,7 @@ import { AskQuestionModal } from './components/AskQuestionModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ScrollMarkers } from './components/ScrollMarkers';
 import { SearchBar } from './components/SearchBar';
+import { SelectionCopy } from './components/SelectionCopy';
 import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
 import { buildConversationMd, suggestedFileName } from './util/exportMd';
 import { buildTimelineHtml, suggestedHtmlName, timelineFileName } from './util/exportHtml';
@@ -196,18 +197,18 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   const tabRef = useRef(tab);
   tabRef.current = tab;
 
-  const onSend = useCallback((text: string, images: ImageAttachment[], selection?: string) => {
+  const onSend = useCallback((text: string, images: ImageAttachment[]) => {
     // Aba sob Remote Control: quem conduz é o terminal/celular. O host recusa e explica —
     // não criamos a bolha local, que ficaria órfã.
     if (tabRef.current?.remote) {
-      send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
+      send({ kind: 'sendMessage', text, images: images.length ? images : undefined });
       return;
     }
     lastSendRef.current = { text, images };
     const previews = images.map((i) => `data:${i.mediaType};base64,${i.data}`);
     dispatch({ type: 'localUser', text, images: previews.length ? previews : undefined });
     dispatch({ type: 'clearError' }); // new send: clears the previous error/abort warning
-    send({ kind: 'sendMessage', text, images: images.length ? images : undefined, selection });
+    send({ kind: 'sendMessage', text, images: images.length ? images : undefined });
   }, []);
   const onStop = useCallback(() => {
     send({ kind: 'interrupt' });
@@ -553,6 +554,7 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
   return (
     <ImageViewerContext.Provider value={setViewerSrc}>
     <div className="app">
+      <SelectionCopy t={t} />
       {showSearch && (
         <SearchBar
           t={t}
@@ -718,7 +720,6 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
         onTextInjected={onTextInjected}
         onToggleExpandAll={onToggleExpandAll}
         onSend={onSend}
-        selectionRef={state.selectionRef}
         onStop={onStop}
         onVoiceDict={onVoiceDict}
         onCredentials={onCredentials}

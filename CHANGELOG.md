@@ -6,6 +6,27 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.269] - 2026-10-26
+
+### Added
+- **Drop files on the composer** — anywhere on the input, not just the text area — and their
+  paths go into the prompt, exactly as pasting them does. From VS Code's Explorer the real
+  path comes along with the drag. From the OS file manager the webview is only handed the
+  content, so the Cockpit saves a copy under `%TEMP%\cockpit-drops\` (original name kept)
+  and points at it; files over 50 MB are skipped. VS Code requires **Shift** to be held while
+  dragging into a webview.
+
+### Fixed
+- **Copy from the conversation.** Selecting text in the timeline and pressing **Ctrl+C**, or
+  right-clicking and choosing **Copy**, did not copy. The panel now copies the selection
+  itself, with its own one-item context menu; with nothing selected the right-click is
+  VS Code's as before, and text fields keep their own copy.
+
+### Removed
+- **The editor-selection chip above the composer.** It followed whatever was selected in any
+  open editor and, unless switched off, prefixed every prompt with `@file#a-b` — context the
+  user had not chosen to send. Reference a file with `@` instead.
+
 ## [1.0.268] - 2026-10-22
 
 Reviewed against Claude Code CLI 2.1.287 → 2.1.308. The wire contract is unchanged (the one

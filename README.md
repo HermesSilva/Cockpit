@@ -66,7 +66,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | **Questions asked in your language** | ✅ | ❌ | steers AskUserQuestion to the configured voice/UI language |
 | Side-by-side diff | ✅ | ✅ | in-webview diff **plus** "Open diff in editor" → VS Code native `vscode.diff`; official also lets you edit in the diff before accepting |
 | @-mention files/folders | 🟡 | ✅ | Cockpit: fuzzy file autocomplete (`@` menu, host `findFiles`); no `Alt+K` shortcut |
-| Share active selection (`@file#a-b`) | ✅ | ✅ | composer chip with an eye toggle to include/exclude the editor selection |
+| Share active selection (`@file#a-b`) | ❌ | ✅ | removed in 1.0.269: the chip followed every open editor and leaked context nobody asked for; type `@` to reference a file |
 | Checkpoints / rewind (restore files) | 🟡 | ✅ | official: fork / rewind-code / both. Cockpit rewinds the **transcript** only (file restore via Git planned) |
 
 **Spell-checker & dictation** *(Cockpit specialty)*
@@ -135,7 +135,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Theme synced with VS Code | ✅ | ✅ | `var(--vscode-*)` |
 | **Bilingual i18n (pt-BR + EN), runtime switch** | ✅ | ❌ | host + webview, no reload |
 | Image paste / screenshot | ✅ | ✅ | Cockpit also pastes **file paths** (Unicode-safe on Windows) |
-| Drag-to-attach files | ✅ | ✅ | drop files on the composer (reuses the path resolver) |
+| Drag-to-attach files | ✅ | ✅ | drop files on the composer: same result as pasting them (hold **Shift** while dragging into a VS Code webview) |
 | Status-bar entry + spinner | ✅ | ✅ | Cockpit: idle/busy dot + model chip |
 | Editor-toolbar entry point | ✅ | ✅ | ✦ icon opens the Cockpit from the editor title bar |
 | Auto-save before read/write | ✅ | ✅ | flushes a dirty buffer before the agent touches the file (`tootega.autosave`) |
@@ -221,7 +221,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 
 **Recently closed** (this release): reopen closed session, history time-buckets,
 editor-toolbar entry, drag-to-attach, auto-save before read/write, `@`-mention file
-autocomplete, active-selection sharing, editable plan mode, "open diff in native editor",
+autocomplete, editable plan mode, "open diff in native editor",
 onboarding checklist, and remote control (📱 on the session card).
 
 **Still open** — and *why* each is non-trivial here:
@@ -525,7 +525,6 @@ automatically resumes the most recent session for that directory.
 | Composed questions (AskUserQuestion) | ✅ | Modal with tabs per question, option cards, `multiSelect`, an **Other** option, and a **text box per question** that is added to that question's choices (**Enter** sends, **Shift+Enter** new line) | — |
 | Side-by-side diff in the native editor | ✅ | **Open diff in editor** button on the edit-permission modal → VS Code `vscode.diff` | Editing inside the native diff to change the proposal is still in the webview path |
 | **@-mention file autocomplete** | ✅ | Type `@` to pick a workspace file (fuzzy) | No `Alt+K` line-range shortcut |
-| **Share editor selection** | ✅ | Composer chip (`@file#a-b`) with an eye toggle to include/exclude | — |
 | **Auto-save before read/write** | ✅ | Flushes a dirty buffer before the agent reads/writes (`tootega.autosave`) | — |
 | Accept/reject per file and per hunk | ⏳ | — | — |
 | Agent Todos panel | 🟡 | The **Tasks** tab shows the live task list | Depends on the CLI emitting todos |
@@ -936,6 +935,13 @@ and stops capture.
   (`file://…`); when the webview exposes neither, the host reads the OS clipboard
   (cross-platform: `Get-Clipboard` on Windows, AppleScript on macOS, `wl-paste`/`xclip`
   on Linux).
+- **Drop files** on the composer (hold **Shift** while dragging, as VS Code requires for
+  webviews): the same as pasting them. From VS Code's Explorer the real path comes with the
+  drag; from the OS file manager the webview only gets the content, so the host saves a copy
+  under `%TEMP%\cockpit-drops\` with the original name and the prompt points at it (files
+  over 50 MB are skipped).
+- **Copy from the conversation**: select text and press **Ctrl+C**, or right-click it for
+  **Copy**. The panel copies the selection itself rather than relying on the host's copy path.
 
 ---
 
@@ -1011,7 +1017,8 @@ UTF-8 and is left untouched.
 
 In the composer: **Enter** sends · **Shift+Enter** new line · **Ctrl+F** finds in the
 conversation · **@** opens the file autocomplete · the **/** button opens the slash-command
-menu · the **▾** button opens options · **drag files** onto it to attach.
+menu · the **▾** button opens options · **drag files** onto it to insert their paths (hold **Shift**).
+In the conversation, **Ctrl+C** or right-click → **Copy** copies the selected text.
 
 On a session card (hub), hover reveals: **📱 remote control**, **↻ reload**, **✏ rename**,
 **🗑 delete**.

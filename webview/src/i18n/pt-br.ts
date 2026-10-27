@@ -24,8 +24,6 @@ export const ptBR: Partial<Strings> = {
   'onboarding.signin': 'Entre na sua conta Claude',
   'onboarding.session': 'Abra ou crie um contexto',
   'onboarding.voice': 'Experimente o ditado por voz e o corretor',
-  'selection.included': 'Seleção do editor compartilhada com o Claude — clique p/ excluir',
-  'selection.excluded': 'Seleção do editor oculta — clique p/ incluir',
   'about.cliOutdated': 'Nova versão {0} disponível. Atualize com: claude update',
   'about.cliBelowMin':
     'Este CLI é anterior à {0}. Interromper o agente pode falhar silenciosamente. Atualize com: claude update',

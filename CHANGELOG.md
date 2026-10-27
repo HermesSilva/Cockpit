@@ -6,6 +6,15 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.274] - 2026-10-27
+
+### Fixed
+- **A file dropped on the panel keeps its real path.** When the drop reached the panel itself
+  (Shift held, or a side-bar view), the prompt got a copy under `%TEMP%\cockpit-drops\` instead
+  of the file the user dragged. The Cockpit now finds the file in the Windows Explorer
+  selection it was dragged from — same name and same content — and points at the original. A
+  copy is made only when the file cannot be found there (for instance, dragged from a browser).
+
 ## [1.0.272] - 2026-10-27
 
 ### Fixed

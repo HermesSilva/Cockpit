@@ -945,8 +945,10 @@ and stops capture.
   Folders are still VS Code's (it adds them to the workspace), and a drop on a group's edge
   still opens a split. One look-alike is caught too: **File › Open File…** while the Cockpit is
   the front tab of its group also adds to the recents, so that file lands in the prompt as well. With **Shift** held the drop reaches the webview itself, which only gets
-  the content: the host then saves a copy under `%TEMP%\cockpit-drops\` and points at that
-  (files over 50 MB are skipped). Drags from VS Code's own Explorer cannot be caught either way —
+  the content: the host then looks the file up in the Windows Explorer selection it was dragged
+  from (same name and same bytes) and points at the original; only when it is not found there
+  does it save a copy under `%TEMP%\cockpit-drops\` and point at that (files over 50 MB are
+  skipped). Drags from VS Code's own Explorer cannot be caught either way —
   copy and paste those.
 - **Copy from the conversation**: select text and press **Ctrl+C**, or right-click it for
   **Copy**. The panel copies the selection itself rather than relying on the host's copy path.

@@ -54,7 +54,7 @@ import { listPlugins, pluginAction } from '../cli/PluginManager';
 import { locateSession, liveSessions } from '../cli/SessionRegistry';
 import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
-import { saveDroppedFiles } from '../cli/DroppedFiles';
+import { resolveDroppedFiles } from '../cli/DroppedFiles';
 import { ExternalDropCatcher } from './ExternalDropCatcher';
 import { readClaudeDefaults, oneMContextDisabled } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
@@ -2592,10 +2592,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       }
       case 'dropFiles': {
-        // Dropped from the OS's explorer: the webview never sees the path, so a copy is pointed at.
+        // Dropped from the OS's explorer: the webview never sees the path. It is recovered from
+        // the Explorer selection when possible; otherwise a copy is pointed at.
         let paths: string[] = [];
         try {
-          paths = saveDroppedFiles(m.files);
+          paths = resolveDroppedFiles(m.files);
         } catch (e) {
           log(`[drop] could not save the dropped files: ${String(e)}`);
         }

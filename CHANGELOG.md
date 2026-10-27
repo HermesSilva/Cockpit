@@ -6,6 +6,13 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.271] - 2026-10-26
+
+### Fixed
+- **Dropping a file without Shift, for real this time.** 1.0.270 still needed Shift: besides
+  `dragenter`, VS Code reports every `dragover` in a webview to the workbench, which blocks
+  the panel when Shift is not held. The panel now stops file drags before VS Code sees them.
+
 ## [1.0.270] - 2026-10-26
 
 ### Fixed

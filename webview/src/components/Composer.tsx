@@ -343,11 +343,13 @@ export const Composer = memo(function Composer({
   // the real path where the host allows it and otherwise saves a copy to point at.
   //
   // The whole panel is the drop zone, and it is claimed on the window in the CAPTURE phase on
-  // purpose. VS Code's webview preload listens for dragenter/dragover on the same window and,
-  // for a file drag, tells the workbench a drag started — the workbench then lays its editor
-  // drop overlay over the panel and opens the file as a document, unless Shift is held. The
-  // preload skips an event whose default was already prevented, and a capture listener runs
-  // before its bubble one: claiming the drag here is what makes a plain drag land in the prompt.
+  // purpose. VS Code's webview preload listens for dragenter/dragover on the same window (bubble
+  // phase) and reports every file drag to the workbench: 'drag-start' on dragenter, and 'drag'
+  // with the Shift state on EVERY dragover, without looking at defaultPrevented. The workbench
+  // answers a 'drag' without Shift by setting pointer-events:none on the webview (its
+  // windowDidDragStart), so the editor drop overlay takes the drag and opens the file as a
+  // document. Preventing the default is not enough: the event must not reach the preload at
+  // all, so it is stopped here, at the window's capture phase, before any bubble listener.
   const onDrop = (e: globalThis.DragEvent) => {
     const dt = e.dataTransfer;
     if (!dt || !isFileDrag(dt)) return; // dragged text: the textarea's default
@@ -372,6 +374,7 @@ export const Composer = memo(function Composer({
     const claim = (e: globalThis.DragEvent) => {
       if (!isFileDrag(e.dataTransfer)) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       e.dataTransfer.dropEffect = 'copy';
     };
     const drop = (e: globalThis.DragEvent) => dropRef.current(e);

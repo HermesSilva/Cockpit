@@ -936,9 +936,9 @@ and stops capture.
   (cross-platform: `Get-Clipboard` on Windows, AppleScript on macOS, `wl-paste`/`xclip`
   on Linux).
 - **Drop files** from the OS file manager anywhere on the panel — no modifier key: the same as
-  pasting them. The webview claims the drag in the capture phase, which keeps VS Code from
-  laying its editor drop overlay over the panel (the preload skips an already-handled
-  `dragenter`). The webview only gets the content, not the path, so the host saves a copy
+  pasting them. The webview claims the drag in the capture phase and stops it there, so
+  VS Code's preload never reports it to the workbench — a report without Shift is what makes
+  VS Code block the panel and lay its editor drop overlay over it. The webview only gets the content, not the path, so the host saves a copy
   under `%TEMP%\cockpit-drops\` with the original name and the prompt points at it (files
   over 50 MB are skipped). Drags from VS Code's own Explorer cannot reach a webview: the
   workbench blocks the panel the moment such a drag starts — copy and paste those instead.

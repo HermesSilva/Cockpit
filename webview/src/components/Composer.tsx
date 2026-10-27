@@ -5,7 +5,6 @@ import {
   useEffect,
   type KeyboardEvent,
   type ClipboardEvent,
-  type DragEvent,
 } from 'react';
 import type { Translator } from '../i18n';
 import type { ImageAttachment, SlashCmdMeta, MentionItem, DroppedFile } from '../../../shared/protocol';
@@ -342,12 +341,14 @@ export const Composer = memo(function Composer({
   // paths go into the prompt. The editor's own explorer hands the paths over in the drag; a
   // file from the OS's explorer arrives as content only, so it goes to the host, which recovers
   // the real path where the host allows it and otherwise saves a copy to point at.
-  const onDragOver = (e: DragEvent<HTMLElement>) => {
-    if (!isFileDrag(e.dataTransfer)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  };
-  const onDrop = (e: DragEvent<HTMLElement>) => {
+  //
+  // The whole panel is the drop zone, and it is claimed on the window in the CAPTURE phase on
+  // purpose. VS Code's webview preload listens for dragenter/dragover on the same window and,
+  // for a file drag, tells the workbench a drag started — the workbench then lays its editor
+  // drop overlay over the panel and opens the file as a document, unless Shift is held. The
+  // preload skips an event whose default was already prevented, and a capture listener runs
+  // before its bubble one: claiming the drag here is what makes a plain drag land in the prompt.
+  const onDrop = (e: globalThis.DragEvent) => {
     const dt = e.dataTransfer;
     if (!dt || !isFileDrag(dt)) return; // dragged text: the textarea's default
     e.preventDefault();
@@ -364,6 +365,25 @@ export const Composer = memo(function Composer({
     pending.current.set(requestId, { bitmaps: files.filter((f) => f.type.startsWith('image/')), directPaths: [] });
     void Promise.all(files.map(readDropped)).then((dropped) => send({ kind: 'dropFiles', requestId, files: dropped }));
   };
+
+  const dropRef = useRef(onDrop);
+  dropRef.current = onDrop;
+  useEffect(() => {
+    const claim = (e: globalThis.DragEvent) => {
+      if (!isFileDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    };
+    const drop = (e: globalThis.DragEvent) => dropRef.current(e);
+    window.addEventListener('dragenter', claim, true);
+    window.addEventListener('dragover', claim, true);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', claim, true);
+      window.removeEventListener('dragover', claim, true);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const cd = e.clipboardData;
@@ -713,8 +733,6 @@ export const Composer = memo(function Composer({
       <div className="composer-row">
         <div
           className="composer-input-wrap"
-          onDragOver={onDragOver}
-          onDrop={onDrop}
           onMouseDown={(e) => {
             // Click on the empty area (below the text): keeps the focus in the textarea.
             if (e.target !== ref.current && !correcting) {

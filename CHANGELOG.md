@@ -6,6 +6,14 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.270] - 2026-10-26
+
+### Fixed
+- **Dropping a file no longer needs Shift.** A file dragged from the OS file manager opened as a
+  document unless Shift was held — VS Code's editor drop overlay took the drag. The panel now
+  claims file drags itself, so a plain drop anywhere on it puts the path in the prompt. Drags
+  from VS Code's own Explorer still cannot reach a webview; copy and paste those.
+
 ## [1.0.269] - 2026-10-26
 
 ### Added

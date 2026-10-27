@@ -135,7 +135,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Theme synced with VS Code | ✅ | ✅ | `var(--vscode-*)` |
 | **Bilingual i18n (pt-BR + EN), runtime switch** | ✅ | ❌ | host + webview, no reload |
 | Image paste / screenshot | ✅ | ✅ | Cockpit also pastes **file paths** (Unicode-safe on Windows) |
-| Drag-to-attach files | ✅ | ✅ | drop files on the composer: same result as pasting them (hold **Shift** while dragging into a VS Code webview) |
+| Drag-to-attach files | ✅ | ✅ | drop files from the OS file manager on the panel: same result as pasting them, no Shift needed |
 | Status-bar entry + spinner | ✅ | ✅ | Cockpit: idle/busy dot + model chip |
 | Editor-toolbar entry point | ✅ | ✅ | ✦ icon opens the Cockpit from the editor title bar |
 | Auto-save before read/write | ✅ | ✅ | flushes a dirty buffer before the agent touches the file (`tootega.autosave`) |
@@ -935,11 +935,13 @@ and stops capture.
   (`file://…`); when the webview exposes neither, the host reads the OS clipboard
   (cross-platform: `Get-Clipboard` on Windows, AppleScript on macOS, `wl-paste`/`xclip`
   on Linux).
-- **Drop files** on the composer (hold **Shift** while dragging, as VS Code requires for
-  webviews): the same as pasting them. From VS Code's Explorer the real path comes with the
-  drag; from the OS file manager the webview only gets the content, so the host saves a copy
+- **Drop files** from the OS file manager anywhere on the panel — no modifier key: the same as
+  pasting them. The webview claims the drag in the capture phase, which keeps VS Code from
+  laying its editor drop overlay over the panel (the preload skips an already-handled
+  `dragenter`). The webview only gets the content, not the path, so the host saves a copy
   under `%TEMP%\cockpit-drops\` with the original name and the prompt points at it (files
-  over 50 MB are skipped).
+  over 50 MB are skipped). Drags from VS Code's own Explorer cannot reach a webview: the
+  workbench blocks the panel the moment such a drag starts — copy and paste those instead.
 - **Copy from the conversation**: select text and press **Ctrl+C**, or right-click it for
   **Copy**. The panel copies the selection itself rather than relying on the host's copy path.
 
@@ -1017,7 +1019,7 @@ UTF-8 and is left untouched.
 
 In the composer: **Enter** sends · **Shift+Enter** new line · **Ctrl+F** finds in the
 conversation · **@** opens the file autocomplete · the **/** button opens the slash-command
-menu · the **▾** button opens options · **drag files** onto it to insert their paths (hold **Shift**).
+menu · the **▾** button opens options · **drag files** from the file manager onto the panel to insert their paths.
 In the conversation, **Ctrl+C** or right-click → **Copy** copies the selected text.
 
 On a session card (hub), hover reveals: **📱 remote control**, **↻ reload**, **✏ rename**,

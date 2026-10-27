@@ -232,6 +232,8 @@ export const Composer = memo(function Composer({
         if (m.text) insertAtCaret(m.text); // host autoritativo (Windows): acentos OK
         else if (ctx.directPaths.length) requestPaths(ctx.directPaths); // non-Windows
         else ctx.bitmaps.forEach(attachImage); // it was a screenshot
+      } else if (m?.kind === 'insertText' && m.text) {
+        insertAtCaret(m.text);
       }
     };
     window.addEventListener('message', h);

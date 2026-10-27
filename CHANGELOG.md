@@ -6,6 +6,16 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.272] - 2026-10-27
+
+### Fixed
+- **Dropping a file from the file manager works without Shift.** 1.0.270 and 1.0.271 could not
+  do it: VS Code blocks every webview while a drag without Shift is over its window, so the
+  panel never sees the drop and VS Code opens the file instead. The Cockpit now recognises that
+  open — a file VS Code just added to its recently-opened list, opened over the Cockpit panel —
+  closes it again and puts the file's real path in the prompt. With Shift the drop still goes
+  to the panel directly.
+
 ## [1.0.271] - 2026-10-26
 
 ### Fixed

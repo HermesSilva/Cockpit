@@ -935,13 +935,19 @@ and stops capture.
   (`file://…`); when the webview exposes neither, the host reads the OS clipboard
   (cross-platform: `Get-Clipboard` on Windows, AppleScript on macOS, `wl-paste`/`xclip`
   on Linux).
-- **Drop files** from the OS file manager anywhere on the panel — no modifier key: the same as
-  pasting them. The webview claims the drag in the capture phase and stops it there, so
-  VS Code's preload never reports it to the workbench — a report without Shift is what makes
-  VS Code block the panel and lay its editor drop overlay over it. The webview only gets the content, not the path, so the host saves a copy
-  under `%TEMP%\cockpit-drops\` with the original name and the prompt points at it (files
-  over 50 MB are skipped). Drags from VS Code's own Explorer cannot reach a webview: the
-  workbench blocks the panel the moment such a drag starts — copy and paste those instead.
+- **Drop files** from the OS file manager on the panel — no modifier key: the same as pasting
+  them, with the **real path**. VS Code blocks every webview for the length of a drag unless
+  Shift is held (its workbench sets `pointer-events:none` on any dragover without Shift), so
+  the drop lands on the editor group and VS Code opens the file there. The extension recognises
+  that open — a pinned editor appearing in the group whose front tab was the Cockpit, for a file
+  VS Code just added to its recently-opened list, which it does only for files dropped from the
+  OS — closes it, takes it back off the recents and puts the path in that panel's prompt.
+  Folders are still VS Code's (it adds them to the workspace), and a drop on a group's edge
+  still opens a split. One look-alike is caught too: **File › Open File…** while the Cockpit is
+  the front tab of its group also adds to the recents, so that file lands in the prompt as well. With **Shift** held the drop reaches the webview itself, which only gets
+  the content: the host then saves a copy under `%TEMP%\cockpit-drops\` and points at that
+  (files over 50 MB are skipped). Drags from VS Code's own Explorer cannot be caught either way —
+  copy and paste those.
 - **Copy from the conversation**: select text and press **Ctrl+C**, or right-click it for
   **Copy**. The panel copies the selection itself rather than relying on the host's copy path.
 

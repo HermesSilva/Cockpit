@@ -516,6 +516,9 @@ type HostMsg =
   | { kind: 'slashResearching'; busy: boolean }
   | { kind: 'history'; items: HistoryItem[] }
   | { kind: 'resolvedPath'; requestId: string; text: string }
+  // Text the host puts at the composer's caret on its own initiative (no request): the paths
+  // of files dropped on the panel that only the host could see (VS Code, drop without Shift).
+  | { kind: 'insertText'; text: string }
   | { kind: 'openSessions' }
   | { kind: 'taskTimings'; timings: Record<string, number> } // averages per type, already in the current (model,effort) scope (gauge)
   | { kind: 'usageData'; data: UsageData } // resposta ao botão "Usage"

@@ -55,6 +55,7 @@ import { locateSession, liveSessions } from '../cli/SessionRegistry';
 import { fetchMcpList, mergeMcpStatus } from '../cli/McpStatus';
 import { readClipboardFiles } from '../cli/ClipboardFiles';
 import { saveDroppedFiles } from '../cli/DroppedFiles';
+import { ExternalDropCatcher } from './ExternalDropCatcher';
 import { readClaudeDefaults, oneMContextDisabled } from '../cli/ClaudeSettings';
 import { computeLocalUsage } from '../session/UsageAggregator';
 import { computeDailyTokens } from '../stats/DailyTokens';
@@ -143,6 +144,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // Last session whose panel the user closed (for "reopen closed").
   private lastClosed?: { tabId: string; sessionId?: string };
   private termListener?: vscode.Disposable;
+  private dropCatcher?: ExternalDropCatcher;
   private tabSeq = 0;
 
   // Session overrides (in memory — they don't change the user's global settings).
@@ -234,6 +236,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (engineCaps().account) void resolveAccountKey(this.claudePath());
     // Closing the Remote Control terminal ends the remote session: the tab goes back to being
     // driven from the Cockpit.
+    // A file dropped from the OS on a Cockpit panel without Shift never reaches the webview:
+    // VS Code opens it in the panel's group instead. That open is caught and turned back into
+    // a path in the panel's prompt — see ExternalDropCatcher for how it is recognised.
+    this.dropCatcher = new ExternalDropCatcher(
+      'tootega.cockpit.editor',
+      (column, tab) => this.panelInColumn(column, tab.label),
+      (tabId, paths) => this.deliverDroppedPaths(tabId, paths),
+      log,
+    );
     this.termListener = vscode.window.onDidCloseTerminal((t) => {
       for (const [tabId, term] of this.remoteTerms) {
         if (term === t) this.endRemoteControl(tabId);
@@ -271,6 +282,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.windowStateSub?.dispose();
     this.reloadBar?.dispose();
     this.termListener?.dispose();
+    this.dropCatcher?.dispose();
     for (const poll of this.remoteWatch.values()) clearInterval(poll);
     this.remoteWatch.clear();
     this.remoteTerms.clear();
@@ -973,6 +985,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return rel.split(path.sep).join('/'); // dentro do contexto -> relativo
     }
     return absPath; // fora do contexto -> absoluto
+  }
+
+  /** The Cockpit tab whose panel sits in this editor column under this title. */
+  private panelInColumn(column: number, title: string): string | undefined {
+    let fallback: string | undefined;
+    for (const [tabId, panel] of this.panels) {
+      if (panel.viewColumn !== column) continue;
+      if (panel.title === title) return tabId;
+      fallback ??= tabId;
+    }
+    return fallback;
+  }
+
+  /** Brings the panel back and puts the dropped files' paths at its composer's caret. */
+  private deliverDroppedPaths(tabId: string, paths: string[]): void {
+    const panel = this.panels.get(tabId);
+    if (!panel) return;
+    panel.reveal(panel.viewColumn, false);
+    // Straight to that panel: the hub has no composer of its own to receive it.
+    this.trySend(panel.webview, { kind: 'insertText', text: paths.map((p) => this.quoteResolved(p)).join(' ') });
   }
 
   /** Resolved path in quotes (handles spaces). */

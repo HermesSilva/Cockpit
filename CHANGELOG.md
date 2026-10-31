@@ -6,6 +6,23 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.275] - 2026-10-31
+
+### Fixed
+- **The exported timeline (`.cockpit/TimeLine/*.html` and the HTML export) works in the
+  browser.** Tool cards were saved without their content, so they could not be opened: the
+  capture stopped waiting as soon as the thinking blocks were open. It now opens every closed
+  card, captures, and closes exactly those cards again, leaving the panel (and its scroll) as it
+  was. In the file, **Show more / Show less** expands a long prompt, the **copy** buttons copy
+  the prompt's text, the answer's Markdown or a code block to the clipboard, and clicking an
+  attached image enlarges it (Esc closes).
+- The same snapshot no longer pins the last prompt over the rest of the page, drops buttons
+  that only work inside VS Code (rewind, *View*, the file chips), opens external links in a
+  new tab, points file links at the project instead of the `TimeLine` folder, removes the
+  chevron from cards with nothing to open, makes the task checklist collapsible, and prints
+  prompts in full. An auto-save and a manual export running at the same time no longer leave
+  cards open in the panel.
+
 ## [1.0.274] - 2026-10-27
 
 ### Fixed

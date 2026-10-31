@@ -38,7 +38,7 @@ import { SearchBar } from './components/SearchBar';
 import { SelectionCopy } from './components/SelectionCopy';
 import { ImageViewer, ImageViewerContext } from './components/ImageViewer';
 import { buildConversationMd, suggestedFileName } from './util/exportMd';
-import { buildTimelineHtml, suggestedHtmlName, timelineFileName } from './util/exportHtml';
+import { captureTimelineHtml, suggestedHtmlName, timelineFileName } from './util/exportHtml';
 import { resetSpell } from './spell/spell';
 
 // Stable empty list for the memoised Timeline: `?? []` would mint a new array on every
@@ -276,43 +276,24 @@ export function App({ view, sessionId }: { view: 'chat' | 'hub'; sessionId: stri
       return;
     }
     const docTitle = title?.trim() || t('export.docTitle');
-    // A collapsed tool card has no body in the DOM — React only mounts it while the card is
-    // open — so capturing the panel as-is would export a Read/Grep/Write whose content simply
-    // is not there. Expand everything for the duration of the capture, then put the user's own
-    // view back; the exporter turns each card into a <details> that the reader reopens at will.
-    const previous = allExpanded;
-    setAllExpanded(true);
-    // Waiting a fixed number of frames does not work — it is what the first version of this
-    // did, and it shipped an export with all 81 cards closed. Each card re-syncs its own open
-    // state in a useEffect, which React runs after the commit, and mounting the bodies then
-    // costs a further render; two frames land in the middle of that (measured in Chromium:
-    // 0 of 81 bodies after two frames, all 81 after three). So wait for the result rather than
-    // for a delay, with a ceiling so a surprise can never hang the export.
+    // The copy buttons in the file copy the SOURCE (a prompt's text, an answer's Markdown),
+    // which lives in the items, not in the DOM. The capture itself — opening every collapsed
+    // card so its body exists, then restoring the user's view — is the exporter's job.
+    const texts = new Map<string, string>();
+    for (const it of items) if (it.kind === 'user' || it.kind === 'assistant') texts.set(it.id, it.text);
     void (async () => {
-      try {
-        // Not every card can have a body (AskUserQuestion renders its own, EndConversation may
-        // have none), so "all cards have one" is not a condition that always comes true. Wait
-        // for the count to stop growing instead: once a frame adds nothing, React has finished
-        // mounting what it was going to mount.
-        const hasCards = document.querySelector('.timeline .tool-card') !== null;
-        const mounted = () => document.querySelectorAll('.timeline .tool-body').length;
-        for (let i = 0, last = -1; hasCards && i < 120; i++) {
-          const now = mounted();
-          if (now > 0 && now === last) break;
-          last = now;
-          await new Promise((r) => requestAnimationFrame(() => r(undefined)));
-        }
-        const html = await buildTimelineHtml(
-          docTitle,
-          t('export.generatedAt', new Date().toLocaleString()),
-        );
-        // 'direct' is a user-named file at the project root; 'timeline' is the stable
-        // auto-saved snapshot named after the tab, overwritten each turn by the host.
-        const fileName = mode === 'timeline' ? timelineFileName(title) : suggestedHtmlName(title);
-        if (html) send({ kind: 'exportMd', html, fileName, mode });
-      } finally {
-        setAllExpanded(previous);
-      }
+      const html = await captureTimelineHtml({
+        title: docTitle,
+        generatedAt: t('export.generatedAt', new Date().toLocaleString()),
+        labels: { showMore: t('bubble.showMore'), showLess: t('bubble.showLess') },
+        textOf: (id) => texts.get(id),
+        // Where the host writes the file decides how a workspace-relative link resolves.
+        linkBase: mode === 'timeline' ? '../../' : '',
+      });
+      // 'direct' is a user-named file at the project root; 'timeline' is the stable
+      // auto-saved snapshot named after the tab, overwritten each turn by the host.
+      const fileName = mode === 'timeline' ? timelineFileName(title) : suggestedHtmlName(title);
+      if (html) send({ kind: 'exportMd', html, fileName, mode });
     })();
   };
   // Auto-save the timeline when a turn ends. The host cannot do this itself — only the webview

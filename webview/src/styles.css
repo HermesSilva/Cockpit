@@ -1202,7 +1202,9 @@ body {
 .md-code .code-lang {
   position: absolute;
   top: 4px;
-  right: 8px;
+  /* Anchored LEFT of the copy button and growing leftwards: a long name (TYPESCRIPT,
+     POWERSHELL) used to run under the button when the label sat at the edge. */
+  right: 30px;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2116,7 +2118,7 @@ body {
 .code-copy {
   position: absolute;
   top: 4px;
-  right: 36px;
+  right: 6px;
   background: transparent;
   border: none;
   color: var(--vscode-foreground);

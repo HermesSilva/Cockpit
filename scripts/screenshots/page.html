@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link href="ASSETS/theme.css" rel="stylesheet" />
+<style>
+  /* The defaults VS Code injects into every webview (body padding, font, colours). */
+  html { background: var(--vscode-editor-background); }
+  html.hub { background: var(--vscode-sideBar-background); }
+  body {
+    margin: 0; padding: 0 20px;
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+    font-weight: var(--vscode-font-weight);
+    font-size: var(--vscode-font-size);
+    background: transparent;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  /* Caret blink makes GIF frames differ for nothing. */
+  * { caret-color: var(--vscode-editorCursor-foreground); }
+</style>
+<link href="MAINCSS" rel="stylesheet" />
+<title>Tootega Cockpit</title>
+</head>
+<body class="vscode-dark">
+<div id="root"></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  window.__TOOTEGA_VIEW__ = q.get('view') === 'hub' ? 'hub' : 'chat';
+  window.__TOOTEGA_SESSION__ = q.get('view') === 'hub' ? '' : 'tab1';
+  window.__TOOTEGA_REGION__ = 'pt-BR';
+  window.__TOOTEGA_ICON__ = 'ICONURL';
+  window.__LOCALE__ = q.get('locale') || 'en';
+  window.__SPEED__ = Number(q.get('speed') || 1);
+  if (q.get('view') === 'hub') document.documentElement.classList.add('hub');
+</script>
+<script src="data.js"></script>
+<script src="ASSETS/scenes.js"></script>
+<script src="ASSETS/host.js"></script>
+<script src="MAINJS"></script>
+</body>
+</html>

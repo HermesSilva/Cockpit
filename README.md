@@ -1,33 +1,113 @@
-# Tootega Cockpit for Claude Code
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/media/icon.png" width="88" alt="Tootega Cockpit logo">
+</p>
+
+<h1 align="center">Tootega Cockpit for Claude Code</h1>
+
+<p align="center">
+  <b>See everything Claude Code does. Approve what matters. Know what it costs.</b><br>
+  A full interface for the Claude Code CLI — streaming timeline, real diffs, live cost and cache,
+  native to VS Code.
+</p>
+
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit"><img src="https://vsmarketplacebadges.dev/version/HermesSilva.tootega-cockpit.svg" alt="Marketplace version"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit"><img src="https://vsmarketplacebadges.dev/installs-short/HermesSilva.tootega-cockpit.svg" alt="Installs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/i18n-pt--BR%20%C2%B7%20EN-blueviolet" alt="Languages: pt-BR and English">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Hero.gif" width="900" alt="A real turn in the Cockpit: the prompt streams into thinking, Grep and Read cards, a task checklist, a permission diff approved with one click, the test run and the final answer">
+</p>
+
+<p align="center"><sub>A real turn, recorded from the extension's own webview: Claude finds a bug, plans it,
+asks before editing, runs the tests, and reports.</sub></p>
 
 > **Unofficial.** Not affiliated with, endorsed by, or sponsored by Anthropic.
 > "Claude", "Claude Code" and "Anthropic" are trademarks of Anthropic, PBC, used here
 > only to describe interoperability. This project talks to the official Claude Code CLI;
 > it does not bundle or redistribute it.
 
-> A rich GUI for **Claude Code**, packaged as a native VS Code extension.
-> The interface is **only a presentation and control layer over the Claude Code CLI** —
-> all orchestration (the agent loop, tools, subagents, context, cache, compaction,
-> permissions, MCP, hooks, skills) **lives in the CLI**. The extension renders the event
-> stream the CLI emits and implements the client side of the interactive protocols.
+**The Cockpit is a presentation and control layer over the Claude Code CLI** — nothing more,
+on purpose. All orchestration (the agent loop, tools, subagents, context, cache, compaction,
+permissions, MCP, hooks, skills) **lives in the CLI** you already have. The extension renders
+the event stream the CLI emits and implements the client side of its interactive protocols,
+so every feature the CLI gains, the Cockpit can show.
 
-[![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/HermesSilva.tootega-cockpit?label=Marketplace&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/HermesSilva.tootega-cockpit?color=1f883d)](https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/HermesSilva.tootega-cockpit)](https://marketplace.visualstudio.com/items?itemName=HermesSilva.tootega-cockpit)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Languages: pt-BR · EN](https://img.shields.io/badge/i18n-pt--BR%20%C2%B7%20EN-blueviolet)
+---
 
-![Cockpit main panel](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Main%20Panel.png)
+## ✨ Why the Cockpit
+
+<table>
+<tr>
+<td width="44%" valign="top">
+
+### 🧭 A timeline you can follow
+
+Every tool call gets its own card — what ran, on which file, what came back. Thinking opens
+when you want the *why*. Code reads like code: syntax highlighting, a line-number gutter,
+markdown tables. A live task checklist shows where the agent is in its own plan.
+
+</td>
+<td width="56%"><img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Chat%20Panel.png" alt="Chat panel with tool cards, a completed task checklist and a markdown answer"></td>
+</tr>
+<tr>
+<td width="56%"><img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Permission.png" alt="Permission modal with a side-by-side diff of the proposed edit"></td>
+<td width="44%" valign="top">
+
+### 🛡️ Control before the damage
+
+Edits arrive as a **side-by-side diff** you approve, refuse, or always allow — `Ctrl+Enter` /
+`Esc`, or open it in VS Code's own diff editor. Plan mode lets you **edit** the plan before
+approving it. Questions from the agent become real controls: tabs, multi-select, free text.
+
+</td>
+</tr>
+<tr>
+<td width="44%" valign="top">
+
+### 📊 Know what it is spending
+
+Context window, cache hit rate, reads and writes, estimated savings, session and turn cost,
+and your real **5-hour and weekly limits** — always on screen. The cache's one-hour life is a
+countdown you can keep alive. Per-model breakdown and the tools that filled your context.
+
+</td>
+<td width="56%"><img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Session%20Statistics%20View.png" alt="Account and usage modal with session and weekly limits and a per-model cost breakdown"></td>
+</tr>
+<tr>
+<td width="56%"><img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Exported%20Timeline.gif" alt="The exported HTML timeline in a browser: Show more expands the prompt, a Read card opens, the copy button copies the answer"></td>
+<td width="44%" valign="top">
+
+### 📤 Take the conversation with you
+
+Every turn is auto-saved to `.cockpit/TimeLine/` as **one self-contained HTML file** — no
+folder of assets, opens in any browser. Tool cards still open, long prompts still expand, and
+the copy buttons copy the source. Or have the CLI rewrite it as a polished Markdown document.
+
+</td>
+</tr>
+</table>
+
+### More, at a glance
+
+| | | |
+|:--:|:--:|:--:|
+| <img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Main%20Panel.png" width="260" alt="Hub in the side bar"><br><sub><b>Hub</b> — live session meters and saved contexts</sub> | <img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Question%20View.png" width="300" alt="Composed question modal"><br><sub><b>Composed questions</b> — tabs, multi-select, notes</sub> | <img src="https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Tasks%20View.png" width="300" alt="Task checklist while the tests run"><br><sub><b>Live tasks</b> — progress, gauge and elapsed time</sub> |
 
 | | |
 |---|---|
 | **Author** | Tootega Pesquisa e Inovação |
 | **License** | MIT (open source) |
 | **Type** | Visual Studio Code extension (React webview + TypeScript host) |
-| **Extension version** | `1.0.264` |
+| **Also for** | Visual Studio 2026 — [Cockpit for Visual Studio](https://github.com/HermesSilva/Cockpit4VS) |
 | **Channel to the engine** | `claude` in headless/streaming mode (`stream-json`) |
 | **Engine tested against** | Claude Code CLI **2.1.x** (aligned with `2.1.265`; minimum `2.1.162`, which fixed Esc/interrupt being dropped in `stream-json` sessions; the model list is discovered, not pinned) |
 | **Languages** | pt-BR and international English (runtime switching) |
+
+<sub>The screenshots are taken from the extension's real webview bundle, rendered with VS Code's
+Dark+ theme.</sub>
 
 ---
 
@@ -237,6 +317,8 @@ terminal mode.
 
 ## Table of contents
 
+- [Why the Cockpit](#-why-the-cockpit)
+- [Features at a glance](#features-at-a-glance)
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
@@ -290,9 +372,9 @@ The Cockpit gives Claude Code users a complete GUI inside VS Code, focused on
 It runs as an **editor tab** (resizable panel) and/or as a **view in the Activity Bar**
 (the *Tootega Cockpit* container, view id `tootega.hub`).
 
-| Main panel | Session statistics |
+| Hub (side bar) | Account & usage |
 |---|---|
-| ![Main panel](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Main%20Panel.png) | ![Statistics](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Session%20Statistics%20View.png) |
+| ![Hub](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Main%20Panel.png) | ![Account and usage](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Session%20Statistics%20View.png) |
 
 ---
 
@@ -510,9 +592,9 @@ automatically resumes the most recent session for that directory.
 | Subagents (parallel threads) | 🟡 | Rendered when the CLI emits them | A dedicated parallel view is planned |
 | Message queue (follow-ups) | ⏳ | — | — |
 
-**Rendered diff** (an edit expanded in the timeline):
+**An expanded card** — the `Read` result with its line-number gutter and syntax highlighting:
 
-![Expanded edit](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Expanded%20Element%20View.png)
+![Expanded Read card](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Expanded%20Element%20View.png)
 
 ### Editing, diff, and human control
 
@@ -529,13 +611,17 @@ automatically resumes the most recent session for that directory.
 | Accept/reject per file and per hunk | ⏳ | — | — |
 | Agent Todos panel | 🟡 | The **Tasks** tab shows the live task list | Depends on the CLI emitting todos |
 
-**Permission / composed question and the recorded answer:**
+**Edit permission with the rendered diff:**
+
+![Permission with diff](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Permission.png)
+
+**Composed question and the recorded answer:**
 
 | Question (multi-select) | Recorded answer |
 |---|---|
 | ![Question](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Question%20View.png) | ![Answer](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Question%20Response.png) |
 
-**Tasks (Todos) panel:**
+**Tasks (Todos) checklist, live while the tests run:**
 
 ![Tasks](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Tasks%20View.png)
 
@@ -636,7 +722,8 @@ alongside duration and turn count.
 
 ### Prompt history
 
-Browse previous prompts and the session stream directly in the panel:
+The scroll-marker rail puts one mark per prompt beside the timeline; hover a mark to preview
+the prompt, click it to jump there:
 
 ![Prompt history](https://raw.githubusercontent.com/HermesSilva/Cockpit/master/images/Prompt%20History%20View.png)
 

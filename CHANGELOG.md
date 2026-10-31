@@ -6,6 +6,20 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.277] - 2026-10-31
+
+### Changed
+- **New README and Marketplace page.** A recorded turn at the top, the main features shown
+  side by side with their screenshots, and every screenshot retaken from the extension's real
+  interface (plus new ones: the permission diff and the exported timeline in a browser). The
+  Marketplace badges, which had stopped rendering, work again.
+- The `.vsix` no longer carries the screenshots: the page loads them from the repository, so
+  the package is smaller.
+
+### Fixed
+- In code blocks, a long language label (`TYPESCRIPT`, `POWERSHELL`) no longer runs under the
+  copy button.
+
 ## [1.0.275] - 2026-10-31
 
 ### Fixed

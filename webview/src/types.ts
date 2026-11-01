@@ -76,6 +76,17 @@ export interface NoticeItem {
   // Fronteira de compactação (S11): o banner mostra quanto foi condensado, traduzido aqui —
   // o host manda os números crus porque não tem camada de i18n para a linha do tempo.
   compaction?: { pre?: number; post?: number; trigger?: string; durationMs?: number };
+  // Context guard run (save + /compact past the threshold): one banner, updated per phase.
+  guard?: {
+    phase: 'saving' | 'retrying' | 'compacting' | 'done' | 'failed' | 'canceled';
+    pct: number;
+    threshold: number;
+    pre?: number;
+    post?: number;
+    resumed?: boolean;
+    reason?: string;
+    detail?: string;
+  };
 }
 
 export type TimelineItem = UserItem | AssistantItem | ToolItem | HookItem | NoticeItem;

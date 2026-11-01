@@ -33,6 +33,8 @@
   "cfg.showThinking": "Expande os blocos de raciocínio do Claude por padrão no chat.",
   "cfg.spellCheck": "Verifica a ortografia enquanto você digita no compositor, sublinhando as palavras erradas. Nunca corrige sozinho — clique numa palavra sublinhada para ver as sugestões. Desligado por padrão.",
   "cfg.expandToolCards": "Expande os cartões de chamadas de ferramenta por padrão na timeline.",
+  "cfg.contextGuard.enabled": "Guarda de contexto: quando a janela de contexto passa do limiar, o Claude é instruído — mesmo no meio do turno — a salvar o que precisa para retomar (seguindo as diretivas do repositório, e a skill de salvar contexto dele, se houver) e a confirmar com uma linha de formato e valor ditados pelo Cockpit. Só depois dessa confirmação a conversa é compactada (/compact), e uma tarefa pausada é retomada.",
+  "cfg.contextGuard.threshold": "Limiar da guarda de contexto, em porcentagem da janela de contexto (50–95). Padrão 80.",
   "cfg.userName": "Nome exibido nas suas mensagens no lugar de 'You'. Vazio = usuário do sistema operacional.",
   "cfg.ffmpegPath": "Caminho do executável ffmpeg usado na captura do ditado por voz. Vazio = usa 'ffmpeg' do PATH.",
   "cfg.voiceLanguage": "Idioma do ditado por voz (fala para texto). Vazio = segue o idioma da UI do Cockpit.",

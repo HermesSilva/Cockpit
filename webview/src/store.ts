@@ -321,6 +321,29 @@ function tabReducer(tab: TabState, msg: HostToWebview): TabState {
       };
       return { ...base, items: [...base.items, item] };
     }
+    // Context guard: ONE banner per run. The first phase creates it where the run started;
+    // the next phases update it in place, so the timeline reads as one event, not five.
+    case 'contextGuard': {
+      const id = `guard:${msg.id}`;
+      const guard = {
+        phase: msg.phase,
+        pct: msg.pct,
+        threshold: msg.threshold,
+        pre: msg.pre,
+        post: msg.post,
+        resumed: msg.resumed,
+        reason: msg.reason,
+        detail: msg.detail,
+      };
+      if (tab.items.some((i) => i.kind === 'notice' && i.id === id)) {
+        return {
+          ...tab,
+          items: tab.items.map((i) => (i.kind === 'notice' && i.id === id ? { ...i, guard } : i)),
+        };
+      }
+      const item: NoticeItem = { kind: 'notice', id, text: '', topic: 'context_guard', ts: Date.now(), guard };
+      return { ...tab, items: [...tab.items, item] };
+    }
     // Texto de subagente encaminhado pelo CLI: acumula no card do Task que o lançou.
     case 'subagentText': {
       let found = false;

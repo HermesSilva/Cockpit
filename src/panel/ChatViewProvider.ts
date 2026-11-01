@@ -379,6 +379,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       askLanguage: () => this.askLanguageCode(),
       extraSystemPrompt: () => this.extraSystemPrompt(),
       quietPrompt: () => this.quietPrompt(),
+      // Read on every measurement, so a change in the settings applies to running tabs.
+      contextGuard: () => ({
+        enabled: this.cfg().get<boolean>('contextGuard.enabled', true),
+        threshold: (this.cfg().get<number>('contextGuard.threshold', 80) ?? 80) / 100,
+      }),
     };
   }
 

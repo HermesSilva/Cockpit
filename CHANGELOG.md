@@ -6,6 +6,24 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.278] - 2026-10-31
+
+### Added
+- **Context guard.** When the context window passes **80%** — checked on every API call, so
+  also in the middle of a long turn — Claude is asked, inside the running turn, to save what it
+  needs to resume the work (following the repository's directives for memory and docs, and its
+  context-saving skill if it has one) and to end its reply with a line whose format and value
+  the Cockpit dictates (`COCKPIT-CONTEXT-SAVED` plus a code minted for that run). Only that
+  exact line unlocks the compaction: the Cockpit then sends `/compact`, counts it as done only
+  when the CLI reports that the context actually shrank, and asks Claude to resume the task it
+  paused. A single banner in the timeline follows the run — saving, compacting, compacted
+  (with the sizes), or stopped and why.
+- Without a valid confirmation (after one stricter retry), with a compaction the CLI refused,
+  or when you press Stop, the guard stops **without** compacting and tries again only after
+  the context grows a few more points. The CLI's own auto-compaction stays as the safety net.
+- Settings: `tootega.contextGuard.enabled` (on by default) and
+  `tootega.contextGuard.threshold` (50–95, default 80).
+
 ## [1.0.277] - 2026-10-31
 
 ### Changed

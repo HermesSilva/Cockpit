@@ -19,6 +19,8 @@ import { parseContextUsage } from '../cli/ContextUsage';
 import { matchSkillBody, skillNamesOnDisk } from '../cli/SkillBodyIndex';
 import { parseMcpErrors } from '../cli/McpInventory';
 import type { HostToWebview, LimitWindow, SkillOverride } from '../../shared/protocol';
+import { randomBytes } from 'crypto';
+import { ContextGuard, type GuardConfig } from './ContextGuard';
 
 export interface SessionHooks {
   emit: (msg: HostToWebview) => void;
@@ -61,6 +63,8 @@ export interface SessionHooks {
   extraSystemPrompt: () => string | undefined;
   // Diretiva "quiet" (settings): vai no início do texto injetado. Vazio = não injeta.
   quietPrompt: () => string | undefined;
+  // Context guard settings (save + /compact past the threshold). Absent = guard off.
+  contextGuard?: () => GuardConfig;
 }
 
 export class Session {
@@ -126,8 +130,41 @@ export class Session {
   private subagentStreamed = new Set<string>();
   private pendingPerm = new Map<string, { tool: string; input: unknown; suggestions?: unknown[] }>();
 
+  // Saves the state and compacts when the context passes the threshold (see ContextGuard.ts).
+  private guard: ContextGuard;
+
   constructor(private hooks: SessionHooks) {
     this.stats = this.newStats();
+    this.guard = new ContextGuard(
+      {
+        send: (text, newTurn) => this.guardSend(text, newTurn),
+        notify: (n) => this.emit({ kind: 'contextGuard', ...n }),
+        nonce: () => randomBytes(4).toString('hex'),
+        log: (m) => log(`[session] ${m} (${this.sessionId ?? this.resumeId ?? '?'})`),
+      },
+      () => {
+        const c = this.hooks.contextGuard?.() ?? { enabled: false, threshold: 0.8 };
+        // The local engine has no Claude `/compact`: the guard would ask for something it can't do.
+        return this.engine() === 'tootega' ? { ...c, enabled: false } : c;
+      },
+    );
+  }
+
+  /**
+   * Carries out a guard message. `newTurn`: the session is idle, so the message opens a turn and
+   * is accounted for as one (busy + stopwatch) — exactly like send(). Otherwise a turn is running
+   * and the message rides inside it: the CLI hands it to the model at the next tool boundary,
+   * and the turn still ends in ONE `result`, so nothing here may count a second turn.
+   */
+  private guardSend(text: string, newTurn: boolean): void {
+    if (newTurn) {
+      this.ensureCli();
+      this.setBusy(true);
+      this.stats.beginTurn();
+    }
+    if (!this.cli) return;
+    log(`[session] guard -> CLI (${newTurn ? 'new turn' : 'mid-turn'}): ${text.split('\n')[0].slice(0, 120)}`);
+    this.cli.sendUserMessage(text);
   }
 
   /**
@@ -230,6 +267,7 @@ export class Session {
       // which clear busy first): the process aborted without emitting `result`. Without a warning the
       // indicator disappears and the user thinks it is still running. Finish and warn.
       const abortedMidTurn = this.busy;
+      this.guard.reset(); // the process a guard run was talking to is gone
       if (abortedMidTurn) {
         if (this.currentAssistantId) this.emit({ kind: 'assistantDone', id: this.currentAssistantId });
         this.stats.endTurn();
@@ -299,6 +337,7 @@ export class Session {
   }
 
   interrupt(): void {
+    this.guard.onUserInterrupt(); // Stop also stops a guard run: nothing is compacted after it
     this.cli?.interrupt();
     this.stats.endTurn();
     this.persist();
@@ -309,6 +348,9 @@ export class Session {
 
   /** Stops the process; keeps the statistics. The next message respawns it. */
   stop(): void {
+    // A guard run belongs to this process: a respawn (model/effort change, new conversation)
+    // must not inherit a half-done save or compaction.
+    this.guard.reset();
     this.resetStreamingState();
     this.pendingPerm.clear();
     this.stats.endTurn(); // closes the turn in flight (idle time after it isn't counted)
@@ -569,6 +611,12 @@ export class Session {
     }
     const snap = this.stats.ingest(ev);
     this.emit({ kind: 'stats', stats: snap });
+    // Every API call (also mid-turn) carries the real prompt size: that is where the guard
+    // measures, not only at the end of the turn — one turn can be the whole problem.
+    if (ev.type === 'stream_event' && (ev as any).event?.type === 'message_start') {
+      this.guard.onApiCall();
+      this.guard.onContext(snap.contextUsed, snap.contextLimit, this.busy, this.compacting);
+    }
     // Corpo de skill que acabou de entrar no contexto: vira selo no card do Skill.
     for (const load of this.stats.takeSkillLoads()) {
       this.emit({ kind: 'skillLoaded', toolUseId: load.toolUseId, name: load.name, tokens: load.tokens });
@@ -616,12 +664,23 @@ export class Session {
           if (status === 'compacting') this.setCompacting(true);
           else if (s.compact_result !== undefined || s.compact_error !== undefined) {
             this.setCompacting(false);
+            // The only trustworthy verdict on a compaction: a blocked one still ends the turn
+            // with a successful `result` (measured with a PreCompact hook).
+            const ok = s.compact_result === 'success' && !s.compact_error;
+            this.guard.onCompactStatus(ok, s.compact_error ? String(s.compact_error) : undefined);
           }
           break;
         }
         if (s.subtype === 'compact_boundary') {
           this.setCompacting(false);
-          this.emitCompactBoundary(s.compact_metadata ?? s.compactMetadata);
+          const meta = s.compact_metadata ?? s.compactMetadata;
+          this.emitCompactBoundary(meta);
+          const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+          this.guard.onCompactBoundary(
+            typeof meta?.trigger === 'string' ? meta.trigger : undefined,
+            n(meta?.pre_tokens ?? meta?.preTokens),
+            n(meta?.post_tokens ?? meta?.postTokens),
+          );
           break;
         }
         const notice = engineNotice(s);
@@ -797,6 +856,17 @@ export class Session {
         this.setBusy(false);
         this.hooks.onResult();
         this.resetStreamingState();
+        // Last, once the turn is fully closed: the guard may open the next turn itself
+        // (/compact, the retry, the resume) or announce that the CLI will run a queued one.
+        const action = this.guard.onResult(String(r.result ?? ''), r.is_error === true);
+        if (action === 'expect-queued-turn') {
+          // The guard's message is still in the CLI's queue and runs now as a turn we did not
+          // start with send(): own it, or its `result` would be discarded as a stray.
+          this.setBusy(true);
+          this.stats.beginTurn();
+        } else if (!this.busy) {
+          this.guard.onContext(this.stats.snapshot().contextUsed, this.stats.snapshot().contextLimit, false, this.compacting);
+        }
         break;
       }
       case 'rate_limit_event':

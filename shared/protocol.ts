@@ -560,6 +560,21 @@ type HostMsg =
       trigger?: string;
       durationMs?: number;
     }
+  // Context guard (save + /compact past the threshold). One banner per run (`id`), updated at
+  // each phase. Numbers and a reason CODE travel raw; the webview words them in its language.
+  // `detail` is the CLI's own text for a failed compaction.
+  | {
+      kind: 'contextGuard';
+      id: string;
+      phase: 'saving' | 'retrying' | 'compacting' | 'done' | 'failed' | 'canceled';
+      pct: number;
+      threshold: number;
+      pre?: number;
+      post?: number;
+      resumed?: boolean;
+      reason?: 'no-confirmation' | 'turn-error' | 'compact-error' | 'no-compaction' | 'interrupted' | 'restarted';
+      detail?: string;
+    }
   // The tab was handed over to an interactive Remote Control session in the terminal: the
   // composer stops being the way in (the terminal / phone is), and the timeline keeps
   // following the transcript that session writes.

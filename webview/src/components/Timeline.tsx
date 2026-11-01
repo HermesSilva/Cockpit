@@ -760,7 +760,8 @@ function AssistantContent({
   // Still reasoning: the message is open and no answer text has started yet.
   const thinkingLive = !item.done && !item.text;
   return (
-    <div className="assistant-msg">
+    // data-item-id: lets the HTML export find this message's source Markdown for its copy button.
+    <div className="assistant-msg" data-item-id={item.id}>
       {/* Thinking is a card like the tool cards: one header line, body only when opened. */}
       {item.thinking && (
         <div className={`tool-card thinking-card ${thinkingLive ? 'busy' : 'ok'}`}>

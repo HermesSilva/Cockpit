@@ -28,3 +28,6 @@ dist/**/*.map
 package-vsix.ps1
 package-vsix.cmd
 package-vsix.sh
+# Screenshots are referenced from the README by absolute URL (raw.githubusercontent.com),
+# so the package does not need to carry them.
+images/**

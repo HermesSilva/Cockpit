@@ -6,6 +6,37 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.277] - 2026-10-31
+
+### Changed
+- **New README and Marketplace page.** A recorded turn at the top, the main features shown
+  side by side with their screenshots, and every screenshot retaken from the extension's real
+  interface (plus new ones: the permission diff and the exported timeline in a browser). The
+  Marketplace badges, which had stopped rendering, work again.
+- The `.vsix` no longer carries the screenshots: the page loads them from the repository, so
+  the package is smaller.
+
+### Fixed
+- In code blocks, a long language label (`TYPESCRIPT`, `POWERSHELL`) no longer runs under the
+  copy button.
+
+## [1.0.275] - 2026-10-31
+
+### Fixed
+- **The exported timeline (`.cockpit/TimeLine/*.html` and the HTML export) works in the
+  browser.** Tool cards were saved without their content, so they could not be opened: the
+  capture stopped waiting as soon as the thinking blocks were open. It now opens every closed
+  card, captures, and closes exactly those cards again, leaving the panel (and its scroll) as it
+  was. In the file, **Show more / Show less** expands a long prompt, the **copy** buttons copy
+  the prompt's text, the answer's Markdown or a code block to the clipboard, and clicking an
+  attached image enlarges it (Esc closes).
+- The same snapshot no longer pins the last prompt over the rest of the page, drops buttons
+  that only work inside VS Code (rewind, *View*, the file chips), opens external links in a
+  new tab, points file links at the project instead of the `TimeLine` folder, removes the
+  chevron from cards with nothing to open, makes the task checklist collapsible, and prints
+  prompts in full. An auto-save and a manual export running at the same time no longer leave
+  cards open in the panel.
+
 ## [1.0.274] - 2026-10-27
 
 ### Fixed

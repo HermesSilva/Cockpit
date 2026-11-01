@@ -33,6 +33,8 @@
   "cfg.showThinking": "Expand Claude's thinking blocks by default in the chat.",
   "cfg.spellCheck": "Check spelling as you type in the composer, underlining misspelled words. Never auto-corrects — click an underlined word to see suggestions. Off by default.",
   "cfg.expandToolCards": "Expand tool call cards by default in the timeline.",
+  "cfg.contextGuard.enabled": "Context guard: when the context window passes the threshold, Claude is asked — even mid-turn — to save what it needs to resume (following the repository's directives, and its context-saving skill if it has one) and to confirm with a line whose format and value the Cockpit dictates. Only after that confirmation is the conversation compacted (/compact), and a paused task is resumed.",
+  "cfg.contextGuard.threshold": "Context guard threshold, as a percentage of the context window (50–95). Default 80.",
   "cfg.userName": "Name shown for your messages instead of 'You'. Empty = your OS username.",
   "cfg.ffmpegPath": "Path to the ffmpeg executable used for voice dictation capture. Empty = use 'ffmpeg' from PATH.",
   "cfg.voiceLanguage": "Language for voice dictation (speech-to-text). Empty = follow the Cockpit UI language.",

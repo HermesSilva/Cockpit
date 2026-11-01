@@ -173,6 +173,7 @@ Legend: ✅ has it · 🟡 partial · ❌ doesn't have it · ➖ not applicable.
 | Turn timing by (model, effort, type) | ✅ | ❌ | atomic cross-process merge |
 | **Session activity**: duration, turns, peak context | ✅ | ❌ | high-water mark of context with its cache figure |
 | **Context injected per tool** (calls + tokens) | ✅ | 🟡 | ranks Bash/Read/Edit/MCP by the context each pushed in; MCP servers grouped |
+| **Context guard**: save → prove → `/compact` → resume | ✅ | ❌ | past 80% (even mid-turn) Claude saves its state and confirms with a dictated line + nonce; only then the Cockpit compacts and resumes the task |
 | **7-day spend breakdown by model** | ✅ | 🟡 | from this machine's transcripts, as equivalent API price |
 | **All-time global token counter** ([`DailyTokens`](src/stats/DailyTokens.ts)) | ✅ | ❌ | sent / received / total across **every project on the machine**, plus a per-day history — read from `~/.claude/projects/**/*.jsonl` with an incremental rollup, not just the open session |
 | Context breakdown via `/context` | ⏳ | ✅ | Cockpit UI ready, data source pending |
@@ -652,6 +653,7 @@ automatically resumes the most recent session for that directory.
 | **Session duration**, **turn count**, **peak context** | ✅ | **Session activity** block: wall-clock duration, turns completed, and the high-water mark of context (with the cache figure at that moment) | — |
 | Context-near-limit alert | ✅ | Automatic warning above ~85% | — |
 | **Visible compaction** (S11) | ✅ | While it happens the indicator says *"Compacting the context…"* instead of looking stuck; the `compact_boundary` closes it with a blue band in the timeline: `before → after · −condensed · duration` | The sizes are the CLI's own (`compact_metadata`); a field it stops sending just disappears from the band |
+| **Context guard** — save, prove, then compact | ✅ | Past **80%** of the window (`tootega.contextGuard.threshold`), checked on **every API call, even mid-turn**, Claude is asked inside the running turn to save what it needs to resume (following the repository's directives, and its context-saving skill if it has one) and to end with a line whose format and value the Cockpit dictates (`COCKPIT-CONTEXT-SAVED <nonce>`). Only that exact line unlocks `/compact`; the compaction counts only when the CLI's `compact_boundary` shows the context shrank; then the paused task is resumed. One banner in the timeline follows the run | No confirmation, a failed compaction or a Stop → it stops **without** compacting and says why; the CLI's own auto-compaction stays as the safety net |
 | Context **breakdown** via `/context` | ⏳ | — | UI ready, data source pending |
 | Historical consumption charts | ⏳ | — | — |
 | Active model / effort / mode | ✅ | Dropdowns in the panel + status bar | — |
@@ -1058,6 +1060,8 @@ All under **Settings → Extensions → Tootega Cockpit** (prefix `tootega.`):
 | `showThinking` | boolean | `false` | Open the *thinking* cards by default |
 | `verbosity` | enum | `verbose` | Timeline display level — `verbose` / `necessary` / `dialogo` / `quiet` (display only; see [Timeline verbosity](#timeline-verbosity)) |
 | `expandToolCards` | boolean | `false` | Expand tool cards by default in the timeline |
+| `contextGuard.enabled` | boolean | `true` | Context guard: past the threshold, have Claude save its state and confirm in a dictated format, then `/compact` and resume (see the feature table) |
+| `contextGuard.threshold` | number | `80` | Context-guard threshold, % of the context window (50–95) |
 | `spellCheck` | boolean | `false` | Inline PT-BR + EN spell-checker in the composer — **marks only, never auto-corrects**; click an underlined word for suggestions |
 | `userName` | string | `""` | Name shown on your messages; empty = OS user |
 | `internalModel` | enum | `claude-haiku-4-5` | Model for the Cockpit's internal AI calls (dictation correction, slash-command research) — clean, isolated calls; Haiku is fastest/cheapest |

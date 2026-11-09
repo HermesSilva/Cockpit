@@ -7,6 +7,7 @@ export interface Usage {
   output_tokens?: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  speed?: string; // "fast" when the request ran in fast mode (billed at the fast rate)
 }
 
 export interface TextBlock {

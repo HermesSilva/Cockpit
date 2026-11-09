@@ -56,6 +56,7 @@ interface Price {
 // broke the family pricing: the 5.5 pair is cheaper per token (CLI 2.1.280/2.1.284), and the
 // cache reads of Sonnet 5.5 ($0.10, 2.1.296), Opus 5.5 ($0.20) and Fable 5.1 ($0.25) are flat
 // rather than 0.1x input. Haiku 5.5 (2.1.293) is the first row with a long-prompt tier.
+// Fable/Mythos 5.2 (2.1.321) is cheaper than 5.1: $8/$40, cache read $0.20.
 const PRICES: { match: RegExp; price: Price }[] = [
   { match: /opus-5-5/i, price: { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 } },
   { match: /sonnet-5-5/i, price: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1 } },
@@ -66,6 +67,7 @@ const PRICES: { match: RegExp; price: Price }[] = [
       longPrompt: { above: 100_000, price: { input: 0.5, output: 2.5, cacheWrite: 0.625, cacheRead: 0.05 } },
     },
   },
+  { match: /(?:fable|mythos)-5-2/i, price: { input: 8, output: 40, cacheWrite: 10, cacheRead: 0.2 } },
   { match: /(?:fable|mythos)-5-1/i, price: { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 } },
   { match: /opus/i, price: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 } },
   { match: /sonnet/i, price: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 } },
@@ -74,14 +76,28 @@ const PRICES: { match: RegExp; price: Price }[] = [
 ];
 const DEFAULT_PRICE: Price = { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 };
 
+// Fast mode rates, applied when the request's usage says `speed: "fast"` — the same rule the
+// CLI prices by (tables read from the 2.1.321 binary). Not a flat 2x: the cache read is $0.40
+// on both 5.x rows. A model without a row here falls back to its standard price, as in the CLI.
+const FAST_PRICES: { match: RegExp; price: Price }[] = [
+  { match: /(?:fable|mythos)-5-2/i, price: { input: 16, output: 80, cacheWrite: 20, cacheRead: 0.4 } },
+  { match: /opus-5-5/i, price: { input: 8, output: 40, cacheWrite: 10, cacheRead: 0.4 } },
+  { match: /opus-(?:5|4-8)\b/i, price: { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 } },
+  { match: /opus-4-[67]\b/i, price: { input: 30, output: 150, cacheWrite: 37.5, cacheRead: 3 } },
+];
+
 /**
  * The model's price, at the tier a request of `promptTokens` (input + cache write + cache
  * read) is billed at. The CLI applies a long-prompt tier to the WHOLE request, output
  * included, once the prompt passes the threshold — so the caller passes the request's own
- * prompt size, never a session total.
+ * prompt size, never a session total. `speed` is the request's `usage.speed`.
  */
-function priceFor(model?: string, promptTokens = 0): Price {
+function priceFor(model?: string, promptTokens = 0, speed?: string): Price {
   if (!model) return DEFAULT_PRICE;
+  if (speed === 'fast') {
+    const fast = FAST_PRICES.find((row) => row.match.test(model));
+    if (fast) return fast.price;
+  }
   const p = PRICES.find((row) => row.match.test(model))?.price ?? DEFAULT_PRICE;
   return p.longPrompt && promptTokens > p.longPrompt.above ? p.longPrompt.price : p;
 }
@@ -92,7 +108,7 @@ export function estimateCost(u: Usage, model?: string): number {
   const cw = u.cache_creation_input_tokens ?? 0;
   const cr = u.cache_read_input_tokens ?? 0;
   const out = u.output_tokens ?? 0;
-  const p = priceFor(model, inp + cw + cr);
+  const p = priceFor(model, inp + cw + cr, u.speed);
   return (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
 }
 
@@ -657,7 +673,7 @@ export class StatsAggregator {
       this.outputTokens += out;
       this.curInput = this.curCreate = this.curRead = this.curOutput = 0;
 
-      const p = priceFor(this.model, this.contextUsed);
+      const p = priceFor(this.model, this.contextUsed, u.speed);
       const turnCost =
         (inp * p.input + cw * p.cacheWrite + cr * p.cacheRead + out * p.output) / 1_000_000;
       if (this.costIsEstimate) {

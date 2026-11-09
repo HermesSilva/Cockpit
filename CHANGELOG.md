@@ -6,6 +6,17 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.279] - 2026-11-09
+
+### Fixed
+- **Claude Fable 5.2 cost.** `claude-fable-5-2` and `claude-mythos-5-2` (CLI 2.1.321) are now
+  estimated at their own price — $8/$40 per Mtok, cache read $0.20 — instead of the older
+  Fable rate ($10/$50, cache read $1), which overstated their cost.
+- **Fast mode cost.** A request the CLI reports as run in fast mode (`usage.speed: "fast"`) is
+  now estimated at the fast rate the CLI bills by: Fable/Mythos 5.2 $16/$80, Opus 5.5 $8/$40
+  (cache read $0.40 on both), Opus 5 and 4.8 $10/$50. Models without a fast rate keep their
+  standard price.
+
 ## [1.0.278] - 2026-10-31
 
 ### Added

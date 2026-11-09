@@ -62,6 +62,25 @@ describe('StatsAggregator — tabela de preços', () => {
     expect(estimateCost(million, 'claude-fable-5')).toBeCloseTo(73.5, 6);
   });
 
+  it('Fable 5.2 custa $8/$40 com cache read de $0.20 (CLI 2.1.321)', () => {
+    // 8 + 40 + 10 + 0.2 — não cai no catch-all da família ($10/$50, cache read $1).
+    expect(estimateCost(million, 'claude-fable-5-2')).toBeCloseTo(58.2, 6);
+    expect(estimateCost(million, 'claude-fable-5-2[1m]')).toBeCloseTo(58.2, 6);
+    expect(estimateCost(million, 'claude-mythos-5-2')).toBeCloseTo(58.2, 6);
+  });
+
+  it('fast mode (usage.speed = "fast") cobra a tabela fast do CLI', () => {
+    const fast = { ...million, speed: 'fast' };
+    // Fable 5.2: 16 + 80 + 20 + 0.4; Opus 5.5: 8 + 40 + 10 + 0.4; Opus 5/4.8: 10 + 50 + 12.5 + 1.
+    expect(estimateCost(fast, 'claude-fable-5-2')).toBeCloseTo(116.4, 6);
+    expect(estimateCost(fast, 'claude-opus-5-5')).toBeCloseTo(58.4, 6);
+    expect(estimateCost(fast, 'claude-opus-5')).toBeCloseTo(73.5, 6);
+    expect(estimateCost(fast, 'claude-opus-4-8')).toBeCloseTo(73.5, 6);
+    // Modelo sem tarifa fast (e speed "standard") fica no preço normal.
+    expect(estimateCost(fast, 'claude-sonnet-5-5')).toBeCloseTo(14.6, 6);
+    expect(estimateCost({ ...million, speed: 'standard' }, 'claude-fable-5-2')).toBeCloseTo(58.2, 6);
+  });
+
   it('Haiku 5.5 cobra a requisição inteira na faixa longa acima de 100K de prompt (CLI 2.1.293)', () => {
     // Prompt de 100K exatos fica na faixa curta: 0.1 * 0.1 + 1M * 0.5 / 1M.
     expect(estimateCost({ input_tokens: 100_000, output_tokens: 1_000_000 }, 'claude-haiku-5-5'))

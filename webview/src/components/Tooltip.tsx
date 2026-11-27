@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 const SHOW_DELAY_MS = 500; // ~ delay do tooltip nativo (atributo title)
@@ -39,9 +39,16 @@ interface Coord {
   below: boolean;
 }
 
+// Only one hint is ever open. Tooltips nest (a whole timeline turn is a tooltip that holds
+// other tooltips), so hovering an inner element used to open the outer one as well, and a
+// hint whose element moved out from under a still cursor (streaming, scrolling) never got
+// its mouseleave and stayed behind — leaving two or more on screen. Opening one now closes
+// whichever was open; the inner one opens last (its mouseenter comes later), so it wins.
+let closeActive: (() => void) | null = null;
+
 // Reusable hint: a popover via portal (it isn't clipped by overflow/scroll), opening on
-// hover AND focus (a11y). It measures the popover and pushes it away from the edge it
-// overflowed (horizontal) and opens below when there is no room above (vertical).
+// hover AND keyboard focus (a11y). It measures the popover and pushes it away from the edge
+// it overflowed (horizontal) and opens below when there is no room above (vertical).
 export function Tooltip({ title, text, rows, meta, children, className, focusable }: Props) {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [coord, setCoord] = useState<Coord | null>(null);
@@ -49,24 +56,73 @@ export function Tooltip({ title, text, rows, meta, children, className, focusabl
   const popRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
 
+  // Stable identity (it only touches setters and refs): the module-level `closeActive` slot
+  // is compared against it, so a per-render closure would never match.
+  const [hide] = useState(() => {
+    const fn = () => {
+      window.clearTimeout(timer.current);
+      if (closeActive === fn) closeActive = null;
+      setAnchor(null);
+      setCoord(null);
+    };
+    return fn;
+  });
+
   // Delay before opening, mirroring the browser's native tooltip (title attribute).
   const show = () => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       const el = wrapRef.current;
       if (!el) return;
+      // The element may have moved away from the cursor during the delay (new content
+      // pushed it, the list scrolled): no hover and no keyboard focus → nothing to show.
+      if (!el.matches(':hover') && !el.matches(':focus-visible')) return;
+      if (closeActive && closeActive !== hide) closeActive();
+      closeActive = hide;
       const r = el.getBoundingClientRect();
       setAnchor({ top: r.top, bottom: r.bottom, cx: r.left + r.width / 2 });
     }, SHOW_DELAY_MS);
   };
-  const hide = () => {
-    window.clearTimeout(timer.current);
-    setAnchor(null);
-    setCoord(null);
+
+  // Focus opens the hint only for keyboard focus. A click also focuses a focusable block,
+  // and that focus is restored when the panel regains focus — which popped a hint with the
+  // mouse nowhere near it, one that only a later blur would close.
+  const onFocus = (e: FocusEvent<HTMLSpanElement>) => {
+    if (e.currentTarget.matches(':focus-visible')) show();
   };
 
-  // Limpa o timer pendente se desmontar (ex.: item da timeline removido).
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // While open: the anchor coordinates are a snapshot, so any scroll or losing the window
+  // closes the hint instead of leaving it floating over unrelated content. The pointer leaving
+  // the document closes it too: a webview is an iframe, and a quick exit from it (to the editor,
+  // the title bar) often never delivers mouseleave to the element inside — the hint stayed up.
+  useEffect(() => {
+    if (!anchor) return;
+    const close = () => hide();
+    const out = (e: MouseEvent) => {
+      if (!e.relatedTarget) hide(); // left the document, not just moved to another element
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('blur', close);
+    document.addEventListener('mouseout', out);
+    document.addEventListener('visibilitychange', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('blur', close);
+      document.removeEventListener('mouseout', out);
+      document.removeEventListener('visibilitychange', close);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
+
+  // Pending timer and the "active" slot are released on unmount (e.g. timeline item removed).
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      if (closeActive === hide) closeActive = null;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // Phase 2: with the popover mounted (hidden), it measures and clamps within the viewport.
   useLayoutEffect(() => {
@@ -93,7 +149,7 @@ export function Tooltip({ title, text, rows, meta, children, className, focusabl
       className={`tt-wrap ${className ?? ''}`}
       onMouseEnter={show}
       onMouseLeave={hide}
-      onFocus={show}
+      onFocus={onFocus}
       onBlur={hide}
       tabIndex={focusable ? 0 : undefined}
     >

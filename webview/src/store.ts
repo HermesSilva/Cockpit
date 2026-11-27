@@ -198,8 +198,19 @@ export function reducer(state: UiState, action: Action): UiState {
       const existing = new Map(state.tabs.map((t) => [t.id, t]));
       const tabs = msg.tabs.map((info) => {
         const prev = existing.get(info.id);
+        // A tab that started without a session and already holds live conversation gets its
+        // sessionId here, after the CLI's init — and no 'history' ever follows, because the
+        // timeline it shows IS that history. Without marking it loaded, the loader (which
+        // waits for history whenever a sessionId is set) replaced the live text mid-turn.
+        const adopted = !!prev && !prev.sessionId && !!info.sessionId && prev.items.length > 0;
         return prev
-          ? { ...prev, title: info.title, status: info.status, sessionId: info.sessionId }
+          ? {
+              ...prev,
+              title: info.title,
+              status: info.status,
+              sessionId: info.sessionId,
+              historyLoaded: prev.historyLoaded || adopted,
+            }
           : { ...emptyTab(info.id, info.title, info.status), sessionId: info.sessionId };
       });
       return { ...state, tabs, activeTab: msg.activeTab };

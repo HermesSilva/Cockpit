@@ -4,6 +4,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SessionInfo, HistoryItem } from '../../shared/protocol';
+import { GUARD_TAG, SENTINEL } from './ContextGuard';
+
+type NoticeHistory = Extract<HistoryItem, { kind: 'notice' }>;
+
+// The guard's save request carries the run's numbers: "... is 80% full (limit 80%)".
+const GUARD_SAVE = /\[Cockpit context guard\] The context window is (\d+)% full \(limit (\d+)%\)/;
+const GUARD_RESUME = `${GUARD_TAG} The context was compacted.`;
+const GUARD_NONCE = new RegExp(`${SENTINEL} (\\S+)\\s*$`);
+
+/** True for a message the context guard wrote (save, retry, resume) — not something the user typed. */
+function isGuardText(text: string): boolean {
+  return text.trimStart().startsWith(GUARD_TAG);
+}
 
 /**
  * Encodes the cwd in Claude Code's folder format: EVERY non-alphanumeric
@@ -251,7 +264,7 @@ function summarize(file: string): Summary {
         userCount++;
         if (!firstUser) {
           const text = textOfContent(o.message?.content);
-          if (!isMetaUserText(text)) firstUser = clean(text);
+          if (!isMetaUserText(text) && !isGuardText(text) && !o.isCompactSummary) firstUser = clean(text);
         }
       } else if (o.type === 'assistant') {
         assistantCount++;
@@ -290,10 +303,56 @@ export function loadTranscript(cwd: string, sessionId: string): HistoryItem[] {
   } catch {
     return [];
   }
+  return parseTranscript(content);
+}
 
+/** The transcript's JSONL turned into history items (pure: no I/O, unit-testable). */
+export function parseTranscript(content: string): HistoryItem[] {
   const items: HistoryItem[] = [];
   const toolIndex = new Map<string, Extract<HistoryItem, { kind: 'tool' }>>();
   const assistantIndex = new Map<string, Extract<HistoryItem, { kind: 'assistant' }>>();
+
+  // Context-guard banners, rebuilt the way the live session drew them: the save request opens
+  // a run (its banner), the compaction boundary completes it, the resume request marks the
+  // task as resumed. A run with no compaction after it stopped without one.
+  let run: NoticeHistory | undefined;
+  const settleRun = () => {
+    if (run?.guard && (run.guard.phase === 'saving' || run.guard.phase === 'retrying')) {
+      run.guard = { ...run.guard, phase: 'failed', reason: 'no-compaction' };
+    }
+    run = undefined;
+  };
+  // Each run's save request carries its own nonce; it dedupes a request recorded twice.
+  const runNonces = new Set<string>();
+  const openRun = (text: string, o: any): boolean => {
+    const m = GUARD_SAVE.exec(text);
+    if (!m) return false;
+    const nonce = GUARD_NONCE.exec(text)?.[1];
+    if (nonce) {
+      if (runNonces.has(nonce)) return true;
+      runNonces.add(nonce);
+    }
+    settleRun();
+    run = {
+      kind: 'notice',
+      id: `guard:h:${o.uuid ?? rid()}`,
+      text: '',
+      topic: 'context_guard',
+      ts: tsOf(o),
+      guard: { phase: 'saving', pct: Number(m[1]), threshold: Number(m[2]) },
+    };
+    items.push(run);
+    return true;
+  };
+  // Save → opens a run; resume → marks the completed run as resumed; retry → nothing to draw.
+  const guardMessage = (text: string, o: any) => {
+    if (openRun(text, o)) return;
+    if (text.startsWith(GUARD_RESUME) && run?.guard?.phase === 'done') {
+      run.guard = { ...run.guard, resumed: true };
+      run = undefined;
+    }
+  };
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 
   for (const line of content.split('\n')) {
     if (!line.trim()) continue;
@@ -304,6 +363,40 @@ export function loadTranscript(cwd: string, sessionId: string): HistoryItem[] {
       continue;
     }
     if (o.isMeta) continue;
+
+    // Compaction boundary: the S11 banner, with the same numbers the live event carried.
+    if (o.type === 'system' && o.subtype === 'compact_boundary') {
+      const meta = o.compactMetadata ?? o.compact_metadata ?? {};
+      const pre = num(meta.preTokens ?? meta.pre_tokens);
+      const post = num(meta.postTokens ?? meta.post_tokens);
+      items.push({
+        kind: 'notice',
+        id: `compact:h:${o.uuid ?? rid()}`,
+        text: '',
+        topic: 'compact_boundary',
+        ts: tsOf(o),
+        compaction: {
+          pre,
+          post,
+          trigger: typeof meta.trigger === 'string' ? meta.trigger : undefined,
+          durationMs: num(meta.durationMs ?? meta.duration_ms),
+        },
+      });
+      if (run?.guard) run.guard = { ...run.guard, phase: 'done', pre, post };
+      continue;
+    }
+
+    // The summary the CLI writes after compacting is context for the model, not a prompt.
+    if (o.isCompactSummary) continue;
+
+    // A message written while a turn runs is delivered inside it and recorded as a queued
+    // command — the only trace a mid-turn save request leaves. Matched on that record, never
+    // on free text: a tool result can quote the guard's wording without being the guard.
+    if (o.type === 'attachment' && o.attachment?.type === 'queued_command') {
+      const text = textOfContent(o.attachment.prompt).trim();
+      if (isGuardText(text)) guardMessage(text, o);
+      continue;
+    }
 
     if (o.type === 'user' && o.message) {
       const c = o.message.content;
@@ -317,6 +410,12 @@ export function loadTranscript(cwd: string, sessionId: string): HistoryItem[] {
             }
           }
         }
+      }
+      // The guard's own messages are not prompts: they become (or update) its banner.
+      const guardText = textOfContent(c).trim();
+      if (isGuardText(guardText)) {
+        guardMessage(guardText, o);
+        continue;
       }
       const imgs: string[] = [];
       if (Array.isArray(c)) {
@@ -372,6 +471,7 @@ export function loadTranscript(cwd: string, sessionId: string): HistoryItem[] {
       }
     }
   }
+  settleRun();
   return items;
 }
 

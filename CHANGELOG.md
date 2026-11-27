@@ -6,6 +6,29 @@ and the project adopts semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.280] - 2026-11-27
+
+### Changed
+- **Usage window.** The *Current session* row is hidden while the account has no figure for
+  it, instead of showing an empty bar with "n/a". The weekly rows are unchanged.
+
+### Fixed
+- **Reopened sessions show the context guard and compactions as banners.** The context guard's
+  messages no longer come back as prompts you never typed, and the compaction summary no
+  longer shows as your own prompt. The guard banner (with how far the context was compacted
+  and whether the task was resumed) and the compaction banner are rebuilt from the transcript,
+  including a guard run that started in the middle of a turn. A guard run with no compaction
+  after it is shown as stopped, not as still saving.
+- **Timeline replaced by a spinner.** A new conversation could lose its text mid-turn to the
+  big Cockpit loader — the panel waited for a history that never comes for a conversation that
+  started there — until the context was reloaded from the hub.
+- **Prompt markers on the scroll bar.** The markers bunched up at the top of the rail when the
+  content above the prompts grew after they were measured (code highlighting, images, cards
+  opening, a restored session). They now follow their prompts.
+- **Two or more hints at once.** Only one hint is open at a time. A hint also closes when the
+  list scrolls, the pointer leaves the panel, the panel is hidden or the window loses focus,
+  and a click no longer leaves a hint that pops up again when you return to the panel.
+
 ## [1.0.279] - 2026-11-09
 
 ### Fixed

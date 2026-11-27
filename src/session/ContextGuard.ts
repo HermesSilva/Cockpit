@@ -68,13 +68,24 @@ export interface GuardIO {
 export type GuardResultAction = 'expect-queued-turn' | undefined;
 
 export const SENTINEL = 'COCKPIT-CONTEXT-SAVED';
+/**
+ * Opens every message the guard writes to the CLI. They are user messages in the transcript,
+ * so reopening a session must recognise them by this tag (SessionStore.loadTranscript) to show
+ * the guard's banner instead of a prompt the user never typed.
+ *
+ * Deliberately NOT sent with `isSynthetic: true`, although CLI 2.1.332 asks hosts to mark relayed
+ * mid-turn text that way: a marked message reaches the model wrapped as
+ * "[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]", which would strip the guard of the authority
+ * to pause the task. The guard acts for the user, who turned it on.
+ */
+export const GUARD_TAG = '[Cockpit context guard]';
 /** Extra fill, in percentage points, before the guard tries again after a failure. */
 export const RETRY_STEP = 0.05;
 const MAX_ATTEMPTS = 2; // the request + one stricter retry
 
 export function savePrompt(pct: number, threshold: number, nonce: string): string {
   return (
-    `[Cockpit context guard] The context window is ${pct}% full (limit ${threshold}%). ` +
+    `${GUARD_TAG} The context window is ${pct}% full (limit ${threshold}%). ` +
     'Pause the current task now and prepare for a context compaction:\n' +
     '1. Save everything needed to resume this work — what is done, what is in progress, what ' +
     "comes next, decisions taken and open questions — following this repository's directives " +
@@ -88,7 +99,7 @@ export function savePrompt(pct: number, threshold: number, nonce: string): strin
 
 export function retryPrompt(nonce: string): string {
   return (
-    '[Cockpit context guard] Your previous reply did not end with the required confirmation ' +
+    `${GUARD_TAG} Your previous reply did not end with the required confirmation ` +
     'line. If the state is not fully saved yet, save it first. Then end your reply with exactly ' +
     'this line, alone, as the very last line:\n' +
     `${SENTINEL} ${nonce}`
@@ -98,7 +109,7 @@ export function retryPrompt(nonce: string): string {
 export const COMPACT_COMMAND = '/compact Keep the saved state and the next steps of the paused task.';
 
 export const RESUME_PROMPT =
-  '[Cockpit context guard] The context was compacted. Resume the task you paused, starting ' +
+  `${GUARD_TAG} The context was compacted. Resume the task you paused, starting ` +
   'from the state you saved.';
 
 /**

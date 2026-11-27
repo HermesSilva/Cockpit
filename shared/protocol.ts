@@ -422,6 +422,27 @@ export type HistoryItem =
       result?: unknown;
       isError?: boolean;
       ts?: number;
+    }
+  // Rebuilt from the transcript so a reopened session shows the same banners a live one did:
+  // a compaction boundary (`compaction`) and a context-guard run (`guard`), instead of the
+  // guard's messages as prompts the user never typed. Same shape as the live NoticeItem.
+  | {
+      kind: 'notice';
+      id: string;
+      text: string;
+      topic?: string;
+      ts?: number;
+      compaction?: { pre?: number; post?: number; trigger?: string; durationMs?: number };
+      guard?: {
+        phase: 'saving' | 'retrying' | 'compacting' | 'done' | 'failed' | 'canceled';
+        pct: number;
+        threshold: number;
+        pre?: number;
+        post?: number;
+        resumed?: boolean;
+        reason?: string;
+        detail?: string;
+      };
     };
 
 // Parallel tab/session: metadata the host keeps (id, title, status).

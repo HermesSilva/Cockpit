@@ -124,7 +124,11 @@ export function UsageModal({ t, locale, usage, onClose, onManage, onEnableTracki
                   {live ? t('usage.badge.live') : t('usage.badge.est')}
                 </span>
               </div>
-              <Meter t={t} locale={locale} label={t('usage.currentSession')} tone="warm" live={live} b={usage.buckets.fiveHour} />
+              {/* The 5h window only exists while a session window is open; with no figure at all
+                  ("n/a") the row is noise, so it is hidden. The weekly rows stay as they are. */}
+              {hasFigure(usage.buckets.fiveHour) && (
+                <Meter t={t} locale={locale} label={t('usage.currentSession')} tone="warm" live={live} b={usage.buckets.fiveHour} />
+              )}
               <Meter t={t} locale={locale} label={t('usage.weeklyAll')} tone="cool" live={live} b={usage.buckets.sevenDay} />
               {usage.buckets.weeklyScoped?.map((b) => (
                 <Meter key={b.label} t={t} locale={locale} label={t('usage.weeklyModel', b.label)} tone="cool" live={live} b={b} />
@@ -469,6 +473,11 @@ function Row({ k, v, accent }: { k: string; v: string; accent?: boolean }) {
       <span className={`usage-row-v ${accent ? 'accent' : ''}`}>{v}</span>
     </div>
   );
+}
+
+// True when a limit window has something to show (a % or a cost) — i.e. Meter would not print "n/a".
+function hasFigure(b?: UsageBucket): boolean {
+  return typeof b?.usedPct === 'number' || b?.usd != null;
 }
 
 // Bar of a limit window (session/week). Real % when available; otherwise an estimate.

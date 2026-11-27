@@ -100,18 +100,31 @@ export function ScrollMarkers({ scrollRef, items }: Props) {
     measure();
   }, [measure]);
 
-  // Viewport or content resized: the prompts are where they were, only the rail's geometry
-  // moved, so this is the cheap path. Throttled to one pass per frame.
+  // Two resize paths, told apart by WHICH element resized:
   //
-  // The observer is set up once and reaches `project` through a ref: `project` itself is
-  // stable, but hanging this effect off a value derived from `items` would tear the
-  // observer down and rebuild it on every stream delta.
+  // - The viewport (the scroll container) resized — typing grew the composer, the panel
+  //   was resized. The prompts are where they were; only the rail's geometry moved, so this
+  //   is the cheap path, throttled to one projection per frame.
+  // - The CONTENT resized. Content above a prompt can grow after the prompt was measured
+  //   (markdown and code highlighting settling, images decoding, a card expanding, a
+  //   restored session laying out), which moves the prompt itself. Projecting stale tops
+  //   against the new scrollHeight squeezed every mark into the top of the rail — the
+  //   "markers get lost" bug. So a content resize re-measures, debounced so a streaming
+  //   reply costs one O(n) pass when it settles rather than one per delta; the projection
+  //   still runs every frame meanwhile, so the rail never freezes.
+  //
+  // The observer is set up once and reaches `project`/`measure` through refs: hanging this
+  // effect off a value derived from `items` would rebuild it on every stream delta.
   const projectRef = useRef(project);
   projectRef.current = project;
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
   useEffect(() => {
     const c = scrollRef.current;
     if (!c) return;
     let raf = 0;
+    let settle = 0;
+    let content: Element | null = null;
     const schedule = () => {
       if (raf) return; // already queued for this frame
       raf = requestAnimationFrame(() => {
@@ -119,12 +132,30 @@ export function ScrollMarkers({ scrollRef, items }: Props) {
         projectRef.current();
       });
     };
-    const ro = new ResizeObserver(schedule);
+    const ro = new ResizeObserver((entries) => {
+      schedule();
+      if (entries.some((e) => e.target !== c)) {
+        clearTimeout(settle);
+        settle = window.setTimeout(() => measureRef.current(), 120);
+      }
+    });
     ro.observe(c);
-    if (c.firstElementChild) ro.observe(c.firstElementChild);
+    // The content wrapper can be replaced (empty state -> timeline); keep observing the live one.
+    const track = () => {
+      const el = c.firstElementChild;
+      if (el === content) return;
+      if (content) ro.unobserve(content);
+      content = el;
+      if (el) ro.observe(el);
+    };
+    track();
+    const mo = new MutationObserver(track);
+    mo.observe(c, { childList: true });
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      clearTimeout(settle);
       ro.disconnect();
+      mo.disconnect();
     };
   }, [scrollRef]);
 

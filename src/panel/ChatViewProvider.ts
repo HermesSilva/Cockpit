@@ -2521,6 +2521,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // append to the repainted history.
         this.justRecreated.delete(bound ?? this.activeTab);
         this.replayTab(bound ?? this.activeTab, true);
+        // A context panel whose tab has no session yet still has to hear "history loaded,
+        // empty" — replayTab has nothing to send for it. The 'history' openNewTab posts can
+        // reach the panel before its page loads and be dropped; the tab then never counted as
+        // loaded, and the moment the CLI assigned a sessionId the loader replaced the live
+        // conversation. Only to THIS freshly mounted panel: it has nothing on screen to lose,
+        // unlike the same tab elsewhere mid-turn. (Cockpit4VS's ReplayTab does the same.)
+        if (bound) {
+          const bs = this.sessions.get(bound);
+          if (bs && !(bs.sessionId ?? bs.resumeId) && webview) {
+            this.trySend(webview, { kind: 'history', items: [], tab: bound });
+          }
+        }
         if (bound) this.primeCommands(bound); // loads slash commands without waiting for the first send
         // Recupera o rascunho/ditado espelhado (ex.: tela branca durante o ditado).
         {
